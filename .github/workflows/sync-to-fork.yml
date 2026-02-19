@@ -56,4 +56,4 @@ jobs:
 
             ---
             After merging, run `./scripts/rebuild-integration.sh` to update integration branch.
-          labels: ["provider-sync", "${{ env.DOMAIN }}"]
+          labels: "provider-sync,${{ env.DOMAIN }}"
