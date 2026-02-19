@@ -16,6 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -38,3 +39,12 @@ jobs:
           tag: "v${{ inputs.version }}"
           generateReleaseNotes: true
           prerelease: ${{ inputs.prerelease }}
+
+      - name: Trigger sync to fork
+        run: |
+          gh workflow run sync-to-fork.yml \
+            --repo "${{ github.repository }}" \
+            --ref main \
+            -f target_branch=dev
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
