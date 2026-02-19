@@ -13,57 +13,12 @@ on:
 
 jobs:
   sync:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout provider repo
-        uses: actions/checkout@v4
-        with:
-          path: provider-repo
+    uses: trudenboy/ma-provider-tools/.github/workflows/reusable-sync-to-fork.yml@main
+    with:
+      manifest_path: provider/manifest.json
+      provider_path: provider/
 
-      - name: Resolve version tag
-        id: tag
-        run: |
-          VERSION="${{ inputs.version }}"
-          if [[ -z "$VERSION" ]]; then
-            VERSION=$(gh release view --repo "${{ github.repository }}" --json tagName -q .tagName)
-          fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      target_branch: ${{ inputs.target_branch }}
+      version: ${{ inputs.version }}
 
-      - name: Checkout fork
-        uses: actions/checkout@v4
-        with:
-          repository: trudenboy/ma-server
-          path: ma-server
-          token: ${{ secrets.FORK_SYNC_PAT }}
-          ref: ${{ inputs.target_branch || 'dev' }}
-
-      - name: Sync provider files
-        run: |
-          DOMAIN=$(python3 -c "import json; print(json.load(open('provider-repo/provider/manifest.json'))['domain'])")
-          echo "DOMAIN=$DOMAIN" >> $GITHUB_ENV
-          rsync -av --delete \
-            provider-repo/provider/ \
-            ma-server/music_assistant/providers/${DOMAIN}/
-          rsync -av --delete \
-            provider-repo/tests/ \
-            ma-server/tests/providers/${DOMAIN}/
-
-      - name: Create Pull Request in fork
-        uses: peter-evans/create-pull-request@v6
-        with:
-          path: ma-server
-          token: ${{ secrets.FORK_SYNC_PAT }}
-          commit-message: "feat(${{ env.DOMAIN }}): sync provider from ${{ github.event.repository.name }} ${{ steps.tag.outputs.version }}"
-          branch: "provider/${{ env.DOMAIN }}-${{ steps.tag.outputs.version }}"
-          delete-branch: true
-          title: "feat(${{ env.DOMAIN }}): update provider to ${{ steps.tag.outputs.version }}"
-          body: |
-            ## Auto-sync from provider repo
-
-            **Source**: [${{ github.event.repository.name }} ${{ steps.tag.outputs.version }}](https://github.com/${{ github.repository }}/releases/tag/${{ steps.tag.outputs.version }})
-
-            ---
-            After merging, `rebuild-integration.yml` will auto-rebuild the integration branch.
-          labels: "provider-sync,${{ env.DOMAIN }}"
+    secrets: inherit

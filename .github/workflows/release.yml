@@ -13,39 +13,11 @@ on:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      actions: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+    uses: trudenboy/ma-provider-tools/.github/workflows/reusable-release.yml@main
+    with:
+      manifest_path: provider/manifest.json
+      provider_path: provider/
 
-      - name: Validate version format
-        run: |
-          echo "${{ inputs.version }}" | grep -Pq '^\d+\.\d+\.\d+' || exit 1
+      version: ${{ inputs.version }}
+      prerelease: ${{ inputs.prerelease }}
 
-      - name: Create tag and push
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "v${{ inputs.version }}"
-          git push origin "v${{ inputs.version }}"
-
-      - name: Create GitHub Release
-        uses: ncipollo/release-action@v1
-        with:
-          tag: "v${{ inputs.version }}"
-          generateReleaseNotes: true
-          prerelease: ${{ inputs.prerelease }}
-
-      - name: Trigger sync to fork
-        run: |
-          gh workflow run sync-to-fork.yml \
-            --repo "${{ github.repository }}" \
-            --ref main \
-            -f target_branch=dev \
-            -f version="v${{ inputs.version }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
