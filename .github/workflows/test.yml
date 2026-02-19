@@ -1,0 +1,40 @@
+name: Test
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install uv
+      - run: uv pip install --system -e ".[test]"
+      - run: SKIP=no-commit-to-branch pre-commit run --all-files
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "${{ matrix.python-version }}"
+      - run: pip install uv
+      - name: Install deps
+        run: |
+          uv pip install --system \
+            "git+https://github.com/music-assistant/server.git@dev" \
+            -e ".[test]"
+      - name: Pytest
+        run: pytest --durations 10 --cov=provider --cov-report=xml tests/
+      - uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml

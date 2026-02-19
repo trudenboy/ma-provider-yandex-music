@@ -1,0 +1,27 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run tests",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["tests/", "-x", "--no-header", "-v"],
+      "justMyCode": false
+    },
+    {
+      "name": "Dev server (MA worktree)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/dev-server.sh",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Python: Current File",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "justMyCode": false
+    }
+  ]
+}

@@ -1,0 +1,186 @@
+[project]
+name = "ma-provider-yandex-music"
+version = "2.0.0"
+description = "Yandex Music provider for Music Assistant"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+test = [
+  "pytest==9.0.2",
+  "pytest-asyncio>=0.24",
+  "pytest-aiohttp==1.1.0",
+  "pytest-cov==7.0.0",
+  "syrupy==5.0.0",
+  "codespell==2.4.1",
+  "music-assistant-models==1.1.98",
+  "music-assistant @ git+https://github.com/music-assistant/server.git@dev",
+  "yandex-music==2.2.0",
+  "pycryptodome==3.23.0",
+  "ruff==0.14.13",
+  "mypy==1.19.1",
+  "pre-commit==4.5.1",
+  "pre-commit-hooks==6.0.0",
+]
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.backends.legacy:build"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["provider*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+filterwarnings = [
+  "ignore:coroutine.*was never awaited:RuntimeWarning",
+]
+
+[tool.codespell]
+ignore-words-list = "provid,hass,followings,childs,explict,additionals,commitish,nam,"
+skip = "*.js,*.svg"
+
+[tool.ruff]
+fix = true
+show-fixes = true
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.format]
+line-ending = "lf"
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
+
+[tool.ruff.lint.pylint]
+max-args = 10
+max-branches = 25
+max-returns = 15
+max-statements = 50
+
+[tool.ruff.lint.mccabe]
+max-complexity = 25
+
+[tool.ruff.lint.flake8-pytest-style]
+fixture-parentheses = false
+mark-parentheses = false
+
+[tool.ruff.lint.isort]
+known-first-party = ["music_assistant"]
+
+[tool.ruff.lint]
+ignore = [
+  "ANN002",
+  "ANN003",
+  "ANN401",
+  "D203",
+  "D213",
+  "D417",
+  "EM101",
+  "EM102",
+  "FIX002",
+  "PLR2004",
+  "PGH004",
+  "PD011",
+  "S101",
+  "TC001",
+  "TC003",
+  "TD002",
+  "TD003",
+  "TD004",
+  "TRY003",
+  "TRY400",
+  "COM812",
+  "ASYNC109",
+  "ASYNC110",
+  "N818",
+  "BLE001",
+  "FBT001",
+  "FBT002",
+  "FBT003",
+  "ANN001",
+  "ANN201",
+  "ANN202",
+  "TRY002",
+  "PTH103",
+  "PTH100",
+  "PTH110",
+  "PTH111",
+  "PTH112",
+  "PTH113",
+  "PTH118",
+  "PTH120",
+  "PTH123",
+  "PYI034",
+  "G004",
+  "PGH003",
+  "DTZ005",
+  "S104",
+  "S105",
+  "S106",
+  "SLF001",
+  "SIM102",
+  "PERF401",
+  "PERF402",
+  "ARG002",
+  "S311",
+  "TRY301",
+  "PLR0912",
+  "B904",
+  "TRY401",
+  "S324",
+  "DTZ006",
+  "ERA001",
+  "PTH206",
+  "C901",
+  "PTH119",
+  "PTH116",
+  "RUF012",
+  "S304",
+  "RUF006",
+  "TRY300",
+  "S608",
+  "S307",
+  "B007",
+  "ANN204",
+]
+select = ["ALL"]
+
+[tool.mypy]
+python_version = "3.12"
+platform = "linux"
+follow_imports = "silent"
+ignore_missing_imports = true
+check_untyped_defs = true
+disable_error_code = [
+  "annotation-unchecked",
+  "import-not-found",
+  "import-untyped",
+]
+disallow_any_generics = true
+disallow_incomplete_defs = true
+disallow_subclassing_any = true
+disallow_untyped_calls = true
+disallow_untyped_decorators = true
+disallow_untyped_defs = true
+enable_error_code = [
+  "ignore-without-code",
+  "redundant-self",
+  "truthy-iterable",
+]
+extra_checks = false
+local_partial_types = true
+no_implicit_optional = true
+no_implicit_reexport = true
+packages = ["tests", "provider"]
+show_error_codes = true
+strict_equality = true
+strict_optional = true
+warn_incomplete_stub = true
+warn_no_return = true
+warn_redundant_casts = true
+warn_return_any = true
+warn_unreachable = true
+warn_unused_configs = true
+warn_unused_ignores = true

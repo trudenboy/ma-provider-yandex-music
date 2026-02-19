@@ -1,0 +1,59 @@
+name: Sync to Fork
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: "Target branch in fork (default: dev)"
+        default: "dev"
+        type: string
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout provider repo
+        uses: actions/checkout@v4
+        with:
+          path: provider-repo
+
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          repository: trudenboy/ma-server
+          path: ma-server
+          token: ${{ secrets.FORK_SYNC_PAT }}
+          ref: ${{ inputs.target_branch || 'dev' }}
+
+      - name: Sync provider files
+        run: |
+          DOMAIN=$(python3 -c "import json; print(json.load(open('provider-repo/provider/manifest.json'))['domain'])")
+          echo "DOMAIN=$DOMAIN" >> $GITHUB_ENV
+          rsync -av --delete \
+            provider-repo/provider/ \
+            ma-server/music_assistant/providers/${DOMAIN}/
+          rsync -av --delete \
+            provider-repo/tests/ \
+            ma-server/tests/providers/${DOMAIN}/
+
+      - name: Create Pull Request in fork
+        uses: peter-evans/create-pull-request@v6
+        with:
+          path: ma-server
+          token: ${{ secrets.FORK_SYNC_PAT }}
+          commit-message: |
+            feat(${{ env.DOMAIN }}): sync provider from ${{ github.event.repository.name }} ${{ github.event.release.tag_name }}
+          branch: "provider/${{ env.DOMAIN }}-${{ github.event.release.tag_name }}"
+          delete-branch: true
+          title: "feat(${{ env.DOMAIN }}): update provider to ${{ github.event.release.tag_name }}"
+          body: |
+            ## Auto-sync from provider repo
+
+            **Source**: [${{ github.event.repository.name }} ${{ github.event.release.tag_name }}](https://github.com/${{ github.repository }}/releases/tag/${{ github.event.release.tag_name }})
+
+            ${{ github.event.release.body }}
+
+            ---
+            After merging, run `./scripts/rebuild-integration.sh` to update integration branch.
+          labels: ["provider-sync", "${{ env.DOMAIN }}"]
