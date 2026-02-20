@@ -20,4 +20,3 @@ jobs:
 
       version: ${{ inputs.version }}
       prerelease: ${{ inputs.prerelease }}
-
