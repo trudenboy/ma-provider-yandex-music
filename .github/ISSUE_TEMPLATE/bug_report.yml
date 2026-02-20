@@ -1,18 +1,18 @@
-name: Bug Report
-description: Report a bug in the yandex_music provider
+name: Отчёт об ошибке
+description: Сообщить об ошибке в провайдере yandex_music
 labels: ["incident:bug", "priority:medium"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time to report a bug! Please fill in as much detail as possible.
+        Спасибо, что сообщаете об ошибке! Пожалуйста, заполните как можно больше деталей.
 
   - type: input
     id: provider_version
     attributes:
-      label: Provider version
+      label: Версия провайдера
       description: |
-        Find this in `manifest.json` → `version` field, or in the latest GitHub Release tag.
+        Найдите в `manifest.json` → поле `version`, или в теге последнего GitHub Release.
       placeholder: "e.g. 2.1.0"
     validations:
       required: true
@@ -20,7 +20,7 @@ body:
   - type: input
     id: ma_version
     attributes:
-      label: Music Assistant version
+      label: Версия Music Assistant
       placeholder: "e.g. 2.3.1"
     validations:
       required: true
@@ -28,31 +28,31 @@ body:
   - type: textarea
     id: steps
     attributes:
-      label: Steps to reproduce
+      label: Шаги воспроизведения
       placeholder: |
-        1. Go to ...
-        2. Click on ...
-        3. See error
+        1. Перейти в ...
+        2. Нажать на ...
+        3. Увидеть ошибку
     validations:
       required: true
 
   - type: textarea
     id: expected
     attributes:
-      label: Expected behaviour
+      label: Ожидаемое поведение
     validations:
       required: true
 
   - type: textarea
     id: actual
     attributes:
-      label: Actual behaviour
+      label: Фактическое поведение
     validations:
       required: true
 
   - type: textarea
     id: logs
     attributes:
-      label: Relevant logs
-      description: Paste any relevant log output here.
+      label: Соответствующие логи
+      description: Вставьте соответствующий вывод логов здесь.
       render: text
