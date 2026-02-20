@@ -1,44 +1,44 @@
-name: Improvement Proposal
-description: Suggest an improvement or new feature for the yandex_music provider
+name: Предложение по улучшению
+description: Предложить улучшение или новую функцию для провайдера yandex_music
 labels: ["enhancement", "priority:medium"]
 body:
   - type: markdown
     attributes:
       value: |
-        Use this template to propose improvements or new features for the provider.
-        For bugs, use the Bug Report template instead.
+        Используйте этот шаблон для предложения улучшений или новых функций для провайдера.
+        Для ошибок используйте шаблон «Отчёт об ошибке».
 
   - type: textarea
     id: current_behavior
     attributes:
-      label: Current behavior / limitation
-      description: What can you not do today, or what works in a suboptimal way?
+      label: Текущее поведение / ограничение
+      description: Что вы не можете сделать сегодня или что работает неоптимально?
     validations:
       required: true
 
   - type: textarea
     id: proposed_change
     attributes:
-      label: Proposed improvement
-      description: Describe what you'd like to see changed or added.
+      label: Предлагаемое улучшение
+      description: Опишите, что вы хотели бы изменить или добавить.
     validations:
       required: true
 
   - type: textarea
     id: motivation
     attributes:
-      label: Motivation / use case
-      description: Why is this improvement valuable? What use case does it enable?
+      label: Мотивация / сценарий использования
+      description: Почему это улучшение ценно? Какой сценарий использования оно обеспечивает?
     validations:
       required: true
 
   - type: dropdown
     id: willing_to_implement
     attributes:
-      label: Willing to help implement?
+      label: Готовы помочь с реализацией?
       options:
-        - "No"
-        - "Yes — I can submit a PR"
-        - "Yes — I can help test"
+        - "Нет"
+        - "Да — могу создать PR"
+        - "Да — могу помочь с тестированием"
     validations:
       required: false

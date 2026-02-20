@@ -1,17 +1,17 @@
-name: Upstream API Change
-description: Report a breaking change in the upstream API used by the yandex_music provider
+name: Изменение upstream API
+description: Сообщить о критическом изменении в upstream API провайдера yandex_music
 labels: ["incident:upstream", "priority:high"]
 body:
   - type: markdown
     attributes:
       value: |
-        Use this template to report changes in the upstream service API that affect the provider.
+        Используйте этот шаблон для сообщения об изменениях в API upstream-сервиса, влияющих на провайдер.
 
   - type: input
     id: upstream_ref
     attributes:
-      label: Upstream repo / commit / PR
-      description: Link to the upstream change (commit, PR, changelog entry, or announcement).
+      label: Upstream репозиторий / коммит / PR
+      description: Ссылка на upstream изменение (коммит, PR, запись changelog или объявление).
       placeholder: "e.g. https://github.com/upstream/repo/pull/123"
     validations:
       required: true
@@ -19,21 +19,21 @@ body:
   - type: textarea
     id: what_changed
     attributes:
-      label: What changed upstream
-      description: Describe the API change — new endpoints, removed fields, auth changes, etc.
+      label: Что изменилось в upstream
+      description: Опишите изменение API — новые эндпоинты, удалённые поля, изменения авторизации и т.д.
     validations:
       required: true
 
   - type: textarea
     id: impact
     attributes:
-      label: Impact on yandex_music provider
-      description: Which provider features are broken or affected?
+      label: Влияние на провайдер yandex_music
+      description: Какие функции провайдера нарушены или затронуты?
     validations:
       required: true
 
   - type: textarea
     id: proposed_fix
     attributes:
-      label: Proposed fix (optional)
-      description: If you have ideas for how to adapt the provider, describe them here.
+      label: Предложение по исправлению (необязательно)
+      description: Если у вас есть идеи по адаптации провайдера, опишите их здесь.
