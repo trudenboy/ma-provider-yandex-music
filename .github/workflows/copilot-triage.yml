@@ -1,0 +1,26 @@
+name: Copilot Triage
+on:
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Issue number to route to Copilot"
+        required: true
+        type: number
+
+jobs:
+  triage-on-label:
+
+    if: ${{ github.event_name == 'issues' && github.event.label.name == 'copilot' }}
+    uses: trudenboy/ma-provider-tools/.github/workflows/reusable-copilot-triage.yml@main
+    with:
+      issue_number: ${{ github.event.issue.number }}
+    secrets: inherit
+
+  triage-manual:
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    uses: trudenboy/ma-provider-tools/.github/workflows/reusable-copilot-triage.yml@main
+    with:
+      issue_number: ${{ inputs.issue_number }}
+    secrets: inherit

@@ -1,0 +1,35 @@
+- name: "incident:ci"
+  color: "e11d48"
+  description: "CI/CD failure"
+
+- name: "incident:bug"
+  color: "b91c1c"
+  description: "User-reported bug"
+
+- name: "incident:security"
+  color: "7c3aed"
+  description: "Security/vulnerability"
+
+- name: "incident:upstream"
+  color: "0369a1"
+  description: "Upstream API change"
+
+- name: "priority:critical"
+  color: "dc2626"
+  description: "Blocking, immediate action required"
+
+- name: "priority:high"
+  color: "f97316"
+  description: "Important, address soon"
+
+- name: "priority:medium"
+  color: "fbbf24"
+  description: "Normal queue"
+
+- name: "priority:low"
+  color: "a3e635"
+  description: "Nice to have"
+
+- name: "copilot"
+  color: "6366f1"
+  description: "Route to GitHub Copilot agent"
