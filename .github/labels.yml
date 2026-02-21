@@ -14,6 +14,10 @@
   color: "0369a1"
   description: "Upstream API change"
 
+- name: "incident:proposal"
+  color: "0d9488"
+  description: "Improvement proposal or feature request"
+
 - name: "priority:critical"
   color: "dc2626"
   description: "Blocking, immediate action required"

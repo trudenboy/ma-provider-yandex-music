@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   add-to-project:
-    if: ${{ github.event.label.name == 'incident:ci' }}
+    if: ${{ startsWith(github.event.label.name, 'incident:') }}
     runs-on: ubuntu-latest
     steps:
       - name: Add to MA Ecosystem project

@@ -1,6 +1,6 @@
 name: Предложение по улучшению
 description: Предложить улучшение или новую функцию для провайдера yandex_music
-labels: ["enhancement", "priority:medium"]
+labels: ["incident:proposal", "enhancement", "priority:medium"]
 body:
   - type: markdown
     attributes:
