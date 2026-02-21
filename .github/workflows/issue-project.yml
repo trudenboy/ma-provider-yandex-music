@@ -12,15 +12,62 @@ jobs:
     if: ${{ startsWith(github.event.label.name, 'incident:') }}
     runs-on: ubuntu-latest
     steps:
-      - name: Add to MA Ecosystem project
+      - name: Add to MA Ecosystem project and set fields
         env:
           GH_TOKEN: ${{ secrets.FORK_SYNC_PAT }}
         run: |
-          gh api graphql -f query='
+          PID="PVT_kwHOCFMIf84BPvYe"
+          IID="${{ github.event.issue.node_id }}"
+          LABEL="${{ github.event.label.name }}"
+
+          ITEM_ID=$(gh api graphql -f query='
             mutation($pid:ID!,$iid:ID!){
               addProjectV2ItemById(input:{projectId:$pid,contentId:$iid}){
                 item{id}
               }
             }' \
-            -f pid="PVT_kwHOCFMIf84BPvYe" \
-            -f iid="${{ github.event.issue.node_id }}"
+            -f pid="$PID" \
+            -f iid="$IID" \
+            --jq '.data.addProjectV2ItemById.item.id')
+
+          # Set Provider field
+          PROVIDER_OPT="97d12d8f"
+
+          if [[ -n "$PROVIDER_OPT" ]]; then
+            gh api graphql -f query='
+              mutation($pid:ID!,$iid:ID!,$fid:ID!,$oid:String!){
+                updateProjectV2ItemFieldValue(input:{
+                  projectId:$pid,itemId:$iid,
+                  fieldId:$fid,
+                  value:{singleSelectOptionId:$oid}
+                }){projectV2Item{id}}
+              }' \
+              -f pid="$PID" \
+              -f iid="$ITEM_ID" \
+              -f fid="PVTSSF_lAHOCFMIf84BPvYezg-EBos" \
+              -f oid="$PROVIDER_OPT"
+          fi
+
+          # Set Incident Type field based on label
+          case "$LABEL" in
+            "incident:ci")       INCIDENT_OPT="fa1d1581" ;;
+            "incident:bug")      INCIDENT_OPT="7f0c15cb" ;;
+            "incident:upstream") INCIDENT_OPT="91fd4f1b" ;;
+            "incident:security") INCIDENT_OPT="70de5cac" ;;
+            *)                   INCIDENT_OPT="" ;;
+          esac
+
+          if [[ -n "$INCIDENT_OPT" ]]; then
+            gh api graphql -f query='
+              mutation($pid:ID!,$iid:ID!,$fid:ID!,$oid:String!){
+                updateProjectV2ItemFieldValue(input:{
+                  projectId:$pid,itemId:$iid,
+                  fieldId:$fid,
+                  value:{singleSelectOptionId:$oid}
+                }){projectV2Item{id}}
+              }' \
+              -f pid="$PID" \
+              -f iid="$ITEM_ID" \
+              -f fid="PVTSSF_lAHOCFMIf84BPvYezg-EBow" \
+              -f oid="$INCIDENT_OPT"
+          fi
