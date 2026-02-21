@@ -6,7 +6,6 @@ on:
 
 permissions:
   issues: read
-  repository-projects: write
 
 jobs:
   add-to-project:
@@ -15,7 +14,7 @@ jobs:
     steps:
       - name: Add to MA Ecosystem project
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.FORK_SYNC_PAT }}
         run: |
           gh project item-add 3 --owner trudenboy \
             --url ${{ github.event.issue.html_url }}
