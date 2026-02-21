@@ -1,0 +1,33 @@
+name: Security Audit
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - "requirements*.txt"
+      - "pyproject.toml"
+      - "provider/manifest.json"
+  pull_request:
+    branches: [main]
+    paths:
+      - "requirements*.txt"
+      - "pyproject.toml"
+      - "provider/manifest.json"
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security:
+    uses: trudenboy/ma-provider-tools/.github/workflows/reusable-security.yml@main
+    with:
+      provider_type: "music_provider"
+      provider_domain: "yandex_music"
+      provider_path: "provider/"
+      manifest_path: "provider/manifest.json"
+    permissions:
+      issues: write
