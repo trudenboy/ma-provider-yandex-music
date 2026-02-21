@@ -1,3 +1,5 @@
+[← Back to README](../README.md)
+
 # Development Guide
 
 ## Prerequisites
@@ -127,7 +129,6 @@ Renew the PAT (needs `contents:write` on `trudenboy/ma-server`) then update the 
 in each provider repo via gh CLI:
 
 ```bash
-# Set new token in each provider repo (run from the provider repo dir):
 gh secret set FORK_SYNC_PAT --body "$NEW_PAT" --repo trudenboy/ma-provider-yandex-music
 gh secret set FORK_SYNC_PAT --body "$NEW_PAT" --repo trudenboy/ma-provider-kion-music
 gh secret set FORK_SYNC_PAT --body "$NEW_PAT" --repo trudenboy/ma-provider-zvuk-music

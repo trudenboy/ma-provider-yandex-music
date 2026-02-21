@@ -1,15 +1,18 @@
 # Yandex Music Provider for Music Assistant
 
-Music provider for [Music Assistant](https://music-assistant.io) that adds Yandex Music
-as a music source with full browse, search, and playback support.
+English | [Русский](README.ru.md)
+
+> Stream music from Yandex Music with full browse, search, and playback support.
 
 ## Features
 
-- Browse: Liked Tracks, My Wave radio, Picks & Mixes, Artists, Albums
-- Search: tracks, artists, albums, playlists
-- Playback: AAC (free), FLAC (premium)
-- Library sync: Liked Tracks → MA library
-- Streaming modes: direct / buffered / preload
+| Feature | Details |
+|---------|---------|
+| Browse | Liked Tracks, My Wave radio, Picks & Mixes, Artists, Albums, Playlists |
+| Search | Tracks, artists, albums, playlists |
+| Playback | AAC (64–192 kbps), MP3 (320 kbps), FLAC (lossless) |
+| Library sync | Liked Tracks → MA library |
+| Streaming modes | Direct / buffered / preload |
 
 ## Compatibility
 
@@ -19,18 +22,22 @@ as a music source with full browse, search, and playback support.
 
 ## Installation
 
-This provider is installed automatically as part of Music Assistant.
+Installed automatically as part of Music Assistant.
 
 ### Configuration
 
 1. Settings → Music Sources → Add Source → Yandex Music
-2. Enter your Yandex Music token
+2. Enter your Yandex Music OAuth token
 3. Select streaming quality
 4. Save
 
-## Development
+## Documentation
 
-See [DEVELOPMENT.md](DEVELOPMENT.md) for development setup.
+| Guide | Description |
+|-------|-------------|
+| [Configuration](docs/configuration.md) | All settings and options |
+| [Development](docs/development.md) | Dev setup, tests, linting |
+| [Contributing](docs/contributing.md) | Bug reports, feature requests, PRs |
 
 ## License
 
