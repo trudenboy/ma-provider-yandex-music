@@ -11,6 +11,11 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: write  # Required to create tags and releases
+  actions: write   # Required to trigger sync-to-fork workflow
+  issues: write    # Required by report-failure job in reusable workflow
+
 jobs:
   release:
     uses: trudenboy/ma-provider-tools/.github/workflows/reusable-release.yml@main
