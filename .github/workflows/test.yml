@@ -11,6 +11,9 @@ concurrency:
 
   cancel-in-progress: true
 
+permissions:
+  issues: write  # required for report-failure in reusable-test.yml
+
 jobs:
   test:
     uses: trudenboy/ma-provider-tools/.github/workflows/reusable-test.yml@main
