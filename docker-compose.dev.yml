@@ -1,0 +1,26 @@
+# Development docker-compose for Yandex Music
+# Runs a local Music Assistant instance with Yandex Music provider pre-loaded.
+#
+# Usage:
+#   docker compose -f docker-compose.dev.yml up       # foreground
+#   docker compose -f docker-compose.dev.yml up -d    # background
+#   docker compose -f docker-compose.dev.yml down      # stop
+#   docker compose -f docker-compose.dev.yml logs -f  # follow logs
+#
+# UI: http://localhost:8095
+# Note: add .ma-data/ to your .gitignore
+
+name: ma-yandex_music-dev
+
+services:
+  ma:
+    image: ghcr.io/music-assistant/server:latest
+    network_mode: host
+    privileged: true
+    restart: "no"
+    volumes:
+      - ./.ma-data:/data
+      - ./provider/:/tmp/provider:ro
+      - ./pyproject.toml:/tmp/pyproject.toml:ro
+      - ./scripts/docker-init.sh:/init.sh:ro
+    entrypoint: ["/bin/sh", "/init.sh"]
