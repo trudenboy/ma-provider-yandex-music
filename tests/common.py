@@ -5,11 +5,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from collections.abc import AsyncGenerator
+from typing import TYPE_CHECKING
 
 from music_assistant_models.enums import EventType
-from music_assistant_models.event import MassEvent
 
-from music_assistant.mass import MusicAssistant
+if TYPE_CHECKING:
+    from music_assistant_models.event import MassEvent
+
+    from music_assistant.mass import MusicAssistant
 
 
 @contextlib.asynccontextmanager
