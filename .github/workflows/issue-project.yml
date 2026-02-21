@@ -1,0 +1,21 @@
+name: Auto-add issues to project
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  issues: read
+  repository-projects: write
+
+jobs:
+  add-to-project:
+    if: ${{ github.event.label.name == 'incident:ci' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add to MA Ecosystem project
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh project item-add 3 --owner trudenboy \
+            --url ${{ github.event.issue.html_url }}
