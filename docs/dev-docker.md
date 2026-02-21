@@ -60,4 +60,3 @@ docker compose -f docker-compose.dev.yml restart
 
 Весь конфиг MA, учётные данные провайдера и кеш хранятся в `.ma-data/` (добавь в `.gitignore`).
 Папка создаётся автоматически при первом запуске.
-
