@@ -11,6 +11,9 @@ on:
         default: ""
         type: string
 
+permissions:
+  issues: write  # Required by report-failure job in reusable workflow
+
 jobs:
   sync:
     uses: trudenboy/ma-provider-tools/.github/workflows/reusable-sync-to-fork.yml@main
