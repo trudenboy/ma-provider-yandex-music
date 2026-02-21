@@ -2,6 +2,14 @@
   color: "e11d48"
   description: "CI/CD failure"
 
+- name: "incident:release"
+  color: "f43f5e"
+  description: "Release pipeline failure"
+
+- name: "incident:sync"
+  color: "fb923c"
+  description: "Fork sync failure"
+
 - name: "incident:bug"
   color: "b91c1c"
   description: "User-reported bug"
