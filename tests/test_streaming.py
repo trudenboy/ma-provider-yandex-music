@@ -44,7 +44,7 @@ def streaming_manager(
     streaming_provider_stub: StreamingProviderStub,
 ) -> YandexMusicStreamingManager:
     """Create streaming manager with real stub (no Mock)."""
-    return YandexMusicStreamingManager(streaming_provider_stub)  # type: ignore[arg-type]
+    return YandexMusicStreamingManager(streaming_provider_stub)
 
 
 @pytest.fixture
@@ -52,7 +52,7 @@ def streaming_manager_with_tracking(
     streaming_provider_stub_with_tracking: StreamingProviderStubWithTracking,
 ) -> YandexMusicStreamingManager:
     """Create streaming manager with tracking logger for assertions."""
-    return YandexMusicStreamingManager(streaming_provider_stub_with_tracking)  # type: ignore[arg-type]
+    return YandexMusicStreamingManager(streaming_provider_stub_with_tracking)
 
 
 def test_select_best_quality_lossless_returns_flac(

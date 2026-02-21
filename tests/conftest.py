@@ -3,10 +3,33 @@
 from __future__ import annotations
 
 import logging
+import pathlib
+from collections.abc import AsyncGenerator
 
 import pytest
 from music_assistant_models.enums import MediaType
 from music_assistant_models.media_items import ItemMapping
+
+from music_assistant.mass import MusicAssistant
+
+
+@pytest.fixture
+async def mass(tmp_path: pathlib.Path) -> AsyncGenerator[MusicAssistant, None]:
+    """Start a Music Assistant instance for integration tests."""
+    storage_path = tmp_path / "data"
+    cache_path = tmp_path / "cache"
+    storage_path.mkdir(parents=True)
+    cache_path.mkdir(parents=True)
+
+    logging.getLogger("aiosqlite").level = logging.INFO
+
+    mass_instance = MusicAssistant(str(storage_path), str(cache_path))
+    await mass_instance.start()
+
+    try:
+        yield mass_instance
+    finally:
+        await mass_instance.stop()
 
 
 class ProviderStub:
