@@ -16,5 +16,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.FORK_SYNC_PAT }}
         run: |
-          gh project item-add 3 --owner trudenboy \
-            --url ${{ github.event.issue.html_url }}
+          gh api graphql -f query='
+            mutation($pid:ID!,$iid:ID!){
+              addProjectV2ItemById(input:{projectId:$pid,contentId:$iid}){
+                item{id}
+              }
+            }' \
+            -f pid="PVT_kwHOCFMIf84BPvYe" \
+            -f iid="${{ github.event.issue.node_id }}"
