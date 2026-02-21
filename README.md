@@ -38,6 +38,9 @@ Installed automatically as part of Music Assistant.
 | [Configuration](docs/configuration.md) | All settings and options |
 | [Development](docs/development.md) | Dev setup, tests, linting |
 | [Contributing](docs/contributing.md) | Bug reports, feature requests, PRs |
+| [Testing](docs/testing.md) | Running tests locally, CI pipeline, coverage |
+| [Incident Management](docs/incident-management.md) | Labels, automated issue tracking, Copilot triage |
+| [Docker Dev Environment](docs/dev-docker.md) | Run MA + provider locally without dependencies |
 
 ## License
 
