@@ -21,6 +21,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  issues: write  # Required by report-failure job in reusable workflow
+
 jobs:
   security:
     uses: trudenboy/ma-provider-tools/.github/workflows/reusable-security.yml@main
@@ -29,5 +32,3 @@ jobs:
       provider_domain: "yandex_music"
       provider_path: "provider/"
       manifest_path: "provider/manifest.json"
-    permissions:
-      issues: write
