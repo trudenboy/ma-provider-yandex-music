@@ -38,4 +38,4 @@ if [ -n "$DEPS" ]; then
 fi
 
 echo "==> Starting Music Assistant..."
-exec /entrypoint.sh mass --data-dir /data --cache-dir /data/.cache
+exec /usr/local/bin/entrypoint.sh --data-dir /data --cache-dir /data/.cache
