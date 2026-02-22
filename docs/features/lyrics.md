@@ -1,6 +1,6 @@
-# Lyrics
-
 === "English"
+
+    # Lyrics
 
     Lyrics are fetched directly from Yandex Music when viewing track details:
 
@@ -12,6 +12,8 @@
         Lyrics availability depends on the track and may vary by region due to licensing restrictions. If lyrics are unavailable for your region, the provider handles this silently without errors.
 
 === "Русский"
+
+    # Тексты песен
 
     Тексты песен загружаются напрямую из Yandex Music при просмотре информации о треке:
 

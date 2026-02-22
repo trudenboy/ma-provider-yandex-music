@@ -1,6 +1,6 @@
-# Picks & Mixes
-
 === "English"
+
+    # Picks & Mixes
 
     Picks and Mixes let you browse curated playlists organized by theme, available in the Browse section.
 
@@ -34,6 +34,8 @@
     Category and tag folders have **Play disabled** (`is_playable=False`). This prevents accidentally queuing thousands of tracks when pressing Play on a folder that contains playlists. To play music, navigate into a specific tag and choose a playlist.
 
 === "Русский"
+
+    # Подборки и Миксы
 
     Подборки и Миксы позволяют просматривать тематические плейлисты в разделе Browse.
 

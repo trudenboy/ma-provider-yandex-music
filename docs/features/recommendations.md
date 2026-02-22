@@ -1,6 +1,6 @@
-# Recommendations
-
 === "English"
+
+    # Recommendations
 
     The home page shows up to 9 recommendation sections. Each section can be shown or hidden, and its position can be changed, via the Edit Homescreen feature (blue icon in the top right of the home page).
 
@@ -19,6 +19,8 @@
     The Mood Mix and Activity Mix sections show a different mood/activity each time they refresh, so you'll see variety throughout the day. The Seasonal Mix picks the season based on the current month automatically.
 
 === "Русский"
+
+    # Рекомендации
 
     На главной странице отображается до 9 секций рекомендаций. Каждую секцию можно показать или скрыть, а также изменить её позицию через функцию Edit Homescreen (синяя иконка в правом верхнем углу главной страницы).
 

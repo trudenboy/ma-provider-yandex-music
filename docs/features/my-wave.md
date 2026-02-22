@@ -1,6 +1,6 @@
-# My Wave
-
 === "English"
+
+    # My Wave
 
     My Wave is Yandex Music's personalized infinite radio. It uses Yandex's Rotor recommendation engine to generate a continuous stream of tracks tailored to your listening habits.
 
@@ -40,6 +40,8 @@
     When you start radio mode from any Yandex Music track, the provider uses Yandex's Rotor engine to find similar tracks. This works for any track, not just My Wave — it creates a station based on that specific track's style and genre.
 
 === "Русский"
+
+    # Моя волна
 
     Моя волна — персонализированное бесконечное радио Yandex Music. Оно использует рекомендательный движок Rotor от Яндекса для генерации непрерывного потока треков, подобранных под ваши музыкальные предпочтения.
 
