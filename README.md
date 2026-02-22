@@ -1,54 +1,56 @@
-# Yandex Music Provider for Music Assistant
+# Провайдер Яндекс Музыки для Music Assistant
 
-English | [Русский](README.ru.md)
+[English](README.en.md) | Русский
 
-> Stream your [Yandex Music](https://music.yandex.ru/) library through [Music Assistant](https://music-assistant.io/) with full browse, search, radio, and lossless playback support.
+📖 <a href="https://trudenboy.github.io/ma-provider-yandex-music/">Документация на GitHub Pages</a>
 
-## Quick Start (Docker)
+> Слушайте свою библиотеку [Яндекс Музыки](https://music.yandex.ru/) через [Music Assistant](https://music-assistant.io/) с полной поддержкой навигации, поиска, радио и воспроизведения без потерь.
+
+## Быстрый старт (Docker)
 
 ```bash
-# Clone the repo
+# Клонируйте репозиторий
 git clone https://github.com/trudenboy/ma-provider-yandex-music.git
 cd ma-provider-yandex-music
 
-# Start Music Assistant with the provider pre-loaded
+# Запустите Music Assistant с предустановленным провайдером
 docker compose -f docker-compose.dev.yml up
 ```
 
-Open the MA web UI at `http://localhost:8095`, then go to **Settings → Music Sources → Add Source → Yandex Music** and enter your OAuth token.
+Откройте веб-интерфейс MA по адресу `http://localhost:8095`, затем перейдите в **Настройки → Музыкальные источники → Добавить источник → Яндекс Музыка** и введите ваш OAuth-токен.
 
-For the full Docker dev environment guide see [docs/dev-docker.md](docs/dev-docker.md).
+Подробное руководство по Docker-окружению для разработки: [docs/dev-docker.md](docs/dev-docker.md).
 
-## Features
+## Возможности
 
-- **Library sync** — Artists, Albums, Tracks (Liked), Playlists synced to MA library
-- **Library editing** — Like / unlike Artists, Albums, Tracks directly from MA
-- **Browse** — Liked Tracks, My Wave radio, Picks & Mixes (mood/era/activity/genre), Feed, Chart, Artists, Albums, Playlists
-- **Recommendations** — personalised "For You" sections surfaced as MA recommendation folders
-- **Search** — Tracks, Artists, Albums, Playlists
-- **Similar tracks** — powered by Yandex rotor station
-- **Lyrics** — fetched from Yandex Music API
-- **Audio quality** — Efficient (AAC ~64 kbps) / Balanced (AAC ~192 kbps) / High (MP3 ~320 kbps) / Superb (FLAC lossless, with AES decryption for encraw transport)
-- **My Wave radio** — infinite personalised radio with rotor feedback loop and cursor-based pagination
-- **Multi-instance** — connect multiple Yandex Music accounts simultaneously
+- **Синхронизация библиотеки** — Исполнители, Альбомы, Треки (Понравившиеся), Плейлисты синхронизируются с библиотекой MA
+- **Редактирование библиотеки** — Лайк / дизлайк Исполнителей, Альбомов, Треков прямо из MA
+- **Навигация** — Понравившиеся треки, Радио «Моя волна», Подборки и Миксы (настроение/эпоха/активность/жанр), Лента, Чарт, Исполнители, Альбомы, Плейлисты
+- **Рекомендации** — персональные разделы «Для вас», представленные как папки рекомендаций MA
+- **Поиск** — Треки, Исполнители, Альбомы, Плейлисты
+- **Похожие треки** — на основе станции ротора Яндекса
+- **Тексты песен** — получаются через API Яндекс Музыки
+- **Качество звука** — Экономичное (AAC ~64 кбит/с) / Сбалансированное (AAC ~192 кбит/с) / Высокое (MP3 ~320 кбит/с) / Превосходное (FLAC без потерь, с AES-дешифрованием для encraw-транспорта)
+- **Радио «Моя волна»** — бесконечное персональное радио с обратной связью ротора и постраничной навигацией
+- **Мультиаккаунт** — одновременное подключение нескольких аккаунтов Яндекс Музыки
 
-## Documentation
+## Документация
 
-| Guide | Description |
-|-------|-------------|
-| [Configuration](docs/configuration.md) | Token, quality, My Wave, Liked Tracks settings |
-| [Development](docs/development.md) | Dev setup, tests, linting, commit format |
-| [Contributing](docs/contributing.md) | Bug reports, feature requests, pull requests |
-| [Testing](docs/testing.md) | Running tests locally, CI pipeline, coverage |
-| [Incident Management](docs/incident-management.md) | Labels, automated issue tracking, Copilot triage |
-| [Docker Dev Environment](docs/dev-docker.md) | Run MA + provider locally without dependencies |
+| Руководство | Описание |
+|-------------|----------|
+| [Настройка](docs/configuration.md) | Токен, качество, «Моя волна», настройки понравившихся треков |
+| [Разработка](docs/development.md) | Настройка окружения, тесты, линтинг, формат коммитов |
+| [Участие в разработке](docs/contributing.md) | Сообщения об ошибках, предложения, pull request'ы |
+| [Тестирование](docs/testing.md) | Запуск тестов, CI-пайплайн, покрытие |
+| [Управление инцидентами](docs/incident-management.md) | Метки, автоматическое отслеживание, триаж Copilot |
+| [Локальная разработка (Docker)](docs/dev-docker.md) | Запуск MA + провайдера без установки зависимостей |
 
-## References
+## Ссылки
 
-- [Music Assistant](https://music-assistant.io/) — open-source music server by Marcel van der Veldt
-- [Yandex Music](https://music.yandex.ru/) — streaming service by Yandex
-- [yandex-music-api](https://github.com/MarshalX/yandex-music-api) — unofficial Python client by MarshalX
+- [Music Assistant](https://music-assistant.io/) — open-source музыкальный сервер от Marcel van der Veldt
+- [Яндекс Музыка](https://music.yandex.ru/) — стриминговый сервис от Яндекса
+- [yandex-music-api](https://github.com/MarshalX/yandex-music-api) — неофициальный Python-клиент от MarshalX
 
-## License
+## Лицензия
 
-[Apache 2.0](LICENSE) — see [CHANGELOG.md](CHANGELOG.md) for version history.
+[Apache 2.0](LICENSE) — история изменений в [CHANGELOG.md](CHANGELOG.md).
