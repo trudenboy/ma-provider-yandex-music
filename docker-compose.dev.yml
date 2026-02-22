@@ -10,8 +10,6 @@
 # UI: http://localhost:8095
 # Note: add .ma-data/ to your .gitignore
 
-name: ma-yandex_music-dev
-
 services:
   ma:
     image: ghcr.io/music-assistant/server:latest
