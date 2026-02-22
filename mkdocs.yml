@@ -1,0 +1,43 @@
+site_name: Yandex Music Provider for Music Assistant
+site_url: https://trudenboy.github.io/ma-provider-yandex-music/
+repo_url: https://github.com/trudenboy/ma-provider-yandex-music
+repo_name: trudenboy/ma-provider-yandex-music
+edit_uri: edit/refactor/yandex-config-categories/docs/
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - content.tabs.link
+
+plugins:
+  - search
+
+markdown_extensions:
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.superfences
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Configuration: configuration.md
+  - Features:
+      - My Wave: features/my-wave.md
+      - Liked Tracks: features/liked-tracks.md
+      - Picks & Mixes: features/picks-and-mixes.md
+      - Recommendations: features/recommendations.md
+      - Lyrics: features/lyrics.md
+      - Audio Quality: features/audio-quality.md
+  - Known Issues: known-issues.md
+  - Development:
+      - Setup: development.md
+      - Docker: dev-docker.md
+      - Testing: testing.md
+      - Contributing: contributing.md
+      - Incident Management: incident-management.md
