@@ -1,6 +1,6 @@
 # Провайдер Яндекс Музыки для Music Assistant
 
-[English](README.en.md) | Русский    
+[English](README.en.md) | Русский
 
 📖 <a href="https://trudenboy.github.io/ma-provider-yandex-music/">Документация пользователя</a>
 
