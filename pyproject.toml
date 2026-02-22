@@ -184,3 +184,7 @@ warn_return_any = true
 warn_unreachable = true
 warn_unused_configs = true
 warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+warn_unused_ignores = false
