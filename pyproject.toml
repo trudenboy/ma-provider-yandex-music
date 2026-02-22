@@ -16,7 +16,7 @@ test = [
   "music-assistant-models>=1.1.99",
   "music-assistant @ git+https://github.com/music-assistant/server.git@dev",
   "yandex-music==2.2.0",
-  "pycryptodome==3.23.0",
+  "cryptography",
   "ruff==0.14.13",
   "mypy==1.19.1",
   "pre-commit==4.5.1",
