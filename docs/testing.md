@@ -27,7 +27,6 @@ uv run pytest provider/tests/ -v --cov=provider/ --cov-report=term-missing
 
 Тесты запускаются на основе `music-assistant/server@dev` (без форка — лёгкий CI).
 
-
 ## Инструменты
 
 | Инструмент | Назначение |
@@ -77,4 +76,3 @@ open htmlcov/index.html
 
 Если тесты или линтеры упали в CI, автоматически создаётся GitHub-задача с меткой `incident:ci`.
 Подробнее о процессе работы с инцидентами: [Управление инцидентами](incident-management.md).
-
