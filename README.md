@@ -1,8 +1,9 @@
 # Провайдер Яндекс Музыки для Music Assistant
 
-[English](README.en.md) | Русский
+[English](README.en.md) | Русский    
 
-📖 <a href="https://trudenboy.github.io/ma-provider-yandex-music/">Документация на GitHub Pages</a>
+📖 <a href="https://trudenboy.github.io/ma-provider-yandex-music/">Документация пользователя</a>
+
 
 > Слушайте свою библиотеку [Яндекс Музыки](https://music.yandex.ru/) через [Music Assistant](https://music-assistant.io/) с полной поддержкой навигации, поиска, радио и воспроизведения без потерь.
 
