@@ -1,6 +1,6 @@
-# Known Issues
-
 === "English"
+
+    # Known Issues
 
     - The OAuth token may expire and need to be refreshed periodically
     - During long sessions the API may occasionally disconnect; the provider reconnects automatically
@@ -8,6 +8,8 @@
     - Multiple Yandex Music accounts are not yet supported
 
 === "Русский"
+
+    # Известные проблемы
 
     - OAuth-токен может истечь и потребовать периодического обновления
     - При длительных сессиях API может периодически отключаться; провайдер переподключается автоматически

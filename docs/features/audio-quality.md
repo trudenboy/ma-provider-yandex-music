@@ -1,6 +1,6 @@
-# Audio Quality
-
 === "English"
+
+    # Audio Quality
 
     Four quality tiers are available:
 
@@ -28,6 +28,8 @@
     When using **Buffered** mode, the **Stream buffer size (MB)** setting controls how much data is held in memory at once. The default is 8 MB, which provides approximately 45 seconds of FLAC audio. Increase this value if you experience playback stalls on slow connections.
 
 === "Русский"
+
+    # Качество аудио
 
     Доступны четыре уровня качества:
 

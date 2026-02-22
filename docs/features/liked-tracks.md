@@ -1,6 +1,6 @@
-# Liked Tracks
-
 === "English"
+
+    # Liked Tracks
 
     Your liked (favorited) tracks are available as a virtual playlist:
 
@@ -10,6 +10,8 @@
     - Full track details (including album art) are fetched automatically
 
 === "Русский"
+
+    # Понравившиеся треки
 
     Ваши понравившиеся (избранные) треки доступны в виде виртуального плейлиста:
 

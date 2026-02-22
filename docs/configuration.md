@@ -1,8 +1,8 @@
-# Configuration
-
-All settings are accessible via **Settings → Music Sources → Yandex Music**.
-
 === "English"
+
+    # Configuration
+
+    All settings are accessible via **Settings → Music Sources → Yandex Music**.
 
     ### Obtaining the Token
 
@@ -45,6 +45,10 @@ All settings are accessible via **Settings → Music Sources → Yandex Music**.
     | `superb` | Superb | FLAC | Lossless |
 
 === "Русский"
+
+    # Настройка
+
+    Все настройки доступны через **Settings → Music Sources → Yandex Music**.
 
     ### Получение токена
 
