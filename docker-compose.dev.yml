@@ -13,7 +13,8 @@
 services:
   ma:
     image: ghcr.io/music-assistant/server:latest
-    network_mode: host
+    ports:
+      - "8095:8095"
     privileged: true
     restart: "no"
     volumes:
