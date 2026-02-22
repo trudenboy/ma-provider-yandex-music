@@ -30,3 +30,4 @@ jobs:
       version: ${{ inputs.version }}
       prerelease: ${{ inputs.prerelease }}
       target_branch: ${{ inputs.target_branch }}
+    secrets: inherit
