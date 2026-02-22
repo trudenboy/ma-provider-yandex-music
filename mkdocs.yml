@@ -1,4 +1,4 @@
-site_name: Yandex Music Provider for Music Assistant
+site_name: Провайдер Яндекс Музыки для Music Assistant
 site_url: https://trudenboy.github.io/ma-provider-yandex-music/
 repo_url: https://github.com/trudenboy/ma-provider-yandex-music
 repo_name: trudenboy/ma-provider-yandex-music
@@ -6,7 +6,7 @@ edit_uri: edit/refactor/yandex-config-categories/docs/
 
 theme:
   name: material
-  language: en
+  language: ru
   features:
     - navigation.tabs
     - navigation.sections
