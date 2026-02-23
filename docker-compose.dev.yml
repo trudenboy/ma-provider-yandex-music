@@ -12,7 +12,7 @@
 
 services:
   ma:
-    image: ghcr.io/music-assistant/server:latest
+    image: ghcr.io/music-assistant/server:nightly
     ports:
       - "8095:8095"
       - "8097:8097"
