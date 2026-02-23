@@ -899,7 +899,15 @@ class YandexMusicClient:
             image_url: str | None = None
             raw_url = station.full_image_url or (station.icon.image_url if station.icon else None)
             if raw_url:
-                image_url = raw_url if raw_url.startswith("http") else f"https://{raw_url}"
+                # Yandex avatar URIs use '%%' as a size placeholder; replace it with
+                # the desired size. If no placeholder, append the size as a suffix
+                # since these URLs return HTTP 400 without a size component.
+                if not raw_url.startswith("http"):
+                    raw_url = f"https://{raw_url}"
+                if "%%" in raw_url:
+                    image_url = raw_url.replace("%%", "400x400")
+                else:
+                    image_url = f"{raw_url}/400x400"
             stations.append((station_id, category, name, image_url))
         return stations
 
