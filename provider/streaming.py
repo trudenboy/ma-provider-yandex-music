@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING, Any
 
+from aiohttp import ClientPayloadError
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from music_assistant_models.enums import ContentType, StreamType
 from music_assistant_models.errors import MediaNotFoundError
@@ -339,8 +340,11 @@ class YandexMusicStreamingManager:
                 response.raise_for_status()
             except Exception as err:
                 raise MediaNotFoundError(f"Failed to fetch encrypted stream: {err}") from err
-            async for chunk in response.content.iter_chunked(65536):
-                yield decryptor.update(chunk)
+            try:
+                async for chunk in response.content.iter_chunked(65536):
+                    yield decryptor.update(chunk)
+            except ClientPayloadError as err:
+                self.logger.warning("Encrypted stream ended early (ContentLengthError): %s", err)
             final = decryptor.finalize()
             if final:
                 yield final
