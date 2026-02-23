@@ -1908,11 +1908,14 @@ class YandexMusicProvider(MusicProvider):
         if not station_id:
             return
         if is_playing:
+            batch_id = self._my_wave_batch_id
+            if station_id != ROTOR_STATION_MY_WAVE and station_id in self._wave_states:
+                batch_id = self._wave_states[station_id].batch_id
             await self.client.send_rotor_station_feedback(
                 station_id,
                 "trackStarted",
                 track_id=track_id,
-                batch_id=self._my_wave_batch_id,
+                batch_id=batch_id,
             )
 
     async def on_streamed(self, streamdetails: StreamDetails) -> None:
@@ -1928,10 +1931,13 @@ class YandexMusicProvider(MusicProvider):
         seconds = int(streamdetails.seconds_streamed or 0)
         duration = streamdetails.duration or 0
         feedback_type = "trackFinished" if duration and seconds >= max(0, duration - 10) else "skip"
+        batch_id = self._my_wave_batch_id
+        if station_id != ROTOR_STATION_MY_WAVE and station_id in self._wave_states:
+            batch_id = self._wave_states[station_id].batch_id
         await self.client.send_rotor_station_feedback(
             station_id,
             feedback_type,
             track_id=track_id,
             total_played_seconds=seconds,
-            batch_id=self._my_wave_batch_id,
+            batch_id=batch_id,
         )

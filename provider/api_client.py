@@ -885,11 +885,14 @@ class YandexMusicClient:
             if station is None or station.id is None:
                 continue
             category = station.id.type
+            tag = station.id.tag
+            if not category or not tag:
+                continue
             if category == "user":
                 # Skip personal stations (My Wave is already a separate feature)
                 continue
-            station_id = f"{category}:{station.id.tag}"
-            name = station.name or result.rup_title or station.id.tag
+            station_id = f"{category}:{tag}"
+            name = station.name or result.rup_title or tag
             stations.append((station_id, category, name))
         return stations
 
