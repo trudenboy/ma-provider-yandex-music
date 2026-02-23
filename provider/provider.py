@@ -231,6 +231,14 @@ class YandexMusicProvider(MusicProvider):
             WAVES_FOLDER_ID,
         }
         if subpath and subpath not in _known_folders:
+            # Handle direct wave station_id (e.g. "activity:workout") passed when
+            # MA plays a wave station folder using its item_id as the path subpath.
+            # Station IDs have format "category:tag" where category is non-numeric.
+            if ":" in subpath:
+                cat_part = subpath.split(":", 1)[0]
+                if not cat_part.isdigit():
+                    return await self._browse_wave_station(subpath)
+
             discovered_tags = await self._get_discovered_tag_slugs()
             if subpath in discovered_tags:
                 return await self._get_tag_playlists_as_browse(subpath)
