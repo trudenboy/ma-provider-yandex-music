@@ -103,7 +103,7 @@ class YandexMusicStreamingManager:
                                 "codec": codec,
                             },
                             can_seek=False,
-                            allow_seek=False,
+                            allow_seek=True,
                         )
                     # Unencrypted URL, use directly
                     self.logger.debug(
