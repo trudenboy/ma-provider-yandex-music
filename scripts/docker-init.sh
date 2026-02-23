@@ -9,9 +9,8 @@ echo "==> Setting up Yandex Music provider..."
 PROVIDERS_DIR=$(/app/venv/bin/python3 -c \
     "import music_assistant.providers, os; print(os.path.dirname(music_assistant.providers.__file__))")
 
-# Remove any existing yandex_music provider (image may bundle one), then symlink ours
-rm -rf "${PROVIDERS_DIR}/yandex_music"
-ln -s /tmp/provider "${PROVIDERS_DIR}/yandex_music"
+# Symlink provider — code changes on host are reflected immediately (no rebuild)
+ln -sfn /tmp/provider "${PROVIDERS_DIR}/yandex_music"
 echo "==> Provider linked: ${PROVIDERS_DIR}/yandex_music"
 
 # Install provider-specific runtime dependencies (skips music_assistant itself)
