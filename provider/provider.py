@@ -9,7 +9,7 @@ from collections.abc import AsyncGenerator, Sequence
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from music_assistant_models.enums import MediaType, ProviderFeature
+from music_assistant_models.enums import ImageType, MediaType, ProviderFeature
 from music_assistant_models.errors import (
     InvalidDataError,
     LoginFailed,
@@ -22,6 +22,7 @@ from music_assistant_models.media_items import (
     Artist,
     BrowseFolder,
     ItemMapping,
+    MediaItemImage,
     MediaItemType,
     Playlist,
     ProviderMapping,
@@ -745,10 +746,10 @@ class YandexMusicProvider(MusicProvider):
 
         all_stations = await self.client.get_wave_stations(language)
 
-        # Group stations by category
-        categorized: dict[str, list[tuple[str, str]]] = {}
-        for station_id, cat_key, name in all_stations:
-            categorized.setdefault(cat_key, []).append((station_id, name))
+        # Group stations by category, preserving image_url
+        categorized: dict[str, list[tuple[str, str, str | None]]] = {}
+        for station_id, cat_key, name, image_url in all_stations:
+            categorized.setdefault(cat_key, []).append((station_id, name, image_url))
 
         # waves/ — show category folders
         if len(path_parts) == 1:
@@ -781,12 +782,20 @@ class YandexMusicProvider(MusicProvider):
         category: str | None = path_parts[1] if len(path_parts) > 1 else None
         tag: str | None = path_parts[2] if len(path_parts) > 2 else None
 
-        # waves/<category>/ — show station folders
+        # waves/<category>/ — show station folders with artwork
         if category and not tag:
             cat_stations = categorized.get(category, [])
             folders = []
-            for station_id, station_name in cat_stations:
+            for station_id, station_name, image_url in cat_stations:
                 tag_part = station_id.split(":", 1)[1] if ":" in station_id else station_id
+                station_image: MediaItemImage | None = None
+                if image_url:
+                    station_image = MediaItemImage(
+                        type=ImageType.THUMB,
+                        path=image_url,
+                        provider=self.instance_id,
+                        remotely_accessible=True,
+                    )
                 folders.append(
                     BrowseFolder(
                         item_id=station_id,
@@ -794,6 +803,7 @@ class YandexMusicProvider(MusicProvider):
                         path=f"{base}{tag_part}",
                         name=station_name,
                         is_playable=True,
+                        image=station_image,
                     )
                 )
             return folders

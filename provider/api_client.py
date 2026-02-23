@@ -862,14 +862,17 @@ class YandexMusicClient:
                         tags.append((slug, entity.data.title))
         return tags
 
-    async def get_wave_stations(self, language: str | None = None) -> list[tuple[str, str, str]]:
+    async def get_wave_stations(
+        self, language: str | None = None
+    ) -> list[tuple[str, str, str, str | None]]:
         """Get available rotor wave stations grouped by category.
 
         Calls rotor_stations_list() — the underlying endpoint for landing-blocks/waves.
         Filters out personal stations (type 'user') since My Wave is handled separately.
 
         :param language: Language for station names (e.g. 'ru', 'en'). Defaults to API default.
-        :return: List of (station_id, category, name) tuples, e.g. ('genre:rock', 'genre', 'Рок').
+        :return: List of (station_id, category, name, image_url) tuples,
+                 e.g. ('genre:rock', 'genre', 'Рок', 'https://...').
         """
         try:
             results: list[StationResult] = await self._call_with_retry(
@@ -879,7 +882,7 @@ class YandexMusicClient:
             LOGGER.warning("Error fetching wave stations: %s", err)
             return []
 
-        stations: list[tuple[str, str, str]] = []
+        stations: list[tuple[str, str, str, str | None]] = []
         for result in results or []:
             station = result.station
             if station is None or station.id is None:
@@ -893,7 +896,11 @@ class YandexMusicClient:
                 continue
             station_id = f"{category}:{tag}"
             name = station.name or result.rup_title or tag
-            stations.append((station_id, category, name))
+            image_url: str | None = None
+            raw_url = station.full_image_url or (station.icon.image_url if station.icon else None)
+            if raw_url:
+                image_url = raw_url if raw_url.startswith("http") else f"https://{raw_url}"
+            stations.append((station_id, category, name, image_url))
         return stations
 
     # Library modifications
