@@ -60,6 +60,8 @@ from .constants import (
     TAG_SEASONAL_MAP,
     TAG_SLUG_CATEGORY,
     TRACK_BATCH_SIZE,
+    WAVE_CATEGORY_DISPLAY_ORDER,
+    WAVES_FOLDER_ID,
 )
 from .parsers import (
     get_canonical_provider_name,
@@ -89,6 +91,17 @@ def _parse_radio_item_id(item_id: str) -> tuple[str, str | None]:
     return (item_id, None)
 
 
+class _WaveState:
+    """Per-station mutable state for rotor wave playback."""
+
+    def __init__(self) -> None:
+        self.batch_id: str | None = None
+        self.last_track_id: str | None = None
+        self.seen_track_ids: set[str] = set()
+        self.radio_started_sent: bool = False
+        self.lock: asyncio.Lock = asyncio.Lock()
+
+
 class YandexMusicProvider(MusicProvider):
     """Implementation of a Yandex Music MusicProvider."""
 
@@ -100,6 +113,7 @@ class YandexMusicProvider(MusicProvider):
     _my_wave_radio_started_sent: bool = False
     _my_wave_seen_track_ids: set[str]  # Track IDs seen in current My Wave session
     _my_wave_lock: asyncio.Lock  # Protects My Wave mutable state
+    _wave_states: dict[str, _WaveState]  # Per-station state for tagged wave stations
 
     @property
     def client(self) -> YandexMusicClient:
@@ -141,6 +155,8 @@ class YandexMusicProvider(MusicProvider):
         # Initialize My Wave duplicate tracking
         self._my_wave_seen_track_ids = set()
         self._my_wave_lock = asyncio.Lock()
+        # Initialize per-station wave state dict
+        self._wave_states = {}
         self.logger.info("Successfully connected to Yandex Music")
 
     async def unload(self, is_removed: bool = False) -> None:
@@ -199,10 +215,21 @@ class YandexMusicProvider(MusicProvider):
         if subpath == "mixes":
             return await self._browse_mixes(path, path_parts)
 
+        # Handle waves/ path (rotor stations by genre/mood/activity)
+        if subpath == WAVES_FOLDER_ID:
+            return await self._browse_waves(path, path_parts)
+
         # Handle direct tag subpath (when folder is played by URI, the full path
         # "picks/category/tag" is lost and only the tag slug arrives as subpath).
         # Skip the API call for standard top-level folders that are never tag slugs.
-        _known_folders = {"artists", "albums", "tracks", "playlists", LIKED_TRACKS_PLAYLIST_ID}
+        _known_folders = {
+            "artists",
+            "albums",
+            "tracks",
+            "playlists",
+            LIKED_TRACKS_PLAYLIST_ID,
+            WAVES_FOLDER_ID,
+        }
         if subpath and subpath not in _known_folders:
             discovered_tags = await self._get_discovered_tag_slugs()
             if subpath in discovered_tags:
@@ -283,6 +310,16 @@ class YandexMusicProvider(MusicProvider):
                 provider=self.instance_id,
                 path=f"{base}mixes",
                 name=names.get("mixes", "Mixes"),
+                is_playable=False,
+            )
+        )
+        # Waves folder (always enabled)
+        folders.append(
+            BrowseFolder(
+                item_id=WAVES_FOLDER_ID,
+                provider=self.instance_id,
+                path=f"{base}{WAVES_FOLDER_ID}",
+                name=names.get(WAVES_FOLDER_ID, "Waves"),
                 is_playable=False,
             )
         )
@@ -670,6 +707,145 @@ class YandexMusicProvider(MusicProvider):
             return await self._get_tag_playlists_as_browse(tag)
 
         return []
+
+    def _get_wave_state(self, station_id: str) -> _WaveState:
+        """Get or create per-station wave state.
+
+        :param station_id: Rotor station ID (e.g. 'genre:rock', 'mood:chill').
+        :return: _WaveState instance for this station.
+        """
+        if station_id not in self._wave_states:
+            self._wave_states[station_id] = _WaveState()
+        return self._wave_states[station_id]
+
+    async def _browse_waves(
+        self, path: str, path_parts: list[str]
+    ) -> Sequence[MediaItemType | ItemMapping | BrowseFolder]:
+        """Browse waves folder (rotor stations by genre/mood/activity/epoch/local).
+
+        Fetches available stations from the Yandex rotor API and groups them by category.
+
+        :param path: Full browse path.
+        :param path_parts: Split path parts after ://.
+        :return: List of folders or tracks.
+        """
+        names = self._get_browse_names()
+        base = path.rstrip("/") + "/"
+
+        locale = (self.mass.metadata.locale or "en_US").lower()
+        language = "ru" if locale.startswith("ru") else "en"
+
+        all_stations = await self.client.get_wave_stations(language)
+
+        # Group stations by category
+        categorized: dict[str, list[tuple[str, str]]] = {}
+        for station_id, cat_key, name in all_stations:
+            categorized.setdefault(cat_key, []).append((station_id, name))
+
+        # waves/ — show category folders
+        if len(path_parts) == 1:
+            folders: list[BrowseFolder] = []
+            for cat in WAVE_CATEGORY_DISPLAY_ORDER:
+                if cat in categorized:
+                    folders.append(
+                        BrowseFolder(
+                            item_id=cat,
+                            provider=self.instance_id,
+                            path=f"{base}{cat}",
+                            name=names.get(cat, cat.title()),
+                            is_playable=False,
+                        )
+                    )
+            # Append any categories returned by API that aren't in the predefined order
+            for cat in categorized:
+                if cat not in WAVE_CATEGORY_DISPLAY_ORDER:
+                    folders.append(
+                        BrowseFolder(
+                            item_id=cat,
+                            provider=self.instance_id,
+                            path=f"{base}{cat}",
+                            name=names.get(cat, cat.title()),
+                            is_playable=False,
+                        )
+                    )
+            return folders
+
+        category: str | None = path_parts[1] if len(path_parts) > 1 else None
+        tag: str | None = path_parts[2] if len(path_parts) > 2 else None
+
+        # waves/<category>/ — show station folders
+        if category and not tag:
+            cat_stations = categorized.get(category, [])
+            folders = []
+            for station_id, station_name in cat_stations:
+                tag_part = station_id.split(":", 1)[1] if ":" in station_id else station_id
+                folders.append(
+                    BrowseFolder(
+                        item_id=station_id,
+                        provider=self.instance_id,
+                        path=f"{base}{tag_part}",
+                        name=station_name,
+                        is_playable=True,
+                    )
+                )
+            return folders
+
+        # waves/<category>/<tag> — stream tracks from rotor station
+        if category and tag:
+            station_id = f"{category}:{tag}"
+            return await self._browse_wave_station(station_id)
+
+        return []
+
+    async def _browse_wave_station(self, station_id: str) -> list[Track]:
+        """Browse a rotor wave station and return tracks.
+
+        Fetches tracks from the rotor station, deduplicates within the current session,
+        and sends radioStarted feedback on first call.
+
+        :param station_id: Rotor station ID (e.g. 'genre:rock', 'mood:chill').
+        :return: List of Track objects with composite item_id (track_id@station_id).
+        """
+        state = self._get_wave_state(station_id)
+        async with state.lock:
+            max_tracks = int(
+                self.config.get_value(CONF_MY_WAVE_MAX_TRACKS) or 150  # type: ignore[arg-type]
+            )
+
+            yandex_tracks, batch_id = await self.client.get_rotor_station_tracks(
+                station_id, queue=state.last_track_id
+            )
+            if batch_id:
+                state.batch_id = batch_id
+
+            if not state.radio_started_sent and yandex_tracks:
+                sent = await self.client.send_rotor_station_feedback(
+                    station_id,
+                    "radioStarted",
+                    batch_id=batch_id,
+                )
+                if sent:
+                    state.radio_started_sent = True
+
+            tracks: list[Track] = []
+            first_track_id: str | None = None
+            for yt in yandex_tracks:
+                if len(state.seen_track_ids) >= max_tracks:
+                    break
+                track = self._parse_my_wave_track(yt, state.seen_track_ids)
+                if track is None:
+                    continue
+                # Override station_id in composite item_id to reflect this specific station
+                track_id = track.item_id.split(RADIO_TRACK_ID_SEP, 1)[0]
+                track.item_id = f"{track_id}{RADIO_TRACK_ID_SEP}{station_id}"
+                if first_track_id is None:
+                    first_track_id = track_id
+                tracks.append(track)
+
+            if first_track_id is not None:
+                state.last_track_id = first_track_id
+
+            return tracks
 
     @use_cache(600)
     async def _get_tag_playlists_as_browse(
