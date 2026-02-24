@@ -1,0 +1,27 @@
+/* Music Assistant brand colors — light mode */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #107de7;
+  --md-primary-fg-color--light: #40bcf2;
+  --md-primary-fg-color--dark: #0d6bc4;
+  --md-primary-bg-color: #ffffff;
+  --md-primary-bg-color--light: #ffffffb3;
+  --md-accent-fg-color: #40bcf2;
+  --md-accent-fg-color--transparent: #40bcf21a;
+}
+
+/* Music Assistant brand colors — dark mode */
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #40bcf2;
+  --md-primary-fg-color--light: #60ccf4;
+  --md-primary-fg-color--dark: #107de7;
+  --md-primary-bg-color: #0d1117;
+  --md-primary-bg-color--light: #0d1117b3;
+  --md-accent-fg-color: #40bcf2;
+  --md-accent-fg-color--transparent: #40bcf21a;
+}
+
+/* System font stack — matches music-assistant.io (no Google Fonts dependency) */
+:root {
+  --md-text-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --md-code-font: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
