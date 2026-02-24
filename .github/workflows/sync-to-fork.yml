@@ -3,8 +3,8 @@ on:
   workflow_dispatch:
     inputs:
       target_branch:
-        description: "Target branch in fork (default: dev)"
-        default: "dev"
+        description: "Target branch in fork (default: integration/dev)"
+        default: "integration/dev"
         type: string
       version:
         description: "Version tag (e.g. v2.0.0) — leave empty to use latest release tag"
