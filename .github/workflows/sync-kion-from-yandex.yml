@@ -1,0 +1,16 @@
+name: Sync Kion Music from Yandex Music
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  issues: write  # Required by report-failure job in reusable workflow
+
+jobs:
+  sync:
+    uses: trudenboy/ma-provider-tools/.github/workflows/reusable-sync-kion-from-yandex.yml@main
+    with:
+      yandex_provider_path: provider/
+    secrets: inherit
