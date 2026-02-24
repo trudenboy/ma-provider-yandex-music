@@ -3,13 +3,19 @@ name: Auto-add issues to project
 on:
   issues:
     types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Issue number to add to project (backfill)"
+        required: true
+        type: number
 
 permissions:
   issues: read
 
 jobs:
   add-to-project:
-    if: ${{ startsWith(github.event.label.name, 'incident:') }}
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.event.label.name, 'incident:') }}
     runs-on: ubuntu-latest
     steps:
       - name: Add to MA Ecosystem project and set fields
@@ -17,8 +23,16 @@ jobs:
           GH_TOKEN: ${{ secrets.FORK_SYNC_PAT }}
         run: |
           PID="PVT_kwHOCFMIf84BPvYe"
-          IID="${{ github.event.issue.node_id }}"
-          LABEL="${{ github.event.label.name }}"
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            ISSUE_NUMBER="${{ inputs.issue_number }}"
+            IID=$(gh api repos/${{ github.repository }}/issues/${ISSUE_NUMBER} --jq '.node_id')
+            LABEL=$(gh api repos/${{ github.repository }}/issues/${ISSUE_NUMBER} \
+              --jq '[.labels[].name | select(startswith("incident:"))] | first // ""')
+          else
+            IID="${{ github.event.issue.node_id }}"
+            LABEL="${{ github.event.label.name }}"
+          fi
 
           ITEM_ID=$(gh api graphql -f query='
             mutation($pid:ID!,$iid:ID!){
@@ -50,10 +64,12 @@ jobs:
 
           # Set Incident Type field based on label
           case "$LABEL" in
-            "incident:ci")       INCIDENT_OPT="fa1d1581" ;;
-            "incident:bug")      INCIDENT_OPT="7f0c15cb" ;;
-            "incident:upstream") INCIDENT_OPT="91fd4f1b" ;;
-            "incident:security") INCIDENT_OPT="70de5cac" ;;
+            "incident:ci")       INCIDENT_OPT="ed862375" ;;
+            "incident:bug")      INCIDENT_OPT="99ffcfcf" ;;
+            "incident:upstream") INCIDENT_OPT="568c55b7" ;;
+            "incident:security") INCIDENT_OPT="36892dc8" ;;
+            "incident:release")  INCIDENT_OPT="3c05d86e" ;;
+            "incident:sync")     INCIDENT_OPT="5a277b31" ;;
             *)                   INCIDENT_OPT="" ;;
           esac
 
@@ -70,4 +86,32 @@ jobs:
               -f iid="$ITEM_ID" \
               -f fid="PVTSSF_lAHOCFMIf84BPvYezg-EBow" \
               -f oid="$INCIDENT_OPT"
+          fi
+
+          # Set Priority field based on priority:* label
+
+          ISSUE_LABELS=$(gh api repos/${{ github.repository }}/issues/$(
+            [[ "${{ github.event_name }}" == "workflow_dispatch" ]] && echo "${{ inputs.issue_number }}" || echo "${{ github.event.issue.number }}"
+          ) --jq '[.labels[].name] | join(" ")')
+          case "$ISSUE_LABELS" in
+            *"priority:critical"*) PRIORITY_OPT="362e52a7" ;;
+            *"priority:high"*)     PRIORITY_OPT="21693c8c" ;;
+            *"priority:medium"*)   PRIORITY_OPT="17d0cdb7" ;;
+            *"priority:low"*)      PRIORITY_OPT="c26e065d" ;;
+            *)                     PRIORITY_OPT="" ;;
+          esac
+
+          if [[ -n "$PRIORITY_OPT" ]]; then
+            gh api graphql -f query='
+              mutation($pid:ID!,$iid:ID!,$fid:ID!,$oid:String!){
+                updateProjectV2ItemFieldValue(input:{
+                  projectId:$pid,itemId:$iid,
+                  fieldId:$fid,
+                  value:{singleSelectOptionId:$oid}
+                }){projectV2Item{id}}
+              }' \
+              -f pid="$PID" \
+              -f iid="$ITEM_ID" \
+              -f fid="PVTSSF_lAHOCFMIf84BPvYezg-EBo0" \
+              -f oid="$PRIORITY_OPT"
           fi
