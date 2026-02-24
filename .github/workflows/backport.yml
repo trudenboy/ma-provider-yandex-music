@@ -1,0 +1,24 @@
+name: Backport to stable
+on:
+  push:
+    tags: ["v*-stable"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Stable tag (e.g. v1.2.0-stable) — leave empty to use latest"
+        default: ""
+        type: string
+
+permissions:
+  issues: write  # Required by report-failure job in reusable workflow
+
+jobs:
+  backport:
+    uses: trudenboy/ma-provider-tools/.github/workflows/reusable-sync-to-fork.yml@main
+    with:
+      manifest_path: provider/manifest.json
+      provider_path: provider/
+      target_branch: stable
+      version: ${{ inputs.version }}
+      create_pr: true
+    secrets: inherit
