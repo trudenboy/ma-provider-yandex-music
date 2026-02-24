@@ -576,7 +576,7 @@ class YandexMusicProvider(MusicProvider):
 
         :return: Set of tag slug strings that have playlists.
         """
-        discovered = await self._get_discovered_tags(self.mass.metadata.locale)
+        discovered = await self._get_discovered_tags(self.mass.metadata.locale or "en_US")
         return {slug for slug, _title in discovered}
 
     async def _browse_for_you(
@@ -687,7 +687,7 @@ class YandexMusicProvider(MusicProvider):
         base = path.rstrip("/") + "/"
 
         # Get validated tags
-        discovered = await self._get_discovered_tags(self.mass.metadata.locale)
+        discovered = await self._get_discovered_tags(self.mass.metadata.locale or "en_US")
 
         # Categorize valid tags
         categorized: dict[str, list[tuple[str, str]]] = {}
@@ -2273,7 +2273,7 @@ class YandexMusicProvider(MusicProvider):
             return path
 
         # Strip the #color fragment before fetching the actual image
-        fetch_url = path.split("#")[0] if "#" in path else path
+        fetch_url = path.split("#", maxsplit=1)[0] if "#" in path else path
         try:
             async with self.mass.http_session.get(fetch_url) as resp:
                 resp.raise_for_status()
