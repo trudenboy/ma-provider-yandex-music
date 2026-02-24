@@ -124,4 +124,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.5.9] - 2026-02-24
+
+**Full Changelog**: https://github.com/trudenboy/ma-provider-yandex-music/compare/v2.5.8...v2.5.9
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
