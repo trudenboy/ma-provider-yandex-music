@@ -1,44 +1,62 @@
-# Yandex Music Provider for Music Assistant
+# Провайдер Яндекс Музыки для Music Assistant
 
-English | [Русский](README.ru.md)
+[English](README.en.md) | Русский
 
-> Stream music from Yandex Music with full browse, search, and playback support.
+📖 <a href="https://trudenboy.github.io/ma-provider-yandex-music/">Документация пользователя</a>
 
-## Features
 
-| Feature | Details |
-|---------|---------|
-| Browse | Liked Tracks, My Wave radio, Picks & Mixes, Artists, Albums, Playlists |
-| Search | Tracks, artists, albums, playlists |
-| Playback | AAC (64–192 kbps), MP3 (320 kbps), FLAC (lossless) |
-| Library sync | Liked Tracks → MA library |
-| Streaming modes | Direct / buffered / preload |
+> Слушайте свою библиотеку [Яндекс Музыки](https://music.yandex.ru/) через [Music Assistant](https://music-assistant.io/) с полной поддержкой навигации, поиска, радио и воспроизведения без потерь.
 
-## Compatibility
+## Быстрый старт (Docker)
 
-| Provider Version | Min MA Version | Tested With MA |
-|-----------------|----------------|----------------|
-| 2.x.x           | 2.7.0          | 2.7.0b1        |
+```bash
+# Клонируйте репозиторий
+git clone https://github.com/trudenboy/ma-provider-yandex-music.git
+cd ma-provider-yandex-music
 
-## Installation
+# Запустите Music Assistant с предустановленным провайдером
+docker compose -f docker-compose.dev.yml up
+```
 
-Installed automatically as part of Music Assistant.
+Откройте веб-интерфейс MA по адресу `http://localhost:8095`, затем перейдите в **Настройки → Музыкальные источники → Добавить источник → Яндекс Музыка** и введите ваш OAuth-токен.
 
-### Configuration
+Подробное руководство по Docker-окружению для разработки: [docs/dev-docker.md](docs/dev-docker.md).
 
-1. Settings → Music Sources → Add Source → Yandex Music
-2. Enter your Yandex Music OAuth token
-3. Select streaming quality
-4. Save
+## Возможности
 
-## Documentation
+- **Синхронизация библиотеки** — Исполнители, Альбомы, Треки (Понравившиеся), Плейлисты синхронизируются с библиотекой MA
+- **Редактирование библиотеки** — Лайк / дизлайк Исполнителей, Альбомов, Треков прямо из MA
+- **Навигация** — Понравившиеся треки, Радио «Моя волна», Подборки и Миксы (настроение/эпоха/активность/жанр), Лента, Чарт, Исполнители, Альбомы, Плейлисты
+- **Рекомендации** — персональные разделы «Для вас», представленные как папки рекомендаций MA
+- **Поиск** — Треки, Исполнители, Альбомы, Плейлисты
+- **Похожие треки** — на основе станции ротора Яндекса
+- **Тексты песен** — получаются через API Яндекс Музыки
+- **Качество звука** — Экономичное (AAC ~64 кбит/с) / Сбалансированное (AAC ~192 кбит/с) / Высокое (MP3 ~320 кбит/с) / Превосходное (FLAC без потерь, с AES-дешифрованием для encraw-транспорта)
+- **Радио «Моя волна»** — бесконечное персональное радио с обратной связью ротора и постраничной навигацией
+- **Мультиаккаунт** — одновременное подключение нескольких аккаунтов Яндекс Музыки
 
-| Guide | Description |
-|-------|-------------|
-| [Configuration](docs/configuration.md) | All settings and options |
-| [Development](docs/development.md) | Dev setup, tests, linting |
-| [Contributing](docs/contributing.md) | Bug reports, feature requests, PRs |
+## Документация
 
-## License
+| Руководство | Описание |
+|-------------|----------|
+| [Настройка](docs/configuration.md) | Токен, качество, «Моя волна», настройки понравившихся треков |
+| [Разработка](docs/development.md) | Настройка окружения, тесты, линтинг, формат коммитов |
+| [Участие в разработке](docs/contributing.md) | Сообщения об ошибках, предложения, pull request'ы |
+| [Тестирование](docs/testing.md) | Запуск тестов, CI-пайплайн, покрытие |
+| [Управление инцидентами](docs/incident-management.md) | Метки, автоматическое отслеживание, триаж Copilot |
+| [Локальная разработка (Docker)](docs/dev-docker.md) | Запуск MA + провайдера без установки зависимостей |
 
-[Apache 2.0](LICENSE)
+## Ссылки
+
+- [Music Assistant](https://music-assistant.io/) — open-source музыкальный сервер от Marcel van der Veldt
+- [Яндекс Музыка](https://music.yandex.ru/) — стриминговый сервис от Яндекса
+- [yandex-music-api](https://github.com/MarshalX/yandex-music-api) — неофициальный Python-клиент от MarshalX
+
+## Благодарности
+
+- [@peholod009](https://github.com/peholod009) — за помощь в тестировании и обратную связь
+- [@alkmarmasor](https://github.com/alkmarmasor) — за идеи и наработки в форке провайдера
+
+## Лицензия
+
+[Apache 2.0](LICENSE) — история изменений в [CHANGELOG.md](CHANGELOG.md).

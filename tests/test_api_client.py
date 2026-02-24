@@ -11,6 +11,8 @@ from unittest import mock
 import pytest
 from music_assistant_models.errors import ResourceTemporarilyUnavailable
 from yandex_music.exceptions import NetworkError
+from yandex_music.rotor.dashboard import Dashboard
+from yandex_music.rotor.station_result import StationResult
 from yandex_music.utils.sign_request import DEFAULT_SIGN_KEY
 
 from music_assistant.providers.yandex_music.api_client import (
@@ -189,10 +191,15 @@ async def test_send_rotor_station_feedback_posts() -> None:
 # -- LRC regex tests ---------------------------------------------------------
 
 
-async def test_lrc_regex_matches_valid_synced_lyrics() -> None:
-    """LRC regex matches valid synced lyrics with proper format [mm:ss.xx]."""
-    # LRC timestamp regex pattern used by the client implementation
-    pattern = r"^\[\d{2}:\d{2}(?:\.\d{2,3})?\]"
+def test_lrc_regex_matches_valid_synced_lyrics() -> None:
+    """LRC regex matches valid synced lyrics with proper format [mm:ss.xx].
+
+    Uses re.search (no ^ anchor) matching the implementation in api_client.py,
+    which intentionally allows timestamps anywhere in the text so that LRC
+    metadata lines like [ar:Artist] before the first timestamp don't prevent
+    detection.
+    """
+    pattern = r"\[\d{2}:\d{2}(?:\.\d{2,3})?\]"
 
     # Valid LRC formats that should match
     valid_cases = [
@@ -201,15 +208,16 @@ async def test_lrc_regex_matches_valid_synced_lyrics() -> None:
         "[00:12.345]",  # With milliseconds (3-digit fractional part — upper bound of \d{2,3})
         "[12:34]",  # Another basic format
         "[99:59.99]",  # Edge case
+        "Some [00:12] text",  # Timestamp embedded in text — re.search finds it
     ]
 
     for case in valid_cases:
-        assert re.match(pattern, case), f"Should match: {case}"
+        assert re.search(pattern, case), f"Should match: {case}"
 
 
-async def test_lrc_regex_rejects_invalid_formats() -> None:
+def test_lrc_regex_rejects_invalid_formats() -> None:
     """LRC regex rejects invalid formats (no closing bracket, wrong format)."""
-    pattern = r"^\[\d{2}:\d{2}(?:\.\d{2,3})?\]"
+    pattern = r"\[\d{2}:\d{2}(?:\.\d{2,3})?\]"
 
     # Invalid formats that should NOT match
     invalid_cases = [
@@ -217,19 +225,18 @@ async def test_lrc_regex_rejects_invalid_formats() -> None:
         "00:12]",  # Missing opening bracket
         "[0:12]",  # Single digit minute
         "[00:1]",  # Single digit second
-        "Some [00:12] text",  # Text before timestamp
         "[00:12.1]",  # Single digit centiseconds (should be 2-3 digits)
         "[00:12.1234]",  # Four digit milliseconds
     ]
 
     for case in invalid_cases:
-        assert not re.match(pattern, case), f"Should NOT match: {case}"
+        assert not re.search(pattern, case), f"Should NOT match: {case}"
 
 
 # -- HMAC sign construction tests --------------------------------------------
 
 
-async def test_hmac_sign_construction_explicit() -> None:
+def test_hmac_sign_construction_explicit() -> None:
     """HMAC sign is constructed explicitly with commas stripped from codecs."""
     # Simulate the parameters
     timestamp = 1234567890
@@ -257,3 +264,90 @@ async def test_hmac_sign_construction_explicit() -> None:
     # Verify sign is 43 characters (SHA-256 base64 with one "=" removed)
     assert len(sign) == 43
     assert not sign.endswith("=")
+
+
+# -- get_dashboard_stations --------------------------------------------------
+
+
+async def test_get_dashboard_stations_returns_personalized_stations() -> None:
+    """get_dashboard_stations() returns stations from rotor/stations/dashboard."""
+    client, underlying = _make_client()
+
+    _de_client = type("C", (), {"report_unknown_fields": False})()
+
+    station_result = StationResult.de_json(
+        {
+            "station": {
+                "id": {"type": "mood", "tag": "sad"},
+                "name": "Грустное",
+                "restrictions": {},
+                "restrictions2": {},
+                "full_image_url": None,
+                "id_for_from": "mood-sad",
+                "icon": None,
+            },
+            "settings": None,
+            "settings2": None,
+            "ad_params": None,
+            "rup_title": "Sad Songs",
+            "rup_description": "",
+        },
+        _de_client,
+    )
+
+    dashboard = mock.MagicMock(spec=Dashboard)
+    dashboard.stations = [station_result]
+    underlying.rotor_stations_dashboard.return_value = dashboard
+
+    stations = await client.get_dashboard_stations()
+
+    assert len(stations) == 1
+    station_id, name, _image_url = stations[0]
+    assert station_id == "mood:sad"
+    assert name == "Грустное"  # station.name takes priority over rup_title
+    underlying.rotor_stations_dashboard.assert_called_once()
+
+
+async def test_get_dashboard_stations_empty_on_error() -> None:
+    """get_dashboard_stations() returns empty list on network error."""
+    client, underlying = _make_client()
+    underlying.rotor_stations_dashboard.side_effect = NetworkError("timeout")
+
+    stations = await client.get_dashboard_stations()
+
+    assert stations == []
+
+
+async def test_get_dashboard_stations_skips_user_type() -> None:
+    """get_dashboard_stations() filters out personal 'user' type stations."""
+    client, underlying = _make_client()
+
+    _de_client = type("C", (), {"report_unknown_fields": False})()
+
+    personal_station = StationResult.de_json(
+        {
+            "station": {
+                "id": {"type": "user", "tag": "onyourwave"},
+                "name": "My Wave",
+                "restrictions": {},
+                "restrictions2": {},
+                "full_image_url": None,
+                "id_for_from": "user-onyourwave",
+                "icon": None,
+            },
+            "settings": None,
+            "settings2": None,
+            "ad_params": None,
+            "rup_title": "My Wave",
+            "rup_description": "",
+        },
+        _de_client,
+    )
+
+    dashboard = mock.MagicMock(spec=Dashboard)
+    dashboard.stations = [personal_station]
+    underlying.rotor_stations_dashboard.return_value = dashboard
+
+    stations = await client.get_dashboard_stations()
+
+    assert stations == []

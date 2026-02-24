@@ -44,6 +44,9 @@ PR description should include:
 
 By contributing, you agree that your contributions will be licensed under the Apache 2.0 License.
 
-## See Also
+## Further Reading
 
-- [Development](development.md) — dev setup, test commands, linting
+- [Testing Guide](testing.md) — running tests locally, CI pipeline, coverage
+- [Incident Management](incident-management.md) — labels, issue automation, Copilot triage
+- [Docker Dev Environment](dev-docker.md) — run MA + provider locally without dependencies
+- [Development](development.md) — dev setup, tooling, code quality standards

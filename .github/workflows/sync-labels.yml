@@ -6,6 +6,9 @@ on:
       - .github/labels.yml
   workflow_dispatch:
 
+permissions:
+  issues: write  # Required by sync-labels job in reusable workflow
+
 jobs:
   sync-labels:
     uses: trudenboy/ma-provider-tools/.github/workflows/reusable-sync-labels.yml@main

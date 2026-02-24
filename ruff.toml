@@ -1,0 +1,104 @@
+fix = true
+show-fixes = true
+line-length = 100
+target-version = "py312"
+
+[format]
+line-ending = "lf"
+
+[lint]
+select = ["ALL"]
+ignore = [
+  "ANN002",
+  "ANN003",
+  "ANN401",
+  "D203",
+  "D213",
+  "D417",
+  "EM101",
+  "EM102",
+  "FIX002",
+  "PLR2004",
+  "PGH004",
+  "PD011",
+  "S101",
+  "TC001",
+  "TC003",
+  "TD002",
+  "TD003",
+  "TD004",
+  "TRY003",
+  "TRY400",
+  "COM812",
+  "ASYNC109",
+  "ASYNC110",
+  "N818",
+  "BLE001",
+  "FBT001",
+  "FBT002",
+  "FBT003",
+  "ANN001",
+  "ANN201",
+  "ANN202",
+  "TRY002",
+  "PTH103",
+  "PTH100",
+  "PTH110",
+  "PTH111",
+  "PTH112",
+  "PTH113",
+  "PTH118",
+  "PTH120",
+  "PTH123",
+  "PYI034",
+  "G004",
+  "PGH003",
+  "DTZ005",
+  "S104",
+  "S105",
+  "S106",
+  "SLF001",
+  "SIM102",
+  "PERF401",
+  "PERF402",
+  "ARG002",
+  "S311",
+  "TRY301",
+  "PLR0912",
+  "B904",
+  "TRY401",
+  "S324",
+  "DTZ006",
+  "ERA001",
+  "PTH206",
+  "C901",
+  "PTH119",
+  "PTH116",
+  "RUF012",
+  "S304",
+  "RUF006",
+  "TRY300",
+  "S608",
+  "S307",
+  "B007",
+  "ANN204",
+]
+
+[lint.pydocstyle]
+convention = "pep257"
+
+[lint.pylint]
+max-args = 10
+max-branches = 25
+max-returns = 15
+max-statements = 50
+
+[lint.mccabe]
+max-complexity = 25
+
+[lint.flake8-pytest-style]
+fixture-parentheses = false
+mark-parentheses = false
+
+[lint.isort]
+known-first-party = ["music_assistant"]

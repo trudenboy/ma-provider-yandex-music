@@ -9,9 +9,6 @@ CONF_TOKEN = "token"
 CONF_QUALITY = "quality"
 CONF_BASE_URL = "base_url"
 
-# Buffered mode stream buffer size (MB)
-CONF_STREAM_BUFFER_MB: Final[str] = "stream_buffer_mb"
-
 # Actions
 CONF_ACTION_AUTH = "auth"
 CONF_ACTION_CLEAR_AUTH = "clear_auth"
@@ -52,6 +49,7 @@ PROVIDER_DISPLAY_NAME_RU: Final[str] = "Яндекс Музыка"
 PROVIDER_DISPLAY_NAME_EN: Final[str] = "Yandex Music"
 
 # Known API-returned system owner name variants (all locales/capitalizations)
+# All entries are lowercase; compare with owner_name.lower() for case-insensitive lookup
 YANDEX_SYSTEM_OWNER_NAMES: Final[frozenset[str]] = frozenset(
     {
         "яндекс музыка",
@@ -137,6 +135,18 @@ BROWSE_NAMES_RU: Final[dict[str, str]] = {
     "mood_mix": "Настроение",
     "activity_mix": "Активность",
     "seasonal_mix": "Сезонное",
+    # Top-level browse groups
+    "for_you": "Для вас",
+    "collection": "Коллекция",
+    # Waves / Radio (rotor station categories)
+    "waves": "Радио",
+    "radio": "Радио",
+    "my_waves": "Персональные",
+    "my_waves_set": "AI Сеты",
+    "waves_landing": "Избранные волны",
+    "genre": "Жанры",
+    "epoch": "Эпоха",
+    "local": "Местное",
 }
 BROWSE_NAMES_EN: Final[dict[str, str]] = {
     "my_wave": "My Wave",
@@ -197,6 +207,18 @@ BROWSE_NAMES_EN: Final[dict[str, str]] = {
     "mood_mix": "Mood Mix",
     "activity_mix": "Activity Mix",
     "seasonal_mix": "Seasonal",
+    # Top-level browse groups
+    "for_you": "For You",
+    "collection": "Collection",
+    # Waves / Radio (rotor station categories)
+    "waves": "Radio",
+    "radio": "Radio",
+    "my_waves": "Personal",
+    "my_waves_set": "AI Wave Sets",
+    "waves_landing": "Featured Waves",
+    "genre": "Genres",
+    "epoch": "Era",
+    "local": "Local",
 }
 
 # Tag categories for Picks and Recommendations
@@ -295,3 +317,29 @@ TAG_SEASONAL_MAP: Final[dict[int, str]] = {
 
 # Tags for Mixes (seasonal collections)
 TAG_MIXES: Final[list[str]] = ["winter", "spring", "summer", "autumn", "newyear"]
+
+# Waves by tag (rotor stations) — canonical ID is "waves", "radio" is an alias
+WAVES_FOLDER_ID: Final[str] = "waves"
+RADIO_FOLDER_ID: Final[str] = "radio"
+
+# Personalized waves subfolder (rotor/stations/dashboard)
+MY_WAVES_FOLDER_ID: Final[str] = "my_waves"
+
+# AI Wave Sets subfolder (from /landing-blocks/mixes-waves)
+MY_WAVES_SET_FOLDER_ID: Final[str] = "my_waves_set"
+
+# Featured Waves subfolder inside Radio (from /landing-blocks/waves)
+WAVES_LANDING_FOLDER_ID: Final[str] = "waves_landing"
+
+# Top-level browse group folders
+FOR_YOU_FOLDER_ID: Final[str] = "for_you"
+COLLECTION_FOLDER_ID: Final[str] = "collection"
+
+# Preferred display order for wave categories (rotor station types)
+WAVE_CATEGORY_DISPLAY_ORDER: Final[list[str]] = [
+    "genre",
+    "mood",
+    "activity",
+    "epoch",
+    "local",
+]

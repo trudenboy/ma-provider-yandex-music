@@ -7,9 +7,10 @@ import logging
 import random
 from collections.abc import AsyncGenerator, Sequence
 from datetime import UTC, datetime
+from io import BytesIO
 from typing import TYPE_CHECKING, Any
 
-from music_assistant_models.enums import MediaType, ProviderFeature
+from music_assistant_models.enums import ImageType, MediaType, ProviderFeature
 from music_assistant_models.errors import (
     InvalidDataError,
     LoginFailed,
@@ -22,6 +23,7 @@ from music_assistant_models.media_items import (
     Artist,
     BrowseFolder,
     ItemMapping,
+    MediaItemImage,
     MediaItemType,
     Playlist,
     ProviderMapping,
@@ -30,6 +32,7 @@ from music_assistant_models.media_items import (
     Track,
     UniqueList,
 )
+from PIL import Image as PilImage
 
 from music_assistant.controllers.cache import use_cache
 from music_assistant.models.music_provider import MusicProvider
@@ -39,16 +42,22 @@ from .constants import (
     BROWSE_INITIAL_TRACKS,
     BROWSE_NAMES_EN,
     BROWSE_NAMES_RU,
+    COLLECTION_FOLDER_ID,
     CONF_BASE_URL,
     CONF_LIKED_TRACKS_MAX_TRACKS,
     CONF_MY_WAVE_MAX_TRACKS,
     CONF_TOKEN,
     DEFAULT_BASE_URL,
     DISCOVERY_INITIAL_TRACKS,
+    FOR_YOU_FOLDER_ID,
+    IMAGE_SIZE_MEDIUM,
     LIKED_TRACKS_PLAYLIST_ID,
     MY_WAVE_BATCH_SIZE,
     MY_WAVE_PLAYLIST_ID,
+    MY_WAVES_FOLDER_ID,
+    MY_WAVES_SET_FOLDER_ID,
     PLAYLIST_ID_SPLITTER,
+    RADIO_FOLDER_ID,
     RADIO_TRACK_ID_SEP,
     ROTOR_STATION_MY_WAVE,
     TAG_CATEGORY_ACTIVITY,
@@ -60,6 +69,12 @@ from .constants import (
     TAG_SEASONAL_MAP,
     TAG_SLUG_CATEGORY,
     TRACK_BATCH_SIZE,
+    WAVE_CATEGORY_DISPLAY_ORDER,
+    WAVES_FOLDER_ID,
+    WAVES_LANDING_FOLDER_ID,
+)
+from .parsers import (
+    _get_image_url as get_image_url,
 )
 from .parsers import (
     get_canonical_provider_name,
@@ -89,6 +104,17 @@ def _parse_radio_item_id(item_id: str) -> tuple[str, str | None]:
     return (item_id, None)
 
 
+class _WaveState:
+    """Per-station mutable state for rotor wave playback."""
+
+    def __init__(self) -> None:
+        self.batch_id: str | None = None
+        self.last_track_id: str | None = None
+        self.seen_track_ids: set[str] = set()
+        self.radio_started_sent: bool = False
+        self.lock: asyncio.Lock = asyncio.Lock()
+
+
 class YandexMusicProvider(MusicProvider):
     """Implementation of a Yandex Music MusicProvider."""
 
@@ -100,6 +126,8 @@ class YandexMusicProvider(MusicProvider):
     _my_wave_radio_started_sent: bool = False
     _my_wave_seen_track_ids: set[str]  # Track IDs seen in current My Wave session
     _my_wave_lock: asyncio.Lock  # Protects My Wave mutable state
+    _wave_states: dict[str, _WaveState]  # Per-station state for tagged wave stations
+    _wave_bg_colors: dict[str, str]  # image_url -> hex bg color for transparent covers
 
     @property
     def client(self) -> YandexMusicClient:
@@ -141,6 +169,9 @@ class YandexMusicProvider(MusicProvider):
         # Initialize My Wave duplicate tracking
         self._my_wave_seen_track_ids = set()
         self._my_wave_lock = asyncio.Lock()
+        # Initialize per-station wave state dict
+        self._wave_states = {}
+        self._wave_bg_colors = {}
         self.logger.info("Successfully connected to Yandex Music")
 
     async def unload(self, is_removed: bool = False) -> None:
@@ -148,8 +179,6 @@ class YandexMusicProvider(MusicProvider):
 
         :param is_removed: Whether the provider is being removed.
         """
-        if self._streaming:
-            await self._streaming.close()
         if self._client:
             await self._client.disconnect()
         self._client = None
@@ -193,6 +222,14 @@ class YandexMusicProvider(MusicProvider):
             async with self._my_wave_lock:
                 return await self._browse_my_wave(path, sub_subpath)
 
+        # For You folder (picks + mixes)
+        if subpath == FOR_YOU_FOLDER_ID:
+            return await self._browse_for_you(path, path_parts)
+
+        # Collection folder (library items)
+        if subpath == COLLECTION_FOLDER_ID:
+            return await self._browse_collection(path)
+
         # Handle picks/ path (mood, activity, era, genres)
         if subpath == "picks":
             return await self._browse_picks(path, path_parts)
@@ -201,11 +238,44 @@ class YandexMusicProvider(MusicProvider):
         if subpath == "mixes":
             return await self._browse_mixes(path, path_parts)
 
+        # Handle waves/ and radio/ paths (rotor stations by genre/mood/activity)
+        if subpath in (WAVES_FOLDER_ID, RADIO_FOLDER_ID):
+            return await self._browse_waves(path, path_parts)
+
+        # Handle my_waves_set/ path (AI Wave Sets from /landing-blocks/mixes-waves)
+        if subpath == MY_WAVES_SET_FOLDER_ID:
+            return await self._browse_vibe_sets(path, path_parts)
+
+        # Handle waves_landing/ path (Featured Waves from /landing-blocks/waves)
+        if subpath == WAVES_LANDING_FOLDER_ID:
+            return await self._browse_waves_landing(path, path_parts)
+
         # Handle direct tag subpath (when folder is played by URI, the full path
         # "picks/category/tag" is lost and only the tag slug arrives as subpath).
         # Skip the API call for standard top-level folders that are never tag slugs.
-        _known_folders = {"artists", "albums", "tracks", "playlists", LIKED_TRACKS_PLAYLIST_ID}
+        _known_folders = {
+            "artists",
+            "albums",
+            "tracks",
+            "playlists",
+            LIKED_TRACKS_PLAYLIST_ID,
+            WAVES_FOLDER_ID,
+            RADIO_FOLDER_ID,
+            MY_WAVES_FOLDER_ID,
+            MY_WAVES_SET_FOLDER_ID,
+            WAVES_LANDING_FOLDER_ID,
+            FOR_YOU_FOLDER_ID,
+            COLLECTION_FOLDER_ID,
+        }
         if subpath and subpath not in _known_folders:
+            # Handle direct wave station_id (e.g. "activity:workout") passed when
+            # MA plays a wave station folder using its item_id as the path subpath.
+            # Station IDs have format "category:tag" where category is non-numeric.
+            if ":" in subpath:
+                cat_part = subpath.split(":", 1)[0]
+                if not cat_part.isdigit():
+                    return await self._browse_wave_station(subpath)
+
             discovered_tags = await self._get_discovered_tag_slugs()
             if subpath in discovered_tags:
                 return await self._get_tag_playlists_as_browse(subpath)
@@ -217,7 +287,7 @@ class YandexMusicProvider(MusicProvider):
 
         folders: list[BrowseFolder] = []
         base = path if path.endswith("//") else path.rstrip("/") + "/"
-        # My Wave folder (always enabled)
+        # My Wave folder (always enabled — Яндекс «Моя волна»)
         folders.append(
             BrowseFolder(
                 item_id=MY_WAVE_PLAYLIST_ID,
@@ -227,64 +297,53 @@ class YandexMusicProvider(MusicProvider):
                 is_playable=True,
             )
         )
-        if ProviderFeature.LIBRARY_ARTISTS in self.supported_features:
-            folders.append(
-                BrowseFolder(
-                    item_id="artists",
-                    provider=self.instance_id,
-                    path=f"{base}artists",
-                    name=names["artists"],
-                    is_playable=True,
-                )
-            )
-        if ProviderFeature.LIBRARY_ALBUMS in self.supported_features:
-            folders.append(
-                BrowseFolder(
-                    item_id="albums",
-                    provider=self.instance_id,
-                    path=f"{base}albums",
-                    name=names["albums"],
-                    is_playable=True,
-                )
-            )
-        # Liked Tracks folder (always enabled)
-        if ProviderFeature.LIBRARY_TRACKS in self.supported_features:
-            folders.append(
-                BrowseFolder(
-                    item_id="tracks",
-                    provider=self.instance_id,
-                    path=f"{base}tracks",
-                    name=names["tracks"],
-                    is_playable=True,
-                )
-            )
-        if ProviderFeature.LIBRARY_PLAYLISTS in self.supported_features:
-            folders.append(
-                BrowseFolder(
-                    item_id="playlists",
-                    provider=self.instance_id,
-                    path=f"{base}playlists",
-                    name=names["playlists"],
-                    is_playable=True,
-                )
-            )
-        # Picks folder (always enabled)
+        # For You folder — Picks + Mixes (Яндекс «Для вас»)
         folders.append(
             BrowseFolder(
-                item_id="picks",
+                item_id=FOR_YOU_FOLDER_ID,
                 provider=self.instance_id,
-                path=f"{base}picks",
-                name=names.get("picks", "Picks"),
+                path=f"{base}{FOR_YOU_FOLDER_ID}",
+                name=names.get(FOR_YOU_FOLDER_ID, "For You"),
                 is_playable=False,
             )
         )
-        # Mixes folder (always enabled)
+        # Collection folder — library items (Яндекс «Коллекция»)
+        has_library = any(
+            f in self.supported_features
+            for f in (
+                ProviderFeature.LIBRARY_ARTISTS,
+                ProviderFeature.LIBRARY_ALBUMS,
+                ProviderFeature.LIBRARY_TRACKS,
+                ProviderFeature.LIBRARY_PLAYLISTS,
+            )
+        )
+        if has_library:
+            folders.append(
+                BrowseFolder(
+                    item_id=COLLECTION_FOLDER_ID,
+                    provider=self.instance_id,
+                    path=f"{base}{COLLECTION_FOLDER_ID}",
+                    name=names.get(COLLECTION_FOLDER_ID, "Collection"),
+                    is_playable=False,
+                )
+            )
+        # Radio folder — rotor stations (Яндекс волны, renamed to Radio)
         folders.append(
             BrowseFolder(
-                item_id="mixes",
+                item_id=RADIO_FOLDER_ID,
                 provider=self.instance_id,
-                path=f"{base}mixes",
-                name=names.get("mixes", "Mixes"),
+                path=f"{base}{RADIO_FOLDER_ID}",
+                name=names.get(RADIO_FOLDER_ID, "Radio"),
+                is_playable=False,
+            )
+        )
+        # AI Wave Sets — parametric stations from /landing-blocks/mixes-waves
+        folders.append(
+            BrowseFolder(
+                item_id=MY_WAVES_SET_FOLDER_ID,
+                provider=self.instance_id,
+                path=f"{base}{MY_WAVES_SET_FOLDER_ID}",
+                name=names.get(MY_WAVES_SET_FOLDER_ID, "AI Wave Sets"),
                 is_playable=False,
             )
         )
@@ -354,7 +413,7 @@ class YandexMusicProvider(MusicProvider):
                 if total_track_count >= effective_limit:
                     break
 
-                track = self._parse_my_wave_track(yt)
+                track = self._parse_my_wave_track(yt, self._my_wave_seen_track_ids)
                 if track is None:
                     continue
                 all_tracks.append(track)
@@ -390,20 +449,17 @@ class YandexMusicProvider(MusicProvider):
             )
         return all_tracks
 
-    def _parse_my_wave_track(self, yt: Any, seen_ids: set[str] | None = None) -> Track | None:
+    def _parse_my_wave_track(self, yt: Any, seen_ids: set[str]) -> Track | None:
         """Parse a Yandex track into a My Wave Track with composite item_id.
 
         Extracts the track_id, checks for duplicates in the seen_ids set,
         sets composite item_id (track_id@station_id), and updates provider_mappings.
-        Must be called under _my_wave_lock when using the shared seen set.
+        Callers using shared state must hold _my_wave_lock.
 
         :param yt: Yandex track object from rotor station response.
-        :param seen_ids: Set of already-seen track IDs (defaults to shared state).
+        :param seen_ids: Set of already-seen track IDs to check and update.
         :return: Parsed Track with composite item_id, or None if duplicate/invalid.
         """
-        if seen_ids is None:
-            seen_ids = self._my_wave_seen_track_ids
-
         try:
             t = parse_track(self, yt)
         except InvalidDataError as err:
@@ -526,8 +582,99 @@ class YandexMusicProvider(MusicProvider):
 
         :return: Set of tag slug strings that have playlists.
         """
-        discovered = await self._get_discovered_tags(self.mass.metadata.locale)
+        discovered = await self._get_discovered_tags(self.mass.metadata.locale or "en_US")
         return {slug for slug, _title in discovered}
+
+    async def _browse_for_you(
+        self, path: str, path_parts: list[str]
+    ) -> Sequence[MediaItemType | ItemMapping | BrowseFolder]:
+        """Browse «For You» folder — shows Picks and Mixes sub-folders.
+
+        :param path: Full browse path.
+        :param path_parts: Split path parts after ://.
+        :return: List of sub-folders (Picks, Mixes).
+        """
+        names = self._get_browse_names()
+        # Strip the for_you segment to build child paths that route to picks/mixes
+        # Path format: ...//for_you  → child paths should be ...//picks, ...//mixes
+        # We build base from the root (before for_you) by dropping the last segment.
+        base_parts = path.split("//", 1)
+        root_base = (base_parts[0] + "//") if len(base_parts) > 1 else path.rstrip("/") + "/"
+
+        if len(path_parts) == 1:
+            return [
+                BrowseFolder(
+                    item_id="picks",
+                    provider=self.instance_id,
+                    path=f"{root_base}picks",
+                    name=names.get("picks", "Picks"),
+                    is_playable=False,
+                ),
+                BrowseFolder(
+                    item_id="mixes",
+                    provider=self.instance_id,
+                    path=f"{root_base}mixes",
+                    name=names.get("mixes", "Mixes"),
+                    is_playable=False,
+                ),
+            ]
+        # Deeper path: delegate to picks or mixes handler via canonical paths
+        return await super().browse(path)
+
+    async def _browse_collection(
+        self, path: str
+    ) -> Sequence[MediaItemType | ItemMapping | BrowseFolder]:
+        """Browse «Collection» folder — shows library sub-folders (tracks/artists/albums/playlists).
+
+        :param path: Full browse path.
+        :return: List of library sub-folders.
+        """
+        names = self._get_browse_names()
+        base_parts = path.split("//", 1)
+        root_base = (base_parts[0] + "//") if len(base_parts) > 1 else path.rstrip("/") + "/"
+
+        folders: list[BrowseFolder] = []
+        if ProviderFeature.LIBRARY_TRACKS in self.supported_features:
+            folders.append(
+                BrowseFolder(
+                    item_id="tracks",
+                    provider=self.instance_id,
+                    path=f"{root_base}tracks",
+                    name=names["tracks"],
+                    is_playable=True,
+                )
+            )
+        if ProviderFeature.LIBRARY_ARTISTS in self.supported_features:
+            folders.append(
+                BrowseFolder(
+                    item_id="artists",
+                    provider=self.instance_id,
+                    path=f"{root_base}artists",
+                    name=names["artists"],
+                    is_playable=True,
+                )
+            )
+        if ProviderFeature.LIBRARY_ALBUMS in self.supported_features:
+            folders.append(
+                BrowseFolder(
+                    item_id="albums",
+                    provider=self.instance_id,
+                    path=f"{root_base}albums",
+                    name=names["albums"],
+                    is_playable=True,
+                )
+            )
+        if ProviderFeature.LIBRARY_PLAYLISTS in self.supported_features:
+            folders.append(
+                BrowseFolder(
+                    item_id="playlists",
+                    provider=self.instance_id,
+                    path=f"{root_base}playlists",
+                    name=names["playlists"],
+                    is_playable=True,
+                )
+            )
+        return folders
 
     async def _browse_picks(
         self, path: str, path_parts: list[str]
@@ -546,7 +693,7 @@ class YandexMusicProvider(MusicProvider):
         base = path.rstrip("/") + "/"
 
         # Get validated tags
-        discovered = await self._get_discovered_tags(self.mass.metadata.locale)
+        discovered = await self._get_discovered_tags(self.mass.metadata.locale or "en_US")
 
         # Categorize valid tags
         categorized: dict[str, list[tuple[str, str]]] = {}
@@ -644,8 +791,15 @@ class YandexMusicProvider(MusicProvider):
         names = self._get_browse_names()
         base = path.rstrip("/") + "/"
 
-        # Validate seasonal tags directly (no landing dependency)
-        available_mixes = [t for t in TAG_MIXES if await self._validate_tag(t)]
+        # Validate seasonal tags in parallel (no landing dependency)
+        sem = asyncio.Semaphore(5)
+
+        async def _check(tag: str) -> str | None:
+            async with sem:
+                return tag if await self._validate_tag(tag) else None
+
+        results = await asyncio.gather(*[_check(t) for t in TAG_MIXES])
+        available_mixes = [t for t in results if t is not None]
 
         # mixes/ - show seasonal folders (only valid ones)
         if len(path_parts) == 1:
@@ -668,6 +822,453 @@ class YandexMusicProvider(MusicProvider):
             return await self._get_tag_playlists_as_browse(tag)
 
         return []
+
+    def _get_wave_state(self, station_id: str) -> _WaveState:
+        """Get or create per-station wave state.
+
+        :param station_id: Rotor station ID (e.g. 'genre:rock', 'mood:chill').
+        :return: _WaveState instance for this station.
+        """
+        return self._wave_states.setdefault(station_id, _WaveState())
+
+    async def _browse_waves(
+        self, path: str, path_parts: list[str]
+    ) -> Sequence[MediaItemType | ItemMapping | BrowseFolder]:
+        """Browse waves folder (rotor stations by genre/mood/activity/epoch/local).
+
+        Fetches available stations from the Yandex rotor API and groups them by category.
+
+        :param path: Full browse path.
+        :param path_parts: Split path parts after ://.
+        :return: List of folders or tracks.
+        """
+        names = self._get_browse_names()
+        base = path.rstrip("/") + "/"
+
+        locale = (self.mass.metadata.locale or "en_US").lower()
+        language = "ru" if locale.startswith("ru") else "en"
+
+        all_stations = await self.client.get_wave_stations(language)
+
+        # Group stations by category, preserving image_url
+        categorized: dict[str, list[tuple[str, str, str | None]]] = {}
+        for station_id, cat_key, name, image_url in all_stations:
+            categorized.setdefault(cat_key, []).append((station_id, name, image_url))
+
+        # waves/ — show category folders
+        if len(path_parts) == 1:
+            folders: list[BrowseFolder] = []
+            # Personalized "My Waves" first — only show if dashboard returns stations
+            dashboard_stations = await self._get_dashboard_stations_cached()
+            if dashboard_stations:
+                folders.append(
+                    BrowseFolder(
+                        item_id=MY_WAVES_FOLDER_ID,
+                        provider=self.instance_id,
+                        path=f"{base}{MY_WAVES_FOLDER_ID}",
+                        name=names.get(MY_WAVES_FOLDER_ID, "My Waves"),
+                        is_playable=False,
+                    )
+                )
+            # Featured Waves — only show if landing-blocks/waves returns data
+            waves_landing = await self._get_waves_landing_cached()
+            if waves_landing:
+                folders.append(
+                    BrowseFolder(
+                        item_id=WAVES_LANDING_FOLDER_ID,
+                        provider=self.instance_id,
+                        path=f"{base}{WAVES_LANDING_FOLDER_ID}",
+                        name=names.get(WAVES_LANDING_FOLDER_ID, "Featured Waves"),
+                        is_playable=False,
+                    )
+                )
+            for cat in WAVE_CATEGORY_DISPLAY_ORDER:
+                if cat in categorized:
+                    folders.append(
+                        BrowseFolder(
+                            item_id=cat,
+                            provider=self.instance_id,
+                            path=f"{base}{cat}",
+                            name=names.get(cat, cat.title()),
+                            is_playable=False,
+                        )
+                    )
+            # Append any categories returned by API that aren't in the predefined order
+            for cat in categorized:
+                if cat not in WAVE_CATEGORY_DISPLAY_ORDER:
+                    folders.append(
+                        BrowseFolder(
+                            item_id=cat,
+                            provider=self.instance_id,
+                            path=f"{base}{cat}",
+                            name=names.get(cat, cat.title()),
+                            is_playable=False,
+                        )
+                    )
+            return folders
+
+        category: str | None = path_parts[1] if len(path_parts) > 1 else None
+        tag: str | None = path_parts[2] if len(path_parts) > 2 else None
+
+        # waves/my_waves/ — show personalized stations from dashboard
+        if category == MY_WAVES_FOLDER_ID and not tag:
+            return await self._browse_my_waves_stations(path)
+
+        # waves/waves_landing/... — redirect to Featured Waves browse
+        if category == WAVES_LANDING_FOLDER_ID:
+            return await self._browse_waves_landing(path, path_parts[1:])
+
+        # waves/my_waves/<tag>[/next] — play a specific personal station
+        # The full station_id has format "genre:allrock", not "my_waves:allrock".
+        # Resolve by matching against dashboard stations cache.
+        if category == MY_WAVES_FOLDER_ID and tag:
+            dashboard_stations = await self._get_dashboard_stations_cached()
+            for sid, _, _ in dashboard_stations:
+                sid_tag = sid.split(":", 1)[1] if ":" in sid else sid
+                if sid_tag == tag:
+                    return await self._browse_wave_station(sid, path=path)
+            # Fallback: try tag as direct station_id (e.g. "genre:allrock" passed verbatim)
+            if ":" in tag:
+                return await self._browse_wave_station(tag, path=path)
+            return []
+
+        # waves/<category>/ — show station folders with artwork
+        if category and not tag:
+            cat_stations = categorized.get(category, [])
+            folders = []
+            for station_id, station_name, image_url in cat_stations:
+                tag_part = station_id.split(":", 1)[1] if ":" in station_id else station_id
+                station_image: MediaItemImage | None = None
+                if image_url:
+                    station_image = MediaItemImage(
+                        type=ImageType.THUMB,
+                        path=image_url,
+                        provider=self.instance_id,
+                        remotely_accessible=True,
+                    )
+                folders.append(
+                    BrowseFolder(
+                        item_id=station_id,
+                        provider=self.instance_id,
+                        path=f"{base}{tag_part}",
+                        name=station_name,
+                        is_playable=True,
+                        image=station_image,
+                    )
+                )
+            return folders
+
+        # waves/<category>/<tag>[/next] — stream tracks from rotor station
+        if category and tag:
+            station_id = f"{category}:{tag}"
+            return await self._browse_wave_station(station_id, path=path)
+
+        return []
+
+    @use_cache(600)
+    async def _get_dashboard_stations_cached(self) -> list[tuple[str, str, str | None]]:
+        """Get personalized dashboard stations, cached for 10 minutes.
+
+        :return: List of (station_id, name, image_url) tuples.
+        """
+        return await self.client.get_dashboard_stations()
+
+    async def _browse_my_waves_stations(self, path: str) -> list[BrowseFolder]:
+        """Browse personalized wave stations from rotor/stations/dashboard.
+
+        Names are resolved from the non-personalized station list so that
+        stations show their actual genre/mood name (e.g. "Рок") rather than
+        the generic "Моя волна" label that the dashboard API returns.
+
+        :param path: Full browse path (used to build sub-paths).
+        :return: List of playable BrowseFolder items, one per station.
+        """
+        stations = await self._get_dashboard_stations_cached()
+
+        # Build a name map from the non-personalized list for proper localized names.
+        locale = (self.mass.metadata.locale or "en_US").lower()
+        language = "ru" if locale.startswith("ru") else "en"
+        all_stations = await self.client.get_wave_stations(language)
+        station_name_map: dict[str, str] = {sid: name for sid, _, name, _ in all_stations}
+
+        base = path.rstrip("/") + "/"
+        folders: list[BrowseFolder] = []
+        for station_id, fallback_name, image_url in stations:
+            # Use full station_id (e.g. "genre:rock") in path to avoid collisions
+            # when two stations share the same tag but differ by category.
+            # The routing fallback (if ":" in tag) handles this correctly.
+            name = station_name_map.get(station_id, fallback_name)
+            station_image: MediaItemImage | None = None
+            if image_url:
+                station_image = MediaItemImage(
+                    type=ImageType.THUMB,
+                    path=image_url,
+                    provider=self.instance_id,
+                    remotely_accessible=True,
+                )
+            folders.append(
+                BrowseFolder(
+                    item_id=station_id,
+                    provider=self.instance_id,
+                    path=f"{base}{station_id}",
+                    name=name,
+                    is_playable=True,
+                    image=station_image,
+                )
+            )
+        return folders
+
+    async def _browse_wave_station(
+        self, station_id: str, path: str = ""
+    ) -> list[Track | BrowseFolder]:
+        """Browse a rotor wave station and return tracks.
+
+        Fetches tracks from the rotor station, deduplicates within the current session,
+        and sends radioStarted feedback on first call. Appends a "Load more" BrowseFolder
+        at the end so MA can continue fetching the next batch automatically (radio mode).
+
+        :param station_id: Rotor station ID (e.g. 'genre:rock', 'mood:chill').
+        :param path: Current browse path, used to construct the "Load more" next path.
+        :return: List of Track objects with composite item_id (track_id@station_id),
+                 followed by a "Load more" BrowseFolder if more tracks are available.
+        """
+        state = self._get_wave_state(station_id)
+        async with state.lock:
+            max_tracks = int(
+                self.config.get_value(CONF_MY_WAVE_MAX_TRACKS) or 150  # type: ignore[arg-type]
+            )
+
+            self.logger.debug(
+                "Browse wave station: station_id=%s path=%s last_track_id=%s",
+                station_id,
+                path,
+                state.last_track_id,
+            )
+            yandex_tracks, batch_id = await self.client.get_rotor_station_tracks(
+                station_id, queue=state.last_track_id
+            )
+            if batch_id:
+                state.batch_id = batch_id
+
+            if not state.radio_started_sent and yandex_tracks:
+                sent = await self.client.send_rotor_station_feedback(
+                    station_id,
+                    "radioStarted",
+                    batch_id=batch_id,
+                )
+                if sent:
+                    state.radio_started_sent = True
+
+            tracks: list[Track] = []
+            first_track_id: str | None = None
+            for yt in yandex_tracks:
+                if len(state.seen_track_ids) >= max_tracks:
+                    break
+                track = self._parse_my_wave_track(yt, state.seen_track_ids)
+                if track is None:
+                    continue
+                # Override station_id in composite item_id to reflect this specific station
+                old_item_id = track.item_id
+                track_id = old_item_id.split(RADIO_TRACK_ID_SEP, 1)[0]
+                track.item_id = f"{track_id}{RADIO_TRACK_ID_SEP}{station_id}"
+                # Keep provider mappings in sync with the new item_id
+                for pm in getattr(track, "provider_mappings", []):
+                    if (
+                        getattr(pm, "item_id", None) == old_item_id
+                        and getattr(pm, "provider_instance", None) == self.instance_id
+                    ):
+                        pm.item_id = track.item_id
+                if first_track_id is None:
+                    first_track_id = track_id
+                tracks.append(track)
+
+            if first_track_id is not None:
+                state.last_track_id = first_track_id
+
+            self.logger.debug(
+                "Wave station %s returned %d tracks: %s",
+                station_id,
+                len(tracks),
+                [t.item_id.split(RADIO_TRACK_ID_SEP, 1)[0] for t in tracks[:5]],
+            )
+            result: list[Track | BrowseFolder] = list(tracks)
+
+            # Append "Load more" sentinel so MA knows to call browse again for next batch.
+            # This mirrors the My Wave mechanism and enables continuous radio playback.
+            if tracks and len(state.seen_track_ids) < max_tracks and path:
+                names = self._get_browse_names()
+                next_name = "Ещё" if names == BROWSE_NAMES_RU else "Load more"
+                # Append /next to the current path (same pattern as _browse_my_wave).
+                # This makes each "Load more" path unique (e.g. /next/next/next...)
+                # so MA never serves a cached result for subsequent presses.
+                result.append(
+                    BrowseFolder(
+                        item_id="next",
+                        provider=self.instance_id,
+                        path=f"{path.rstrip('/')}/next",
+                        name=next_name,
+                        is_playable=False,
+                    )
+                )
+
+            return result
+
+    @staticmethod
+    def _extract_wave_item_cover(item: dict[str, Any]) -> tuple[str | None, str | None]:
+        """Extract cover URI and background color from a wave/mix item.
+
+        :param item: Wave or mix item dict from the API.
+        :return: (cover_uri, bg_color) tuple where bg_color is a hex string or None.
+        """
+        agent_uri = item.get("agent", {}).get("cover", {}).get("uri", "")
+        cover_uri = agent_uri or item.get("compact_image_url")
+        bg_color = item.get("colors", {}).get("average")
+        return cover_uri, bg_color
+
+    @use_cache(3600)
+    async def _get_mixes_waves_cached(self) -> list[dict[str, Any]] | None:
+        """Get AI Wave Set data from /landing-blocks/mixes-waves, cached for 1 hour.
+
+        :return: List of mix category dicts from the API, or None on error.
+        """
+        return await self.client.get_mixes_waves()
+
+    @use_cache(3600)
+    async def _get_waves_landing_cached(self) -> list[dict[str, Any]] | None:
+        """Get Featured Waves data from /landing-blocks/waves, cached for 1 hour.
+
+        :return: List of wave category dicts from the API, or None on error.
+        """
+        return await self.client.get_waves_landing()
+
+    async def _browse_waves_landing(
+        self, path: str, path_parts: list[str]
+    ) -> Sequence[MediaItemType | ItemMapping | BrowseFolder]:
+        """Browse Featured Waves (from /landing-blocks/waves).
+
+        :param path: Full browse path.
+        :param path_parts: Split path parts after ://.
+        :return: List of folders or tracks.
+        """
+        waves_data = await self._get_waves_landing_cached()
+        return await self._browse_wave_categories(
+            path, path_parts, waves_data or [], WAVES_LANDING_FOLDER_ID
+        )
+
+    async def _browse_wave_categories(
+        self,
+        path: str,
+        path_parts: list[str],
+        categories_data: list[dict[str, Any]],
+        id_prefix: str,
+    ) -> Sequence[MediaItemType | ItemMapping | BrowseFolder]:
+        """Browse wave-like category folders and their station items.
+
+        Shared logic for both 'my_waves_set' browse trees:
+        - Level 1 (e.g. my_waves_set/): category folders
+        - Level 2 (e.g. my_waves_set/ai-sets/): playable station folders with artwork
+        - Level 3+ (e.g. my_waves_set/ai-sets/genre:rock[/next]): track listing
+
+        :param path: Full browse path.
+        :param path_parts: Split path parts after ://.
+        :param categories_data: List of category dicts from the API.
+        :param id_prefix: Prefix for BrowseFolder item_id (e.g. 'my_waves_set').
+        :return: List of folders or tracks.
+        """
+        base = path.rstrip("/") + "/"
+
+        if not categories_data:
+            return []
+
+        # Level 1 → category folders
+        if len(path_parts) == 1:
+            folders: list[BrowseFolder] = []
+            for wave_category in categories_data:
+                cat_id = wave_category.get("id", "")
+                cat_title = wave_category.get("title", "")
+                items = wave_category.get("items", [])
+                if not items or not cat_id:
+                    continue
+                display_name = cat_title.capitalize() if cat_title else cat_id.capitalize()
+                folders.append(
+                    BrowseFolder(
+                        item_id=f"{id_prefix}_{cat_id}",
+                        provider=self.instance_id,
+                        path=f"{base}{cat_id}",
+                        name=display_name,
+                        is_playable=False,
+                    )
+                )
+            return folders
+
+        category_id = path_parts[1] if len(path_parts) > 1 else None
+        if not category_id:
+            return []
+
+        # Level 3+ → stream tracks from rotor station
+        if len(path_parts) > 2:
+            station_id = path_parts[2]
+            return await self._browse_wave_station(station_id, path=path)
+
+        # Level 2 → playable station folders with artwork
+        for wave_category in categories_data:
+            if wave_category.get("id") == category_id:
+                items = wave_category.get("items", [])
+                result: list[BrowseFolder] = []
+                for item in items:
+                    station_id = item.get("station_id", "")
+                    title = item.get("title", "")
+                    if not station_id or not title:
+                        continue
+                    cover_uri, bg_color = self._extract_wave_item_cover(item)
+                    image: MediaItemImage | None = None
+                    if cover_uri:
+                        if cover_uri.startswith("http"):
+                            img_url: str = cover_uri.replace("%%", IMAGE_SIZE_MEDIUM)
+                        else:
+                            raw = get_image_url(cover_uri)
+                            img_url = "" if raw is None else raw
+                        if img_url:
+                            if bg_color:
+                                # Append bg_color as URL fragment for cache-key uniqueness.
+                                # MA will call resolve_image() to composite the transparent PNG.
+                                if len(self._wave_bg_colors) > 200:
+                                    self._wave_bg_colors.clear()
+                                img_url = f"{img_url}#{bg_color.lstrip('#')}"
+                                self._wave_bg_colors[img_url] = bg_color
+                            image = MediaItemImage(
+                                type=ImageType.THUMB,
+                                path=img_url,
+                                provider=self.instance_id,
+                                remotely_accessible=bg_color is None,
+                            )
+                    result.append(
+                        BrowseFolder(
+                            item_id=station_id,
+                            provider=self.instance_id,
+                            path=f"{base}{station_id}",
+                            name=title,
+                            is_playable=True,
+                            image=image,
+                        )
+                    )
+                return result
+
+        return []
+
+    async def _browse_vibe_sets(
+        self, path: str, path_parts: list[str]
+    ) -> Sequence[MediaItemType | ItemMapping | BrowseFolder]:
+        """Browse AI Wave Sets (from /landing-blocks/mixes-waves).
+
+        :param path: Full browse path.
+        :param path_parts: Split path parts after ://.
+        :return: List of folders or tracks.
+        """
+        mixes_data = await self._get_mixes_waves_cached()
+        return await self._browse_wave_categories(
+            path, path_parts, mixes_data or [], MY_WAVES_SET_FOLDER_ID
+        )
 
     @use_cache(600)
     async def _get_tag_playlists_as_browse(
@@ -942,7 +1543,7 @@ class YandexMusicProvider(MusicProvider):
                     if len(self._my_wave_seen_track_ids) >= max_tracks_config:
                         break
 
-                    track = self._parse_my_wave_track(yt)
+                    track = self._parse_my_wave_track(yt, self._my_wave_seen_track_ids)
                     if track is None:
                         continue
 
@@ -1350,6 +1951,7 @@ class YandexMusicProvider(MusicProvider):
         """
         playlists = await self.client.get_tag_playlists(mood_tag)
         if not playlists:
+            self.logger.debug("No playlists for mood tag %s, skipping recommendation", mood_tag)
             return None
         items: list[Playlist] = []
         for playlist in playlists[:8]:
@@ -1380,6 +1982,9 @@ class YandexMusicProvider(MusicProvider):
         """
         playlists = await self.client.get_tag_playlists(activity_tag)
         if not playlists:
+            self.logger.debug(
+                "No playlists for activity tag %s, skipping recommendation", activity_tag
+            )
             return None
         items: list[Playlist] = []
         for playlist in playlists[:8]:
@@ -1608,16 +2213,30 @@ class YandexMusicProvider(MusicProvider):
     async def get_library_playlists(self) -> AsyncGenerator[Playlist, None]:
         """Retrieve library playlists from Yandex Music.
 
-        Includes virtual playlists (My Wave and Liked Tracks if enabled), then user playlists.
+        Includes virtual playlists (My Wave and Liked Tracks if enabled), user-created playlists,
+        and user-liked editorial playlists (returned by a separate API endpoint).
         """
         yield await self.get_playlist(MY_WAVE_PLAYLIST_ID)
         yield await self.get_playlist(LIKED_TRACKS_PLAYLIST_ID)
+        seen_ids: set[str] = set()
+        # User-created playlists
         playlists = await self.client.get_user_playlists()
         for playlist in playlists:
             try:
-                yield parse_playlist(self, playlist)
+                parsed = parse_playlist(self, playlist)
+                seen_ids.add(parsed.item_id)
+                yield parsed
             except InvalidDataError as err:
                 self.logger.debug("Error parsing library playlist: %s", err)
+        # User-liked editorial playlists (not in users_playlists_list)
+        liked_playlists = await self.client.get_liked_playlists()
+        for playlist in liked_playlists:
+            try:
+                parsed = parse_playlist(self, playlist)
+                if parsed.item_id not in seen_ids:
+                    yield parsed
+            except InvalidDataError as err:
+                self.logger.debug("Error parsing liked playlist: %s", err)
 
     # Library edit methods
 
@@ -1691,6 +2310,51 @@ class YandexMusicProvider(MusicProvider):
         async for chunk in self.streaming.get_audio_stream(streamdetails, seek_position):
             yield chunk
 
+    async def resolve_image(self, path: str) -> str | bytes:
+        """Resolve wave cover image with background color fill for transparent PNGs.
+
+        If the image URL has an associated background color (stored in _wave_bg_colors),
+        downloads the PNG from Yandex CDN and composites it on a solid color background
+        using Pillow, returning JPEG bytes. Falls back to the original URL on any error.
+
+        :param path: Image URL (may include #rrggbb fragment used as cache key).
+        :return: Composited JPEG bytes, or original path string as fallback.
+        """
+        bg_color = self._wave_bg_colors.get(path)
+        if not bg_color:
+            return path
+
+        # Strip the #color fragment before fetching the actual image
+        fetch_url = path.split("#", maxsplit=1)[0] if "#" in path else path
+        try:
+            async with self.mass.http_session.get(fetch_url) as resp:
+                resp.raise_for_status()
+                raw = await resp.read()
+        except Exception as err:
+            self.logger.debug("Failed to fetch wave cover %s: %s", fetch_url, err)
+            return fetch_url
+
+        def _composite() -> bytes:
+            bg_clean = bg_color.lstrip("#")
+            try:
+                r = int(bg_clean[0:2], 16)
+                g = int(bg_clean[2:4], 16)
+                b = int(bg_clean[4:6], 16)
+            except (ValueError, IndexError):
+                return raw
+            fg = PilImage.open(BytesIO(raw)).convert("RGBA")
+            bg = PilImage.new("RGBA", fg.size, (r, g, b, 255))
+            bg.paste(fg, mask=fg)
+            out = BytesIO()
+            bg.convert("RGB").save(out, "JPEG", quality=92)
+            return out.getvalue()
+
+        try:
+            return await asyncio.to_thread(_composite)
+        except Exception as err:
+            self.logger.debug("Wave cover composite failed for %s: %s", fetch_url, err)
+            return fetch_url
+
     async def on_played(
         self,
         media_type: MediaType,
@@ -1704,6 +2368,9 @@ class YandexMusicProvider(MusicProvider):
 
         Sends trackStarted when the track is currently playing (is_playing=True).
         trackFinished/skip are sent from on_streamed to use accurate seconds_streamed.
+
+        Also auto-enables "Don't stop the music" for any queue playing a radio track
+        so that MA refills the queue via get_similar_tracks when < 5 tracks remain.
         """
         # Radio feedback always enabled
         if media_type != MediaType.TRACK:
@@ -1711,13 +2378,107 @@ class YandexMusicProvider(MusicProvider):
         track_id, station_id = _parse_radio_item_id(prov_item_id)
         if not station_id:
             return
+        # Auto-enable "Don't stop the music" on every on_played call for radio tracks.
+        # Calling on every invocation (not just is_playing=True) ensures it fires even
+        # for short tracks that finish before the 30-second periodic callback.
+        self._ensure_dont_stop_the_music(prov_item_id)
         if is_playing:
+            if station_id == ROTOR_STATION_MY_WAVE:
+                batch_id = self._my_wave_batch_id
+            else:
+                state = self._wave_states.get(station_id)
+                batch_id = state.batch_id if state else None
             await self.client.send_rotor_station_feedback(
                 station_id,
                 "trackStarted",
                 track_id=track_id,
-                batch_id=self._my_wave_batch_id,
+                batch_id=batch_id,
             )
+            # Remove duplicate call that was under is_playing guard.
+            # _ensure_dont_stop_the_music is now called unconditionally above.
+
+    def _ensure_dont_stop_the_music(self, prov_item_id: str) -> None:
+        """Enable 'Don't stop the music' on queues playing this specific radio item.
+
+        Iterates all queues and enables the setting on queues whose current track
+        mapping matches this exact composite item_id (track_id@station_id) for this
+        provider instance.
+
+        Also sets queue.radio_source directly to the current track because
+        enqueued_media_items is empty for BrowseFolder-initiated playback, which
+        normally prevents MA's auto-fill from triggering. Setting radio_source
+        directly bypasses that gap so _fill_radio_tracks runs when < 5 tracks remain.
+        """
+        for queue in self.mass.player_queues:
+            current = queue.current_item
+            if current is None or current.media_item is None:
+                continue
+            item = current.media_item
+            # Match by provider instance and exact composite item_id
+            for mapping in getattr(item, "provider_mappings", []):
+                if (
+                    mapping.provider_instance == self.instance_id
+                    and mapping.item_id == prov_item_id
+                ):
+                    # Set radio_source directly so MA's fill mechanism works even when
+                    # the queue was started from a BrowseFolder (enqueued_media_items empty).
+                    if not queue.radio_source and isinstance(item, Track):
+                        queue.radio_source = [item]
+                    if not queue.dont_stop_the_music_enabled:
+                        try:
+                            self.mass.player_queues.set_dont_stop_the_music(
+                                queue.queue_id, dont_stop_the_music_enabled=True
+                            )
+                            self.logger.info(
+                                "Auto-enabled 'Don't stop the music' for queue %s (radio station)",
+                                queue.display_name,
+                            )
+                        except Exception as err:
+                            self.logger.debug(
+                                "Could not enable 'Don't stop the music' for queue %s: %s",
+                                queue.display_name,
+                                err,
+                            )
+                    break
+
+    def _ensure_dont_stop_the_music_for_queue(self, queue_id: str | None) -> None:
+        """Enable 'Don't stop the music' for a specific queue by ID.
+
+        Faster variant of _ensure_dont_stop_the_music used from on_streamed where
+        queue_id is available directly, avoiding iteration over all queues.
+        """
+        if not queue_id:
+            return
+        queue = self.mass.player_queues.get(queue_id)
+        if queue is None:
+            return
+        current = queue.current_item
+        if current is None or current.media_item is None:
+            return
+        item = current.media_item
+        for mapping in getattr(item, "provider_mappings", []):
+            if (
+                mapping.provider_instance == self.instance_id
+                and RADIO_TRACK_ID_SEP in mapping.item_id
+            ):
+                if not queue.radio_source and isinstance(item, Track):
+                    queue.radio_source = [item]
+                if not queue.dont_stop_the_music_enabled:
+                    try:
+                        self.mass.player_queues.set_dont_stop_the_music(
+                            queue_id, dont_stop_the_music_enabled=True
+                        )
+                        self.logger.info(
+                            "Auto-enabled 'Don't stop the music' for queue %s (radio)",
+                            queue.display_name,
+                        )
+                    except Exception as err:
+                        self.logger.debug(
+                            "Could not enable 'Don't stop the music' for queue %s: %s",
+                            queue.display_name,
+                            err,
+                        )
+                break
 
     async def on_streamed(self, streamdetails: StreamDetails) -> None:
         """Report stream completion for My Wave rotor feedback.
@@ -1729,13 +2490,21 @@ class YandexMusicProvider(MusicProvider):
         track_id, station_id = _parse_radio_item_id(streamdetails.item_id)
         if not station_id:
             return
+        # Also ensure Don't stop the music is active — on_streamed fires even for
+        # very short tracks and we have queue_id here directly.
+        self._ensure_dont_stop_the_music_for_queue(streamdetails.queue_id)
         seconds = int(streamdetails.seconds_streamed or 0)
         duration = streamdetails.duration or 0
         feedback_type = "trackFinished" if duration and seconds >= max(0, duration - 10) else "skip"
+        if station_id == ROTOR_STATION_MY_WAVE:
+            batch_id = self._my_wave_batch_id
+        else:
+            state = self._wave_states.get(station_id)
+            batch_id = state.batch_id if state else None
         await self.client.send_rotor_station_feedback(
             station_id,
             feedback_type,
             track_id=track_id,
             total_played_seconds=seconds,
-            batch_id=self._my_wave_batch_id,
+            batch_id=batch_id,
         )

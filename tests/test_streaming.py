@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import unittest.mock
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from music_assistant_models.enums import ContentType
+from aiohttp import ClientPayloadError
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from music_assistant_models.enums import ContentType, StreamType
+from music_assistant_models.errors import MediaNotFoundError
+from music_assistant_models.media_items import AudioFormat
+from music_assistant_models.streamdetails import StreamDetails
 
 from music_assistant.providers.yandex_music.constants import (
     QUALITY_BALANCED,
@@ -44,7 +50,7 @@ def streaming_manager(
     streaming_provider_stub: StreamingProviderStub,
 ) -> YandexMusicStreamingManager:
     """Create streaming manager with real stub (no Mock)."""
-    return YandexMusicStreamingManager(streaming_provider_stub)
+    return YandexMusicStreamingManager(streaming_provider_stub)  # type: ignore[arg-type]
 
 
 @pytest.fixture
@@ -52,7 +58,7 @@ def streaming_manager_with_tracking(
     streaming_provider_stub_with_tracking: StreamingProviderStubWithTracking,
 ) -> YandexMusicStreamingManager:
     """Create streaming manager with tracking logger for assertions."""
-    return YandexMusicStreamingManager(streaming_provider_stub_with_tracking)
+    return YandexMusicStreamingManager(streaming_provider_stub_with_tracking)  # type: ignore[arg-type]
 
 
 def test_select_best_quality_lossless_returns_flac(
@@ -70,10 +76,10 @@ def test_select_best_quality_lossless_returns_flac(
     assert result.direct_link == "https://example.com/track.flac"
 
 
-def test_select_best_quality_balanced_returns_medium_bitrate(
+def test_select_best_quality_balanced_falls_back_to_highest(
     streaming_manager: YandexMusicStreamingManager,
 ) -> None:
-    """When preferred is 'balanced' and no option in range, fallback to highest bitrate."""
+    """When preferred is 'balanced' and no option in 128-256kbps range, highest bitrate is used."""
     mp3 = _make_download_info("mp3", 320, "https://example.com/track.mp3")
     flac = _make_download_info("flac", 0, "https://example.com/track.flac")
     download_infos = [mp3, flac]
@@ -142,8 +148,14 @@ def test_get_content_type_flac_mp4_returns_mp4_container_with_flac_codec(
     """flac-mp4 codec from get-file-info is mapped to MP4 container with FLAC codec."""
     assert streaming_manager._get_content_type("flac-mp4") == (ContentType.MP4, ContentType.FLAC)
     assert streaming_manager._get_content_type("FLAC-MP4") == (ContentType.MP4, ContentType.FLAC)
-    # Plain FLAC returns FLAC container with UNKNOWN codec
+
+
+def test_get_content_type_flac_returns_flac_container_with_unknown_codec(
+    streaming_manager: YandexMusicStreamingManager,
+) -> None:
+    """Plain FLAC codec is mapped to FLAC container with UNKNOWN codec."""
     assert streaming_manager._get_content_type("flac") == (ContentType.FLAC, ContentType.UNKNOWN)
+    assert streaming_manager._get_content_type("FLAC") == (ContentType.FLAC, ContentType.UNKNOWN)
 
 
 def test_get_content_type_aac_variants_return_aac(
@@ -314,3 +326,169 @@ def test_get_audio_params_none(
 ) -> None:
     """None codec returns CD-quality defaults."""
     assert streaming_manager._get_audio_params(None) == (44100, 16)
+
+
+# --- get_audio_stream tests ---
+
+
+def _make_encrypted_stream_details(
+    key_hex: str,
+    url: str = "https://example.com/encrypted.flac",
+) -> StreamDetails:
+    """Build StreamDetails for encrypted FLAC stream tests."""
+    return StreamDetails(
+        item_id="test_track_123",
+        provider="yandex_music_instance",
+        audio_format=AudioFormat(content_type=ContentType.MP4),
+        stream_type=StreamType.CUSTOM,
+        data={
+            "encrypted_url": url,
+            "decryption_key": key_hex,
+            "codec": "flac-mp4",
+        },
+    )
+
+
+class _MockContent:
+    """Async iterable content for mock HTTP responses."""
+
+    def __init__(self, chunks: list[bytes], *, drop_payload_error: bool = False) -> None:
+        self._chunks = chunks
+        self._drop = drop_payload_error
+
+    async def iter_chunked(self, size: int) -> Any:
+        for chunk in self._chunks:
+            yield chunk
+        if self._drop:
+            raise ClientPayloadError("connection reset by peer")
+
+
+class _MockResponse:
+    """Fake aiohttp ClientResponse for streaming tests."""
+
+    def __init__(
+        self,
+        chunks: list[bytes],
+        *,
+        error: Exception | None = None,
+        drop_payload_error: bool = False,
+    ) -> None:
+        self.content = _MockContent(chunks, drop_payload_error=drop_payload_error)
+        self._error = error
+
+    def raise_for_status(self) -> None:
+        """Raise stored error if set, simulating a non-2xx HTTP response."""
+        if self._error is not None:
+            raise self._error
+
+    async def __aenter__(self) -> _MockResponse:
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        pass
+
+
+class _MockHttpSession:
+    """Fake aiohttp ClientSession for streaming tests."""
+
+    def __init__(self, response: _MockResponse) -> None:
+        self._response = response
+
+    def get(self, url: str, **kwargs: object) -> _MockResponse:
+        return self._response
+
+
+class _MultiCallHttpSession:
+    """Fake aiohttp ClientSession returning successive responses and recording calls."""
+
+    def __init__(self, responses: list[_MockResponse]) -> None:
+        self._responses = responses
+        self.calls: list[dict[str, Any]] = []
+
+    def get(self, url: str, **kwargs: object) -> _MockResponse:
+        self.calls.append({"url": url, "headers": kwargs.get("headers", {})})
+        return self._responses[len(self.calls) - 1]
+
+
+async def test_get_audio_stream_invalid_key_length(
+    streaming_manager: YandexMusicStreamingManager,
+) -> None:
+    """Invalid AES key length raises MediaNotFoundError before any HTTP request."""
+    sd = _make_encrypted_stream_details("deadbeef")  # 4 bytes — invalid
+
+    with pytest.raises(MediaNotFoundError, match="Unsupported AES key length"):
+        async for _ in streaming_manager.get_audio_stream(sd):
+            pass
+
+
+async def test_get_audio_stream_http_error_raises_media_not_found(
+    streaming_manager: YandexMusicStreamingManager,
+    streaming_provider_stub: StreamingProviderStub,
+) -> None:
+    """HTTP error from encrypted URL is converted to MediaNotFoundError."""
+    key = b"\x00" * 32
+    sd = _make_encrypted_stream_details(key.hex())
+    streaming_provider_stub.mass.http_session = _MockHttpSession(
+        _MockResponse([], error=RuntimeError("403 Forbidden"))
+    )
+
+    with pytest.raises(MediaNotFoundError, match="Failed to fetch encrypted stream"):
+        async for _ in streaming_manager.get_audio_stream(sd):
+            pass
+
+
+async def test_get_audio_stream_decrypts_aes_ctr_correctly(
+    streaming_manager: YandexMusicStreamingManager,
+    streaming_provider_stub: StreamingProviderStub,
+) -> None:
+    """Encrypted stream is decrypted correctly with AES-256-CTR and zero IV."""
+    key = b"\x42" * 32
+    plaintext = b"Hello, Yandex Music FLAC data!\n" * 50
+
+    # Encrypt with the same algorithm used in get_audio_stream
+    nonce_16 = bytes(16)
+    encryptor = Cipher(algorithms.AES(key), modes.CTR(nonce_16)).encryptor()
+    ciphertext = encryptor.update(plaintext) + encryptor.finalize()
+
+    sd = _make_encrypted_stream_details(key.hex())
+    streaming_provider_stub.mass.http_session = _MockHttpSession(_MockResponse([ciphertext]))
+
+    result = b""
+    async for chunk in streaming_manager.get_audio_stream(sd):
+        result += chunk
+
+    assert result == plaintext
+
+
+async def test_get_audio_stream_reconnects_with_range_header(
+    streaming_manager: YandexMusicStreamingManager,
+    streaming_provider_stub: StreamingProviderStub,
+) -> None:
+    """On ClientPayloadError, reconnects with correct Range header and full plaintext restored."""
+    key = b"\x11" * 32
+    # 96 bytes = 6 AES-CTR blocks; split at byte 48 (block boundary)
+    plaintext = b"AAAAAAAAAAAAAAAA" * 3 + b"BBBBBBBBBBBBBBBB" * 3
+
+    nonce_16 = bytes(16)
+    encryptor = Cipher(algorithms.AES(key), modes.CTR(nonce_16)).encryptor()
+    ciphertext = encryptor.update(plaintext) + encryptor.finalize()
+
+    drop_at = 48  # exactly 3 blocks — clean block boundary
+
+    # First request drops after 48 bytes; second serves the remainder
+    first_resp = _MockResponse([ciphertext[:drop_at]], drop_payload_error=True)
+    second_resp = _MockResponse([ciphertext[drop_at:]])
+    session = _MultiCallHttpSession([first_resp, second_resp])
+    streaming_provider_stub.mass.http_session = session
+
+    result = b""
+    with unittest.mock.patch("asyncio.sleep"):
+        async for chunk in streaming_manager.get_audio_stream(
+            _make_encrypted_stream_details(key.hex())
+        ):
+            result += chunk
+
+    assert result == plaintext
+    assert len(session.calls) == 2
+    assert session.calls[0].get("headers") == {}
+    assert session.calls[1]["headers"] == {"Range": f"bytes={drop_at}-"}

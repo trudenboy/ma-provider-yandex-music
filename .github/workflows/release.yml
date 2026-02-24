@@ -10,6 +10,15 @@ on:
         description: "Pre-release?"
         type: boolean
         default: false
+      target_branch:
+        description: "Target branch in fork for sync (default: dev)"
+        default: "dev"
+        type: string
+
+permissions:
+  contents: write  # Required to create tags and releases
+  actions: write   # Required to trigger sync-to-fork workflow
+  issues: write    # Required by report-failure job in reusable workflow
 
 jobs:
   release:
@@ -20,3 +29,5 @@ jobs:
 
       version: ${{ inputs.version }}
       prerelease: ${{ inputs.prerelease }}
+      target_branch: ${{ inputs.target_branch }}
+    secrets: inherit

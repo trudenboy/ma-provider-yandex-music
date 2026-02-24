@@ -13,3 +13,5 @@ coverage.xml
 htmlcov/
 .env
 ma-server.repo
+site/
+.ma-data/
