@@ -3,12 +3,6 @@
 
 # Yandex Music — Управление инцидентами
 
-## Куда заводить инциденты
-
-> **Заводи задачи здесь:** [github.com/trudenboy/ma-provider-yandex-music/issues](https://github.com/trudenboy/ma-provider-yandex-music/issues)
-
-Используй кнопку **New Issue** и выбери подходящий шаблон. Не заводи задачи в `trudenboy/ma-server` или `trudenboy/ma-provider-tools` — они предназначены для другого.
-
 ## Метки
 
 Все задачи используют стандартизированную систему меток:

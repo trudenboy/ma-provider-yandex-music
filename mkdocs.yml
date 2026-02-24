@@ -1,4 +1,4 @@
-site_name: Провайдер Yandex Music для Music Assistant
+site_name: Провайдер Яндекс Музыки для Music Assistant
 site_url: https://trudenboy.github.io/ma-provider-yandex-music/
 repo_url: https://github.com/trudenboy/ma-provider-yandex-music
 repo_name: trudenboy/ma-provider-yandex-music
@@ -46,6 +46,14 @@ markdown_extensions:
 nav:
   - Главная: index.md
   - Настройка: configuration.md
+  - Возможности:
+      - Структура каталога: features/browse.md
+      - Моя волна: features/my-wave.md
+      - Любимые треки: features/liked-tracks.md
+      - Подборки: features/picks-and-mixes.md
+      - Рекомендации: features/recommendations.md
+      - Тексты песен: features/lyrics.md
+      - Качество аудио: features/audio-quality.md
   - Известные проблемы: known-issues.md
   - Разработка:
       - Настройка окружения: development.md

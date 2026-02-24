@@ -14,7 +14,7 @@
 
     ### Settings
 
-    The provider has 9 settings. The first 3 are shown by default; the rest are under "Show advanced settings."
+    The provider has 7 settings. The first 3 are shown by default; the rest are under "Show advanced settings."
 
     **Basic settings:**
 
@@ -28,8 +28,6 @@
 
     | Setting | Default | Description |
     |---------|---------|-------------|
-    | **FLAC streaming mode** | Buffered | How encrypted FLAC tracks are streamed: Direct, Buffered, or Preload. |
-    | **Stream buffer size (MB)** | 8 | Memory buffer (MB) for Buffered FLAC streaming. ~45 s of FLAC per 8 MB. Increase if you experience stalls on slow connections. |
     | **My Wave maximum tracks** | 150 | How many tracks to load for My Wave. Lower = faster loading. |
     | **Liked Tracks maximum tracks** | 500 | How many liked tracks to show. Lower = faster loading. |
     | **API Base URL** | `https://api.music.yandex.net` | Only change if Yandex changes their API endpoint. |
@@ -60,7 +58,7 @@
 
     ### Настройки
 
-    Провайдер имеет 9 настроек. Первые 3 отображаются по умолчанию; остальные доступны через «Show advanced settings».
+    Провайдер имеет 7 настроек. Первые 3 отображаются по умолчанию; остальные доступны через «Show advanced settings».
 
     **Основные настройки:**
 
@@ -74,8 +72,6 @@
 
     | Настройка | По умолчанию | Описание |
     |-----------|-------------|----------|
-    | **Режим FLAC-стриминга** | Buffered | Способ стриминга зашифрованных FLAC-треков: Direct, Buffered или Preload. |
-    | **Размер буфера потока (МБ)** | 8 | Буфер памяти (МБ) для режима Buffered. ~45 с FLAC на каждые 8 МБ. Увеличьте при зависаниях на медленном соединении. |
     | **My Wave maximum tracks** | 150 | Сколько треков загружать для Моей волны. Меньше = быстрее загрузка. |
     | **Liked Tracks maximum tracks** | 500 | Сколько избранных треков показывать. Меньше = быстрее загрузка. |
     | **API Base URL** | `https://api.music.yandex.net` | Менять только если Яндекс изменит адрес API. |
