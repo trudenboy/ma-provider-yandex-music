@@ -2,8 +2,8 @@
 
     # Browse Structure
 
-    The provider maps the Yandex Music web interface into Music Assistant's Browse tree.
-    Below is the full hierarchy with the equivalent URL on music.yandex.ru.
+    The provider maps the Yandex Music API into Music Assistant's Browse tree.
+    Below is the full hierarchy with the actual API endpoint each section is backed by.
 
     ---
 
@@ -11,45 +11,45 @@
 
     ```
     Yandex Music
-    ├── My Wave                          ← music.yandex.ru/radio/user/onyourwave
+    ├── My Wave                          ← rotor/station/user:onyourwave/tracks
     │   ├── [tracks…]
     │   └── Load more
     │
-    ├── For You                          ← music.yandex.ru (main page)
-    │   ├── Picks                        ← music.yandex.ru/tag/<slug>
+    ├── For You                          ← (container folder)
+    │   ├── Picks                        ← landing("mixes") + tags(<slug>)
     │   │   ├── Mood                     (chill, sad, romantic, party, relax…)
-    │   │   │   └── [tag → playlists]
+    │   │   │   └── [tag → tags(<slug>).playlists]
     │   │   ├── Activity                 (workout, focus, morning, driving…)
-    │   │   │   └── [tag → playlists]
+    │   │   │   └── [tag → tags(<slug>).playlists]
     │   │   ├── Era                      (80s, 90s, 2000s, retro…)
-    │   │   │   └── [tag → playlists]
+    │   │   │   └── [tag → tags(<slug>).playlists]
     │   │   └── Genres                   (rock, jazz, classical, hip-hop…)
-    │   │       └── [tag → playlists]
-    │   └── Mixes                        ← music.yandex.ru/tag/<season>
+    │   │       └── [tag → tags(<slug>).playlists]
+    │   └── Mixes                        ← tags(<season>).playlists
     │       └── [seasonal tag → playlists]  (winter, summer, autumn…)
     │
-    ├── Collection                       ← music.yandex.ru/users/<login>/
-    │   ├── Tracks                       ← /likes/tracks
-    │   ├── Artists                      ← /likes/artists
-    │   ├── Albums                       ← /likes/albums
-    │   └── Playlists                    ← /playlists
+    ├── Collection                       ← (container folder)
+    │   ├── Tracks                       ← users/[uid]/likes/tracks
+    │   ├── Artists                      ← users/[uid]/likes/artists
+    │   ├── Albums                       ← users/[uid]/likes/albums
+    │   └── Playlists                    ← users/[uid]/playlists
     │
-    ├── Radio                            ← music.yandex.ru/radio
-    │   ├── My Waves  [if available]     ← rotor/stations/dashboard (personalized)
-    │   │   └── [station → tracks…]
-    │   ├── genre                        ← music.yandex.ru/radio/genre/<tag>
-    │   │   └── [station folders → tracks…]
-    │   ├── mood                         ← music.yandex.ru/radio/mood/<tag>
-    │   │   └── [station folders → tracks…]
-    │   ├── activity                     ← music.yandex.ru/radio/activity/<tag>
-    │   │   └── [station folders → tracks…]
-    │   ├── epoch                        ← music.yandex.ru/radio/epoch/<tag>
-    │   │   └── [station folders → tracks…]
+    ├── Radio                            ← rotor/stations/list
+    │   ├── My Waves  [if available]     ← rotor/stations/dashboard
+    │   │   └── [station → rotor/station/<id>/tracks]
+    │   ├── genre                        ← rotor/stations/list (category=genre)
+    │   │   └── [station → rotor/station/genre:<tag>/tracks]
+    │   ├── mood                         ← rotor/stations/list (category=mood)
+    │   │   └── [station → rotor/station/mood:<tag>/tracks]
+    │   ├── activity                     ← rotor/stations/list (category=activity)
+    │   │   └── [station → rotor/station/activity:<tag>/tracks]
+    │   ├── epoch                        ← rotor/stations/list (category=epoch)
+    │   │   └── [station → rotor/station/epoch:<tag>/tracks]
     │   └── [other API-returned categories]
     │
     └── AI Wave Sets                     ← landing-blocks/mixes-waves
         └── [category]
-            └── [wave station → tracks…]
+            └── [wave station → rotor/station/<id>/tracks]
     ```
 
     ---
@@ -58,7 +58,7 @@
 
     ### My Wave
 
-    **Yandex equivalent:** "Моя волна" — the infinite personal radio on the Yandex Music home page and the Radio tab.
+    **API:** `rotor/station/user:onyourwave/tracks`
 
     - Tracks are fetched from Yandex Rotor API (`user:onyourwave` station).
     - A **Load more** button at the bottom fetches the next batch without reloading.
@@ -71,7 +71,7 @@
 
     ### For You → Picks
 
-    **Yandex equivalent:** Tag-based curated playlist collections — accessible at `music.yandex.ru/tag/<slug>` (e.g. `/tag/chill`, `/tag/rock`).
+    **API:** Tag discovery — `landing("mixes")`; tag validation and playlists — `tags(<slug>)`
 
     - Tags are **discovered dynamically** from the Yandex Landing API; no hardcoded list is maintained.
     - Each tag is validated: only tags that actually return playlists are shown.
@@ -91,7 +91,7 @@
 
     ### For You → Mixes
 
-    **Yandex equivalent:** Seasonal editorial collections — `music.yandex.ru/tag/winter`, `/tag/summer`, etc.
+    **API:** `tags(<season>)` — playlists for each seasonal tag (`winter`, `summer`, `autumn`…)
 
     - Uses a fixed list of seasonal tags (`TAG_MIXES`), validated against the API.
     - Only seasons with active playlists are shown (e.g. "Winter" disappears in summer).
@@ -100,7 +100,7 @@
 
     ### Collection
 
-    **Yandex equivalent:** User library — `music.yandex.ru/users/<login>/likes/tracks`, etc.
+    **API:** `users/[uid]/likes/tracks`, `users/[uid]/likes/artists`, `users/[uid]/likes/albums`, `users/[uid]/playlists`
 
     Mirrors what is already synced into the Music Assistant library, giving a quick browse path to:
 
@@ -117,17 +117,17 @@
 
     ### Radio
 
-    **Yandex equivalent:** `music.yandex.ru/radio` — genre, mood, activity, and era radio stations.
+    **API:** Station list — `rotor/stations/list`; tracks — `rotor/station/<category>:<tag>/tracks`
 
     Stations are fetched from `rotor/stations/list` and grouped by their `category:tag` identifier.
 
-    | Sub-folder | Examples |
-    |------------|----------|
-    | My Waves | Personalized station picks (from `rotor/stations/dashboard`) |
-    | genre | rock, jazz, pop, electronic, classical… |
-    | mood | energetic, calm, melancholic… |
-    | activity | workout, study, party… |
-    | epoch | 80s, 90s, 2000s… |
+    | Sub-folder | API | Examples |
+    |------------|-----|----------|
+    | My Waves | `rotor/stations/dashboard` | Personalized station picks |
+    | genre | `rotor/stations/list` (category=genre) | rock, jazz, pop… |
+    | mood | `rotor/stations/list` (category=mood) | energetic, calm… |
+    | activity | `rotor/stations/list` (category=activity) | workout, study… |
+    | epoch | `rotor/stations/list` (category=epoch) | 80s, 90s… |
 
     - **My Waves** (personalized) appears only when the Yandex dashboard API returns stations.
     - Station folders have artwork from Yandex avatars and support playback directly.
@@ -137,7 +137,7 @@
 
     ### AI Wave Sets
 
-    **Yandex equivalent:** "AI Волны" / mixes-waves landing block — curated AI-generated wave sets grouped by theme.
+    **API:** `landing-blocks/mixes-waves`
 
     - Fetched from `landing-blocks/mixes-waves`.
     - Organized into category folders, each containing individual wave stations.
@@ -173,8 +173,8 @@
 
     # Структура Browse
 
-    Провайдер отображает веб-интерфейс Яндекс Музыки в дерево Browse в Music Assistant.
-    Ниже представлена полная иерархия с соответствующими URL на music.yandex.ru.
+    Провайдер отображает данные Yandex Music API в дерево Browse в Music Assistant.
+    Ниже представлена полная иерархия с реальным API-эндпоинтом каждого раздела.
 
     ---
 
@@ -182,45 +182,45 @@
 
     ```
     Yandex Music
-    ├── My Wave (Моя волна)              ← music.yandex.ru/radio/user/onyourwave
+    ├── My Wave (Моя волна)              ← rotor/station/user:onyourwave/tracks
     │   ├── [треки…]
     │   └── Load more
     │
-    ├── For You (Для вас)                ← music.yandex.ru (главная страница)
-    │   ├── Picks (Подборки)             ← music.yandex.ru/tag/<slug>
+    ├── For You (Для вас)                ← (папка-контейнер)
+    │   ├── Picks (Подборки)             ← landing("mixes") + tags(<slug>)
     │   │   ├── Mood (Настроение)        (chill, sad, romantic, party, relax…)
-    │   │   │   └── [тег → плейлисты]
+    │   │   │   └── [тег → tags(<slug>).playlists]
     │   │   ├── Activity (Активность)    (workout, focus, morning, driving…)
-    │   │   │   └── [тег → плейлисты]
+    │   │   │   └── [тег → tags(<slug>).playlists]
     │   │   ├── Era (Эпоха)              (80s, 90s, 2000s, retro…)
-    │   │   │   └── [тег → плейлисты]
+    │   │   │   └── [тег → tags(<slug>).playlists]
     │   │   └── Genres (Жанры)           (rock, jazz, classical, hip-hop…)
-    │   │       └── [тег → плейлисты]
-    │   └── Mixes (Миксы)               ← music.yandex.ru/tag/<season>
+    │   │       └── [тег → tags(<slug>).playlists]
+    │   └── Mixes (Миксы)               ← tags(<season>).playlists
     │       └── [сезонный тег → плейлисты]  (winter, summer, autumn…)
     │
-    ├── Collection (Коллекция)           ← music.yandex.ru/users/<login>/
-    │   ├── Tracks (Треки)               ← /likes/tracks
-    │   ├── Artists (Исполнители)        ← /likes/artists
-    │   ├── Albums (Альбомы)             ← /likes/albums
-    │   └── Playlists (Плейлисты)        ← /playlists
+    ├── Collection (Коллекция)           ← (папка-контейнер)
+    │   ├── Tracks (Треки)               ← users/[uid]/likes/tracks
+    │   ├── Artists (Исполнители)        ← users/[uid]/likes/artists
+    │   ├── Albums (Альбомы)             ← users/[uid]/likes/albums
+    │   └── Playlists (Плейлисты)        ← users/[uid]/playlists
     │
-    ├── Radio (Радио)                    ← music.yandex.ru/radio
-    │   ├── My Waves  [если доступно]    ← rotor/stations/dashboard (персональные)
-    │   │   └── [станция → треки…]
-    │   ├── genre (Жанры)               ← music.yandex.ru/radio/genre/<tag>
-    │   │   └── [папки станций → треки…]
-    │   ├── mood (Настроение)            ← music.yandex.ru/radio/mood/<tag>
-    │   │   └── [папки станций → треки…]
-    │   ├── activity (Активность)        ← music.yandex.ru/radio/activity/<tag>
-    │   │   └── [папки станций → треки…]
-    │   ├── epoch (Эпоха)               ← music.yandex.ru/radio/epoch/<tag>
-    │   │   └── [папки станций → треки…]
+    ├── Radio (Радио)                    ← rotor/stations/list
+    │   ├── My Waves  [если доступно]    ← rotor/stations/dashboard
+    │   │   └── [станция → rotor/station/<id>/tracks]
+    │   ├── genre (Жанры)               ← rotor/stations/list (category=genre)
+    │   │   └── [станция → rotor/station/genre:<tag>/tracks]
+    │   ├── mood (Настроение)            ← rotor/stations/list (category=mood)
+    │   │   └── [станция → rotor/station/mood:<tag>/tracks]
+    │   ├── activity (Активность)        ← rotor/stations/list (category=activity)
+    │   │   └── [станция → rotor/station/activity:<tag>/tracks]
+    │   ├── epoch (Эпоха)               ← rotor/stations/list (category=epoch)
+    │   │   └── [станция → rotor/station/epoch:<tag>/tracks]
     │   └── [другие категории API]
     │
     └── AI Wave Sets                     ← landing-blocks/mixes-waves
         └── [категория]
-            └── [волна-станция → треки…]
+            └── [волна-станция → rotor/station/<id>/tracks]
     ```
 
     ---
@@ -229,7 +229,7 @@
 
     ### My Wave (Моя волна)
 
-    **Аналог в Яндексе:** «Моя волна» — бесконечное персональное радио на главной странице и во вкладке «Радио».
+    **API:** `rotor/station/user:onyourwave/tracks`
 
     - Треки получаются через Rotor API Яндекса (станция `user:onyourwave`).
     - Кнопка **Load more** внизу загружает следующую пачку треков без перезагрузки.
@@ -242,7 +242,7 @@
 
     ### For You → Picks (Для вас → Подборки)
 
-    **Аналог в Яндексе:** Тематические подборки плейлистов — доступны по адресу `music.yandex.ru/tag/<slug>` (например, `/tag/chill`, `/tag/rock`).
+    **API:** Обнаружение тегов — `landing("mixes")`; валидация и плейлисты — `tags(<slug>)`
 
     - Теги **обнаруживаются динамически** через Landing API Яндекса; фиксированный список не используется.
     - Каждый тег проверяется: отображаются только теги, для которых реально существуют плейлисты.
@@ -262,7 +262,7 @@
 
     ### For You → Mixes (Для вас → Миксы)
 
-    **Аналог в Яндексе:** Сезонные редакционные коллекции — `music.yandex.ru/tag/winter`, `/tag/summer` и т.д.
+    **API:** `tags(<season>)` — плейлисты для каждого сезонного тега (`winter`, `summer`, `autumn`…)
 
     - Используется фиксированный список сезонных тегов (`TAG_MIXES`), проверяемых через API.
     - Отображаются только сезоны с активными плейлистами (например, «Winter» исчезает летом).
@@ -271,7 +271,7 @@
 
     ### Collection (Коллекция)
 
-    **Аналог в Яндексе:** Библиотека пользователя — `music.yandex.ru/users/<login>/likes/tracks` и т.д.
+    **API:** `users/[uid]/likes/tracks`, `users/[uid]/likes/artists`, `users/[uid]/likes/albums`, `users/[uid]/playlists`
 
     Дублирует то, что уже синхронизировано в библиотеку Music Assistant, предоставляя быстрый путь для навигации:
 
@@ -288,17 +288,17 @@
 
     ### Radio (Радио)
 
-    **Аналог в Яндексе:** `music.yandex.ru/radio` — жанровые, настроенческие, активностные и эпохальные радиостанции.
+    **API:** Список станций — `rotor/stations/list`; треки — `rotor/station/<category>:<tag>/tracks`
 
     Станции получаются из `rotor/stations/list` и группируются по идентификатору `категория:тег`.
 
-    | Подпапка | Примеры |
-    |----------|---------|
-    | My Waves | Персональные станции (из `rotor/stations/dashboard`) |
-    | genre (Жанры) | rock, jazz, pop, electronic, classical… |
-    | mood (Настроение) | energetic, calm, melancholic… |
-    | activity (Активность) | workout, study, party… |
-    | epoch (Эпоха) | 80s, 90s, 2000s… |
+    | Подпапка | API | Примеры |
+    |----------|-----|---------|
+    | My Waves | `rotor/stations/dashboard` | Персональные станции |
+    | genre (Жанры) | `rotor/stations/list` (category=genre) | rock, jazz, pop… |
+    | mood (Настроение) | `rotor/stations/list` (category=mood) | energetic, calm… |
+    | activity (Активность) | `rotor/stations/list` (category=activity) | workout, study… |
+    | epoch (Эпоха) | `rotor/stations/list` (category=epoch) | 80s, 90s… |
 
     - **My Waves** (персональные) отображается только если dashboard API возвращает станции.
     - Папки станций имеют обложки из аватаров Яндекса и поддерживают прямое воспроизведение.
@@ -308,7 +308,7 @@
 
     ### AI Wave Sets (AI Волны)
 
-    **Аналог в Яндексе:** «AI Волны» / блок mixes-waves на лендинге — тематические AI-сгенерированные наборы волн.
+    **API:** `landing-blocks/mixes-waves`
 
     - Получаются из `landing-blocks/mixes-waves`.
     - Организованы в папки категорий, каждая из которых содержит отдельные волны-станции.
