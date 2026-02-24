@@ -73,4 +73,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - feat: add Yandex Music provider (music-assistant/server#3002)
 
+## [2.5.6] - 2026-02-24
+
+## What's Changed
+* chore: sync workflow wrappers from ma-provider-tools by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/1
+* Main by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/2
+* chore: sync workflow wrappers from ma-provider-tools by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/3
+* chore: sync workflow wrappers from ma-provider-tools by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/4
+* chore: sync workflow wrappers from ma-provider-tools by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/5
+* chore: sync workflow wrappers from ma-provider-tools by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/12
+* chore: sync workflow wrappers from ma-provider-tools by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/13
+* chore: sync workflow wrappers from ma-provider-tools by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/14
+* chore: sync workflow wrappers from ma-provider-tools by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/17
+* docs: unify documentation structure by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/16
+* chore: sync workflow wrappers from ma-provider-tools by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/18
+* chore: sync workflow wrappers from ma-provider-tools by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/20
+* chore: sync workflow wrappers from ma-provider-tools by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/21
+* chore: sync workflow wrappers from ma-provider-tools by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/22
+* chore: sync workflow wrappers from ma-provider-tools by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/23
+* chore: sync workflow wrappers from ma-provider-tools by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/25
+* chore: sync workflow wrappers from ma-provider-tools by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/26
+* Refactor/yandex config categories by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/50
+* chore: sync workflow wrappers from ma-provider-tools by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/51
+* chore: sync workflow wrappers from ma-provider-tools by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/52
+* chore: sync workflow wrappers from ma-provider-tools by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/53
+* chore: sync workflow wrappers from ma-provider-tools by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/54
+* chore: sync workflow wrappers from ma-provider-tools by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/55
+* docs: remove FLAC streaming modes and buffer size documentation by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/56
+* chore: sync workflow wrappers from ma-provider-tools by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/57
+* chore: sync workflow wrappers from ma-provider-tools by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/58
+
+
+**Full Changelog**: https://github.com/trudenboy/ma-provider-yandex-music/compare/v2.1.1...v2.5.6
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
