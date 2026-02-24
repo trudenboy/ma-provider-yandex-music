@@ -2,15 +2,34 @@ site_name: Провайдер Яндекс Музыки для Music Assistant
 site_url: https://trudenboy.github.io/ma-provider-yandex-music/
 repo_url: https://github.com/trudenboy/ma-provider-yandex-music
 repo_name: trudenboy/ma-provider-yandex-music
-edit_uri: edit/refactor/yandex-config-categories/docs/
+edit_uri: edit/dev/docs/
 
 theme:
   name: material
   language: ru
+  font: false
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Тёмная тема
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Светлая тема
   features:
     - navigation.tabs
     - navigation.sections
     - content.tabs.link
+
+extra_css:
+  - stylesheets/extra.css
 
 plugins:
   - search
@@ -25,20 +44,20 @@ markdown_extensions:
       permalink: true
 
 nav:
-  - Home: index.md
-  - Configuration: configuration.md
-  - Features:
-      - Browse Structure: features/browse.md
-      - My Wave: features/my-wave.md
-      - Liked Tracks: features/liked-tracks.md
-      - Picks & Mixes: features/picks-and-mixes.md
-      - Recommendations: features/recommendations.md
-      - Lyrics: features/lyrics.md
-      - Audio Quality: features/audio-quality.md
-  - Known Issues: known-issues.md
-  - Development:
-      - Setup: development.md
+  - Главная: index.md
+  - Настройка: configuration.md
+  - Возможности:
+      - Структура каталога: features/browse.md
+      - Моя волна: features/my-wave.md
+      - Любимые треки: features/liked-tracks.md
+      - Подборки: features/picks-and-mixes.md
+      - Рекомендации: features/recommendations.md
+      - Тексты песен: features/lyrics.md
+      - Качество аудио: features/audio-quality.md
+  - Известные проблемы: known-issues.md
+  - Разработка:
+      - Настройка окружения: development.md
       - Docker: dev-docker.md
-      - Testing: testing.md
-      - Contributing: contributing.md
-      - Incident Management: incident-management.md
+      - Тестирование: testing.md
+      - Вклад в разработку: contributing.md
+      - Управление инцидентами: incident-management.md
