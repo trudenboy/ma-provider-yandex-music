@@ -51,6 +51,11 @@ For the full Docker dev environment guide see [docs/dev-docker.md](docs/dev-dock
 - [Yandex Music](https://music.yandex.ru/) — streaming service by Yandex
 - [yandex-music-api](https://github.com/MarshalX/yandex-music-api) — unofficial Python client by MarshalX
 
+## Acknowledgements
+
+- [@peholod009](https://github.com/peholod009) — testing and feedback
+- [@alkmarmasor](https://github.com/alkmarmasor) — ideas and contributions in the provider fork
+
 ## License
 
 [Apache 2.0](LICENSE) — see [CHANGELOG.md](CHANGELOG.md) for version history.

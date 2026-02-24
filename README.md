@@ -52,6 +52,11 @@ docker compose -f docker-compose.dev.yml up
 - [Яндекс Музыка](https://music.yandex.ru/) — стриминговый сервис от Яндекса
 - [yandex-music-api](https://github.com/MarshalX/yandex-music-api) — неофициальный Python-клиент от MarshalX
 
+## Благодарности
+
+- [@peholod009](https://github.com/peholod009) — за помощь в тестировании и обратную связь
+- [@alkmarmasor](https://github.com/alkmarmasor) — за идеи и наработки в форке провайдера
+
 ## Лицензия
 
 [Apache 2.0](LICENSE) — история изменений в [CHANGELOG.md](CHANGELOG.md).
