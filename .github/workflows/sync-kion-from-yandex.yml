@@ -1,8 +1,6 @@
 name: Sync Kion Music from Yandex Music
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
 
 permissions:
