@@ -933,7 +933,7 @@ class YandexMusicClient:
     ) -> list[tuple[str, str, str, str | None]]:
         """Get available rotor wave stations grouped by category.
 
-        Calls rotor_stations_list() — the underlying endpoint for landing-blocks/waves.
+        Calls rotor_stations_list() — equivalent to the rotor/stations/list API endpoint.
         Filters out personal stations (type 'user') since My Wave is handled separately.
 
         :param language: Language for station names (e.g. 'ru', 'en'). Defaults to API default.
