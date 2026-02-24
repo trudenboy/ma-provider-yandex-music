@@ -28,6 +28,7 @@ nav:
   - Home: index.md
   - Configuration: configuration.md
   - Features:
+      - Browse Structure: features/browse.md
       - My Wave: features/my-wave.md
       - Liked Tracks: features/liked-tracks.md
       - Picks & Mixes: features/picks-and-mixes.md
