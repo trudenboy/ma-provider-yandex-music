@@ -1,13 +1,11 @@
-name: Sync to Fork
+name: Backport to stable
 on:
+  push:
+    tags: ["v*-stable"]
   workflow_dispatch:
     inputs:
-      target_branch:
-        description: "Target branch in fork (default: integration/dev)"
-        default: "integration/dev"
-        type: string
       version:
-        description: "Version tag (e.g. v2.0.0) — leave empty to use latest release tag"
+        description: "Stable tag (e.g. v1.2.0-stable) — leave empty to use latest"
         default: ""
         type: string
 
@@ -15,13 +13,12 @@ permissions:
   issues: write  # Required by report-failure job in reusable workflow
 
 jobs:
-  sync:
+  backport:
     uses: trudenboy/ma-provider-tools/.github/workflows/reusable-sync-to-fork.yml@main
     with:
       manifest_path: provider/manifest.json
       provider_path: provider/
-
-      target_branch: ${{ inputs.target_branch }}
+      target_branch: stable
       version: ${{ inputs.version }}
-
+      create_pr: true
     secrets: inherit
