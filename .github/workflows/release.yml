@@ -11,8 +11,8 @@ on:
         type: boolean
         default: false
       target_branch:
-        description: "Target branch in fork for sync (default: dev)"
-        default: "dev"
+        description: "Target branch in fork for sync (default: integration/dev)"
+        default: "integration/dev"
         type: string
 
 permissions:
