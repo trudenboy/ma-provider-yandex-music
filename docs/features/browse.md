@@ -37,6 +37,8 @@
     ├── Radio                            ← rotor/stations/list
     │   ├── My Waves  [if available]     ← rotor/stations/dashboard
     │   │   └── [station → rotor/station/<id>/tracks]
+    │   ├── Featured Waves  [if available]  ← landing-blocks/waves
+    │   │   └── [category → station → rotor/station/<id>/tracks]
     │   ├── genre                        ← rotor/stations/list (category=genre)
     │   │   └── [station → rotor/station/genre:<tag>/tracks]
     │   ├── mood                         ← rotor/stations/list (category=mood)
@@ -124,6 +126,7 @@
     | Sub-folder | API | Examples |
     |------------|-----|----------|
     | My Waves | `rotor/stations/dashboard` | Personalized station picks |
+    | Featured Waves | `landing-blocks/waves` | Curated wave categories |
     | genre | `rotor/stations/list` (category=genre) | rock, jazz, pop… |
     | mood | `rotor/stations/list` (category=mood) | energetic, calm… |
     | activity | `rotor/stations/list` (category=activity) | workout, study… |
@@ -208,6 +211,8 @@
     ├── Radio (Радио)                    ← rotor/stations/list
     │   ├── My Waves  [если доступно]    ← rotor/stations/dashboard
     │   │   └── [станция → rotor/station/<id>/tracks]
+    │   ├── Featured Waves  [если доступно]  ← landing-blocks/waves
+    │   │   └── [категория → станция → rotor/station/<id>/tracks]
     │   ├── genre (Жанры)               ← rotor/stations/list (category=genre)
     │   │   └── [станция → rotor/station/genre:<tag>/tracks]
     │   ├── mood (Настроение)            ← rotor/stations/list (category=mood)
@@ -295,6 +300,7 @@
     | Подпапка | API | Примеры |
     |----------|-----|---------|
     | My Waves | `rotor/stations/dashboard` | Персональные станции |
+    | Featured Waves | `landing-blocks/waves` | Кураторские категории волн |
     | genre (Жанры) | `rotor/stations/list` (category=genre) | rock, jazz, pop… |
     | mood (Настроение) | `rotor/stations/list` (category=mood) | energetic, calm… |
     | activity (Активность) | `rotor/stations/list` (category=activity) | workout, study… |

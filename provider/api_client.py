@@ -904,6 +904,17 @@ class YandexMusicClient:
         """
         return await self._get_landing_waves("mixes-waves")
 
+    async def get_waves_landing(self) -> list[dict[str, Any]] | None:
+        """Get featured wave stations from /landing-blocks/waves endpoint.
+
+        Returns Yandex-curated wave categories with station items — the "Волны"
+        landing page content, separate from the full rotor/stations/list and from
+        the AI mixes-waves sets.
+
+        :return: List of wave category dicts, or None on error.
+        """
+        return await self._get_landing_waves("waves")
+
     async def _get_landing_waves(self, block: str) -> list[dict[str, Any]] | None:
         """Fetch wave categories from a /landing-blocks/<block> endpoint.
 
