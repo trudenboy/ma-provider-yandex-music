@@ -14,3 +14,4 @@ htmlcov/
 .env
 ma-server.repo
 site/
+.ma-data/
