@@ -108,4 +108,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.5.7] - 2026-02-24
+
+## What's Changed
+* chore: sync workflow wrappers from ma-provider-tools by @trudenboy in https://github.com/trudenboy/ma-provider-yandex-music/pull/59
+
+
+**Full Changelog**: https://github.com/trudenboy/ma-provider-yandex-music/compare/v2.5.6...v2.5.7
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
