@@ -18,14 +18,18 @@ Music Assistant поддерживает [Yandex Music](https://music.yandex.ru)
 |:--------|:---------:|
 | Исполнители, Альбомы, Треки, Плейлисты | ✅ |
 | Поиск по каталогу | ✅ |
-| Синхронизация библиотеки | ✅ |
-| [Рекомендации / Моя волна](features/my-wave/) | ✅ |
+| Синхронизация библиотеки (двунаправленная) | ✅ |
+| [Рекомендации на главном экране](features/recommendations/) | ✅ |
+| [Моя волна / Radio Mode](features/my-wave/) | ✅ |
+| [Радиостанции / Rotor](features/radio/) | ✅ |
+| [Похожие треки](features/similar-tracks/) | ✅ |
 | [Тексты песен](features/lyrics/) | ✅ |
 | [Подборки и миксы](features/picks-and-mixes/) | ✅ |
 | [Просмотр каталога (Browse)](features/browse/) | ✅ |
-| [Lossless FLAC](features/audio-quality/) | ✅ |
-| Максимальное качество | Lossless FLAC (с подпиской Plus) |
-| Способ входа | Токен (X-Auth-Token) |
+| [Качество звука до Lossless FLAC](features/audio-quality/) | ✅ |
+| Несколько аккаунтов одновременно | ✅ |
+| Максимальное качество | Lossless FLAC (с подпиской Яндекс Плюс) |
+| Способ входа | OAuth-токен |
 
 
 
@@ -40,5 +44,3 @@ Music Assistant поддерживает [Yandex Music](https://music.yandex.ru)
 
 
 Полный список — на странице [Известные проблемы](known-issues/).
-
-
