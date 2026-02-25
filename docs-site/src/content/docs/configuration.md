@@ -6,32 +6,25 @@ import { Steps } from '@astrojs/starlight/components';
 
 ## Шаг 1 — Получите токен
 
-Провайдер использует OAuth-токен для авторизации в Yandex Music API. Есть два способа его получить.
+Провайдер использует OAuth-токен для авторизации в Yandex Music API.
 
-### Способ 1: Утилита yandex-music-token (рекомендуется)
+:::danger[Безопасность токена]
+OAuth-токен даёт полный доступ к вашему аккаунту Яндекс Музыки. Не передавайте его третьим лицам и не вводите на сторонних сайтах. Храните токен как пароль.
+:::
 
-Автоматический способ через официальную утилиту:
+### Получение токена
 
-```bash
-pip install yandex-music-token
-python -m yandex_music_token
-```
+1. Откройте в браузере ссылку:
+   **[oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d](https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d)**
+2. Войдите в аккаунт Яндекс, если потребуется.
+3. После авторизации браузер перенаправит вас на страницу с токеном в адресной строке — найдите часть `access_token=XXXXXX`.
+4. Скопируйте значение токена — длинную строку букв и цифр после `access_token=` и до символа `&`.
 
-Следуйте инструкциям в терминале — введите логин/пароль или войдите через браузер. Токен будет выведен в терминал после успешной авторизации.
-
-### Способ 2: Из браузера вручную
-
-1. Откройте [music.yandex.ru](https://music.yandex.ru) и войдите в аккаунт.
-2. Откройте DevTools (F12) → вкладка **Application** → **Cookies** → `music.yandex.ru`.
-3. Найдите cookie `Session_id` и скопируйте его значение.
-4. Используйте расширение для браузера [Yandex Music Token](https://github.com/MarshalX/yandex-music-token/releases) — оно автоматически извлекает OAuth-токен из сессии.
-
-Скопируйте итоговый OAuth-токен — длинную строку из букв и цифр.
+Альтернативные способы получения токена (расширение для Chrome/Firefox, Android APK и другие) описаны в [документации yandex-music-api](https://yandex-music.readthedocs.io/en/main/token.html).
 
 ---
 
 ## Шаг 2 — Добавьте провайдер в Music Assistant
-
 <Steps>
 1. Откройте **Music Assistant → Настройки → Источники музыки**.
 2. Нажмите **«+ Добавить»** и выберите **Yandex Music**.
