@@ -4,8 +4,7 @@ on:
     branches:
       - dev
     paths:
-      - "docs/**"
-      - "mkdocs.yml"
+      - "docs-site/**"
   workflow_dispatch:
 
 permissions:
@@ -22,16 +21,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-node@v4
         with:
-          python-version: "3.12"
-      - name: Install MkDocs + Material
-        run: pip install mkdocs-material pymdown-extensions
+          node-version: 22
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+      - name: Install dependencies
+        run: npm ci
+        working-directory: docs-site
       - name: Build docs
-        run: mkdocs build
+        run: npm run build
+        working-directory: docs-site
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: site/
+          path: docs-site/dist/
   deploy:
     needs: build
     runs-on: ubuntu-latest
