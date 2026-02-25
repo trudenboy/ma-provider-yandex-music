@@ -6,12 +6,13 @@ description: Документация провайдера Yandex Music для M
 <img src="https://raw.githubusercontent.com/trudenboy/ma-provider-yandex-music/dev/provider/icon.svg" alt="Yandex Music" style="width: 72px; float: right; margin: 0 0 1rem 1.5rem;" />
 
 
-Music Assistant поддерживает [Yandex Music](https://music.yandex.ru) — музыкальный стриминговый сервис.
-Провайдер создан и поддерживается [TrudenBoy](https://github.com/TrudenBoy) для [Music Assistant](https://music-assistant.io).
+[Music Assistant](https://music-assistant.io) поддерживает [Yandex Music](https://music.yandex.ru) — музыкальный стриминговый сервис.
 
-Реализован на основе библиотеки [yandex-music](https://github.com/MarshalX/yandex-music-api) (неофициальный клиент Yandex Music API).
+Провайдер создан и поддерживается [TrudenBoy](https://github.com/TrudenBoy)
 
-:::caution[Дисклеймер]
+Реализован на основе библиотеки [yandex-music](https://github.com/MarshalX/yandex-music-api) (**неофициальный** клиент Yandex Music API).
+
+::warning[Дисклеймер]
 Это неофициальная реализация, не связанная с компанией Яндекс.
 :::
 
