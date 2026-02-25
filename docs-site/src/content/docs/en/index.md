@@ -7,7 +7,7 @@ description: Documentation for the Yandex Music provider for Music Assistant
 
 
 Music Assistant supports [Yandex Music](https://music.yandex.ru) — a music streaming service.
-The provider is created and maintained by [TrudenBoy](https://github.com/TrudenBoy).
+The provider is created and maintained by [TrudenBoy](https://github.com/TrudenBoy) for [Music Assistant](https://music-assistant.io).
 
 Built on top of the [yandex-music](https://github.com/MarshalX/yandex-music-api) library (an unofficial Yandex Music API client).
 
