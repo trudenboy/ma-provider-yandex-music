@@ -12,7 +12,7 @@ description: Документация провайдера Yandex Music для M
 
 Реализован на основе библиотеки [yandex-music](https://github.com/MarshalX/yandex-music-api) (**неофициальный** клиент Yandex Music API).
 
-::warning[Дисклеймер]
+::caution[Дисклеймер]
 Это неофициальная реализация, не связанная с компанией Яндекс.
 :::
 
