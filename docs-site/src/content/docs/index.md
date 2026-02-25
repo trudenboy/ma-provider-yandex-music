@@ -9,6 +9,12 @@ description: Документация провайдера Yandex Music для M
 Music Assistant поддерживает [Yandex Music](https://music.yandex.ru) — музыкальный стриминговый сервис.
 Провайдер создан и поддерживается [TrudenBoy](https://github.com/TrudenBoy).
 
+Реализован на основе библиотеки [yandex-music](https://github.com/MarshalX/yandex-music-api) (неофициальный клиент Yandex Music API).
+
+:::caution[Дисклеймер]
+Это неофициальная реализация, не связанная с компанией Яндекс и не одобренная ею. Используйте на свой страх и риск.
+:::
+
 
 
 ## Возможности
