@@ -6,11 +6,33 @@ import { Steps } from '@astrojs/starlight/components';
 
 ## Шаг 1 — Получите токен
 
-Провайдер использует OAuth-токен для авторизации в Yandex Music API. Есть два способа его получить.
+Провайдер использует OAuth-токен для авторизации в Yandex Music API. Есть три способа его получить.
 
-### Способ 1: Утилита yandex-music-token (рекомендуется)
+:::caution[Токен и качество звука]
+Токены, полученные через веб-версию Яндекс Музыки или сторонние OAuth-приложения, могут ограничивать качество стриминга до preview (128 kbps). Для доступа к FLAC и высокому качеству рекомендуется использовать токен из десктопного приложения (Способ 1).
+:::
 
-Автоматический способ через официальную утилиту:
+### Способ 1: Из кэша десктопного приложения (рекомендуется)
+
+Утилита [Yandex-Token-Extractor](https://github.com/Sorrow446/Yandex-Music-Downloader/releases/tag/v0.1.1-token-extractor) извлекает токен напрямую из кэша официального десктопного клиента Яндекс Музыки — без ввода логина/пароля в сторонние сервисы.
+
+**Windows:**
+1. Установите официальный [десктопный клиент Яндекс Музыки](https://music.yandex.ru/download/) и войдите в аккаунт.
+2. Скачайте `extract_token.exe` со [страницы релизов](https://github.com/Sorrow446/Yandex-Music-Downloader/releases/tag/v0.1.1-token-extractor).
+3. Запустите `extract_token.exe` — токен будет выведен в консоль.
+
+**Linux:**
+1. Установите [неофициальный Linux-клиент](https://github.com/cucumber-sp/yandex-music-linux/releases) и войдите в аккаунт.
+2. Скачайте `extract_token_amd64` со [страницы релизов](https://github.com/Sorrow446/Yandex-Music-Downloader/releases/tag/v0.1.1-token-extractor).
+3. Запустите:
+   ```bash
+   chmod +x extract_token_amd64
+   ./extract_token_amd64
+   ```
+
+### Способ 2: Утилита yandex-music-token
+
+Автоматический способ через Python-утилиту:
 
 ```bash
 pip install yandex-music-token
@@ -19,7 +41,7 @@ python -m yandex_music_token
 
 Следуйте инструкциям в терминале — введите логин/пароль или войдите через браузер. Токен будет выведен в терминал после успешной авторизации.
 
-### Способ 2: Из браузера вручную
+### Способ 3: Из браузера вручную
 
 1. Откройте [music.yandex.ru](https://music.yandex.ru) и войдите в аккаунт.
 2. Откройте DevTools (F12) → вкладка **Application** → **Cookies** → `music.yandex.ru`.
