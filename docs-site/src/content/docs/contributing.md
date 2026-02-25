@@ -1,4 +1,6 @@
-[← Development](development.md) · [Back to README](../README.md)
+---
+title: Contributing
+---
 
 # Contributing
 
