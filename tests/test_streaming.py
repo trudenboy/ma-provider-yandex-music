@@ -6,7 +6,7 @@ import unittest.mock
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from aiohttp import ClientPayloadError
+from aiohttp import ClientPayloadError, ServerDisconnectedError
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from music_assistant_models.enums import ContentType, StreamType
 from music_assistant_models.errors import MediaNotFoundError
@@ -352,15 +352,23 @@ def _make_encrypted_stream_details(
 class _MockContent:
     """Async iterable content for mock HTTP responses."""
 
-    def __init__(self, chunks: list[bytes], *, drop_payload_error: bool = False) -> None:
+    def __init__(
+        self,
+        chunks: list[bytes],
+        *,
+        drop_payload_error: bool = False,
+        drop_error: Exception | None = None,
+    ) -> None:
         self._chunks = chunks
-        self._drop = drop_payload_error
+        self._drop_error: Exception | None = (
+            ClientPayloadError("connection reset by peer") if drop_payload_error else drop_error
+        )
 
     async def iter_chunked(self, size: int) -> Any:
         for chunk in self._chunks:
             yield chunk
-        if self._drop:
-            raise ClientPayloadError("connection reset by peer")
+        if self._drop_error is not None:
+            raise self._drop_error
 
 
 class _MockResponse:
@@ -373,8 +381,13 @@ class _MockResponse:
         status: int = 200,
         error: Exception | None = None,
         drop_payload_error: bool = False,
+        drop_error: Exception | None = None,
     ) -> None:
-        self.content = _MockContent(chunks, drop_payload_error=drop_payload_error)
+        self.content = _MockContent(
+            chunks,
+            drop_payload_error=drop_payload_error,
+            drop_error=drop_error,
+        )
         self.status = status
         self._error = error
 
@@ -477,9 +490,9 @@ async def test_get_audio_stream_reconnects_with_range_header(
 
     drop_at = 48  # exactly 3 blocks — clean block boundary
 
-    # First request drops after 48 bytes; second serves the remainder
+    # First request drops after 48 bytes; second serves the remainder with 206 Partial Content
     first_resp = _MockResponse([ciphertext[:drop_at]], drop_payload_error=True)
-    second_resp = _MockResponse([ciphertext[drop_at:]])
+    second_resp = _MockResponse([ciphertext[drop_at:]], status=206)
     session = _MultiCallHttpSession([first_resp, second_resp])
     streaming_provider_stub.mass.http_session = session
 
@@ -562,3 +575,95 @@ async def test_get_audio_stream_raises_after_all_retries_on_410(
     ):
         async for _ in streaming_manager.get_audio_stream(sd):
             pass
+
+
+async def test_get_audio_stream_retries_on_server_disconnected(
+    streaming_manager: YandexMusicStreamingManager,
+    streaming_provider_stub: StreamingProviderStub,
+) -> None:
+    """On ServerDisconnectedError, reconnects with Range header and full plaintext is restored."""
+    key = b"\x55" * 32
+    plaintext = b"CCCCCCCCCCCCCCCC" * 3 + b"DDDDDDDDDDDDDDDD" * 3  # 96 bytes
+
+    nonce_16 = bytes(16)
+    encryptor = Cipher(algorithms.AES(key), modes.CTR(nonce_16)).encryptor()
+    ciphertext = encryptor.update(plaintext) + encryptor.finalize()
+
+    drop_at = 48
+    first_resp = _MockResponse(
+        [ciphertext[:drop_at]], drop_error=ServerDisconnectedError("server closed")
+    )
+    second_resp = _MockResponse([ciphertext[drop_at:]], status=206)
+    session = _MultiCallHttpSession([first_resp, second_resp])
+    streaming_provider_stub.mass.http_session = session
+
+    result = b""
+    with unittest.mock.patch("asyncio.sleep"):
+        async for chunk in streaming_manager.get_audio_stream(
+            _make_encrypted_stream_details(key.hex())
+        ):
+            result += chunk
+
+    assert result == plaintext
+    assert len(session.calls) == 2
+    assert session.calls[1]["headers"] == {"Range": f"bytes={drop_at}-"}
+
+
+async def test_get_audio_stream_retries_on_read_timeout(
+    streaming_manager: YandexMusicStreamingManager,
+    streaming_provider_stub: StreamingProviderStub,
+) -> None:
+    """On asyncio.TimeoutError (read stall), reconnects with Range header and stream completes."""
+    key = b"\x66" * 32
+    plaintext = b"EEEEEEEEEEEEEEEE" * 3 + b"FFFFFFFFFFFFFFFF" * 3  # 96 bytes
+
+    nonce_16 = bytes(16)
+    encryptor = Cipher(algorithms.AES(key), modes.CTR(nonce_16)).encryptor()
+    ciphertext = encryptor.update(plaintext) + encryptor.finalize()
+
+    drop_at = 48
+    first_resp = _MockResponse([ciphertext[:drop_at]], drop_error=TimeoutError("read timeout"))
+    second_resp = _MockResponse([ciphertext[drop_at:]], status=206)
+    session = _MultiCallHttpSession([first_resp, second_resp])
+    streaming_provider_stub.mass.http_session = session
+
+    result = b""
+    with unittest.mock.patch("asyncio.sleep"):
+        async for chunk in streaming_manager.get_audio_stream(
+            _make_encrypted_stream_details(key.hex())
+        ):
+            result += chunk
+
+    assert result == plaintext
+    assert len(session.calls) == 2
+    assert session.calls[1]["headers"] == {"Range": f"bytes={drop_at}-"}
+
+
+async def test_get_audio_stream_resets_decrypt_when_range_ignored(
+    streaming_manager: YandexMusicStreamingManager,
+    streaming_provider_stub: StreamingProviderStub,
+) -> None:
+    """If server returns 200 instead of 206 after Range request, decryptor resets to position 0."""
+    key = b"\x77" * 32
+    plaintext = b"GGGGGGGGGGGGGGGG" * 6  # 96 bytes
+
+    nonce_16 = bytes(16)
+    encryptor = Cipher(algorithms.AES(key), modes.CTR(nonce_16)).encryptor()
+    ciphertext = encryptor.update(plaintext) + encryptor.finalize()
+
+    drop_at = 48
+    # First response drops after 48 bytes; second ignores Range and sends full ciphertext with 200
+    first_resp = _MockResponse([ciphertext[:drop_at]], drop_payload_error=True)
+    second_resp = _MockResponse([ciphertext], status=200)  # server ignored Range
+    session = _MultiCallHttpSession([first_resp, second_resp])
+    streaming_provider_stub.mass.http_session = session
+
+    result = b""
+    with unittest.mock.patch("asyncio.sleep"):
+        async for chunk in streaming_manager.get_audio_stream(
+            _make_encrypted_stream_details(key.hex())
+        ):
+            result += chunk
+
+    # Decryptor was reset to 0 on the second request, so full plaintext is recovered
+    assert result == plaintext
