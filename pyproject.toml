@@ -39,7 +39,7 @@ filterwarnings = [
 
 [tool.codespell]
 ignore-words-list = "provid,hass,followings,childs,explict,additionals,commitish,nam,"
-skip = "*.js,*.svg"
+skip = "*.js,*.svg,docs-site/package-lock.json"
 
 [tool.ruff]
 fix = true
