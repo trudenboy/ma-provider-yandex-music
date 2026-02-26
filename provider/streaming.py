@@ -370,7 +370,7 @@ class YandexMusicStreamingManager:
         rate-limit cuts, not network errors.
         On read stall (asyncio.TimeoutError), resumes with exponential backoff (2s/4s/8s).
         On URL expiry (HTTP 4xx), re-fetches the URL and resumes from bytes_yielded.
-        Up to 3 retries total.
+        Up to 5 retries total.
 
         If the server ignores a Range header (returns 200 instead of 206), the decryptor
         is reset to position 0 so decryption stays consistent with the restarted byte stream.
@@ -387,7 +387,7 @@ class YandexMusicStreamingManager:
             raise MediaNotFoundError(f"Unsupported AES key length: {len(key_bytes)} bytes")
 
         block_size = 16  # AES-CTR block size in bytes
-        max_retries = 3
+        max_retries = 5
         bytes_yielded = 0  # total decrypted bytes delivered to caller
         retry_delay: float = 0.0  # set per error type in exception handlers
 
