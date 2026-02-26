@@ -176,6 +176,7 @@ class YandexMusicClient:
         :param func: Async callable that takes a ClientAsync and returns a result.
         :return: The result of the API call.
         """
+        await self._throttler.acquire()
         client = await self._ensure_connected()
         return await func(client)
 
