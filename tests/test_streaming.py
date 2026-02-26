@@ -370,10 +370,12 @@ class _MockResponse:
         self,
         chunks: list[bytes],
         *,
+        status: int = 200,
         error: Exception | None = None,
         drop_payload_error: bool = False,
     ) -> None:
         self.content = _MockContent(chunks, drop_payload_error=drop_payload_error)
+        self.status = status
         self._error = error
 
     def raise_for_status(self) -> None:
@@ -492,3 +494,71 @@ async def test_get_audio_stream_reconnects_with_range_header(
     assert len(session.calls) == 2
     assert session.calls[0].get("headers") == {}
     assert session.calls[1]["headers"] == {"Range": f"bytes={drop_at}-"}
+
+
+async def test_get_audio_stream_refreshes_url_on_410(
+    streaming_manager: YandexMusicStreamingManager,
+    streaming_provider_stub: StreamingProviderStub,
+) -> None:
+    """On HTTP 410 (URL expired), a fresh URL is fetched and streaming resumes."""
+    key = b"\x33" * 32
+    plaintext = b"LOSSLESS" * 32
+
+    nonce_16 = bytes(16)
+    encryptor = Cipher(algorithms.AES(key), modes.CTR(nonce_16)).encryptor()
+    ciphertext = encryptor.update(plaintext) + encryptor.finalize()
+
+    fresh_url = "https://cdn.yandex.net/fresh.flac"
+    expired_resp = _MockResponse([], status=410)
+    fresh_resp = _MockResponse([ciphertext])
+
+    call_count = 0
+
+    def _get(_url: str, **_kwargs: object) -> _MockResponse:
+        nonlocal call_count
+        call_count += 1
+        return expired_resp if call_count == 1 else fresh_resp
+
+    streaming_provider_stub.mass.http_session = unittest.mock.MagicMock()
+    streaming_provider_stub.mass.http_session.get = _get
+
+    # Mock get_track_file_info_lossless to return a fresh URL
+    streaming_provider_stub.client = unittest.mock.AsyncMock()
+    streaming_provider_stub.client.get_track_file_info_lossless = unittest.mock.AsyncMock(
+        return_value={"url": fresh_url, "codec": "flac-mp4", "key": key.hex()}
+    )
+    streaming_manager.client = streaming_provider_stub.client
+
+    result = b""
+    with unittest.mock.patch("asyncio.sleep"):
+        async for chunk in streaming_manager.get_audio_stream(
+            _make_encrypted_stream_details(key.hex())
+        ):
+            result += chunk
+
+    assert result == plaintext
+    streaming_provider_stub.client.get_track_file_info_lossless.assert_called_once_with(
+        "test_track_123"
+    )
+
+
+async def test_get_audio_stream_raises_after_all_retries_on_410(
+    streaming_manager: YandexMusicStreamingManager,
+    streaming_provider_stub: StreamingProviderStub,
+) -> None:
+    """MediaNotFoundError is raised after all retries exhausted on persistent 410."""
+    key = b"\x44" * 32
+    sd = _make_encrypted_stream_details(key.hex())
+    streaming_provider_stub.mass.http_session = _MockHttpSession(_MockResponse([], status=410))
+    streaming_provider_stub.client = unittest.mock.AsyncMock()
+    streaming_provider_stub.client.get_track_file_info_lossless = unittest.mock.AsyncMock(
+        return_value={"url": "https://cdn.example.com/still-expired.flac", "key": key.hex()}
+    )
+    streaming_manager.client = streaming_provider_stub.client
+
+    with (
+        pytest.raises(MediaNotFoundError, match="retries exhausted"),
+        unittest.mock.patch("asyncio.sleep"),
+    ):
+        async for _ in streaming_manager.get_audio_stream(sd):
+            pass

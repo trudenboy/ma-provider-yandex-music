@@ -120,6 +120,7 @@ class YandexMusicStreamingManager:
                         path=url,
                         can_seek=True,
                         allow_seek=True,
+                        expiration=50,  # get-file-info URLs expire; force MA to re-fetch
                     )
 
         # Default: use /tracks/.../download-info and select best quality
@@ -159,6 +160,7 @@ class YandexMusicStreamingManager:
             path=selected_info.direct_link,
             can_seek=True,
             allow_seek=True,
+            expiration=50,  # download-info direct links expire after ~60s
         )
 
     def _select_best_quality(
@@ -316,20 +318,53 @@ class YandexMusicStreamingManager:
             bit_depth=bit_depth,
         )
 
+    async def _refresh_encrypted_url(
+        self,
+        track_item_id: str,
+        current_url: str,
+        current_key_hex: str,
+        http_status: int,
+        bytes_yielded: int,
+        attempt: int,
+        max_retries: int,
+    ) -> tuple[str, str] | None:
+        """Re-fetch an expired encrypted stream URL.
+
+        Called when the CDN responds with 4xx (URL expired or access revoked).
+
+        :return: (new_url, new_key_hex) on success, or None if retries exhausted.
+        """
+        if attempt >= max_retries:
+            return None
+        raw_track_id = track_item_id.split("@", 1)[0]
+        self.logger.warning(
+            "Encrypted stream URL expired (HTTP %d) at %d bytes (attempt %d/%d) — re-fetching",
+            http_status,
+            bytes_yielded,
+            attempt + 1,
+            max_retries,
+        )
+        file_info = await self.client.get_track_file_info_lossless(raw_track_id)
+        if file_info and file_info.get("url"):
+            return file_info["url"], file_info.get("key", current_key_hex)
+        return current_url, current_key_hex
+
     async def get_audio_stream(
         self, streamdetails: StreamDetails, seek_position: int = 0
     ) -> AsyncGenerator[bytes, None]:
         """Return the audio stream for the provider item with on-the-fly decryption.
 
         Downloads and decrypts the encrypted stream chunk-by-chunk without buffering.
-        On connection drop, reconnects using a Range header and resumes AES-CTR
-        decryption from the correct block boundary (up to 3 retries).
+        On connection drop (ClientPayloadError), resumes with a Range header.
+        On URL expiry (HTTP 4xx), re-fetches the URL and resumes from bytes_yielded.
+        Up to 3 retries total.
 
         :param streamdetails: Stream details containing encrypted URL and key.
         :param seek_position: Always 0 (seeking delegated to ffmpeg via allow_seek=True).
         :return: Async generator yielding decrypted audio bytes.
         """
         encrypted_url: str = streamdetails.data["encrypted_url"]
+        track_item_id: str = streamdetails.item_id
         key_hex: str = streamdetails.data["decryption_key"]
         key_bytes = bytes.fromhex(key_hex)
         if len(key_bytes) not in (16, 24, 32):
@@ -346,14 +381,31 @@ class YandexMusicStreamingManager:
             # Align resume position to AES-CTR block boundary
             block_start = (bytes_yielded // block_size) * block_size
             block_skip = bytes_yielded - block_start  # overlap bytes to discard in first chunk
-
-            # AES-CTR: original nonce is 0x00..00, so counter = block number
-            nonce = (block_start // block_size).to_bytes(block_size, "big")
-            decryptor = Cipher(algorithms.AES(key_bytes), modes.CTR(nonce)).decryptor()
+            block_num = (block_start // block_size).to_bytes(block_size, "big")
+            decryptor = Cipher(algorithms.AES(key_bytes), modes.CTR(block_num)).decryptor()
             headers = {"Range": f"bytes={block_start}-"} if block_start > 0 else {}
 
             try:
                 async with self.mass.http_session.get(encrypted_url, headers=headers) as response:
+                    if response.status in (401, 403, 410):
+                        # URL expired — re-fetch via helper and retry
+                        refreshed = await self._refresh_encrypted_url(
+                            track_item_id,
+                            encrypted_url,
+                            key_hex,
+                            response.status,
+                            bytes_yielded,
+                            attempt,
+                            max_retries,
+                        )
+                        if refreshed is None:
+                            raise MediaNotFoundError(
+                                f"Encrypted stream URL expired (HTTP {response.status}) "
+                                "after retries exhausted"
+                            )
+                        encrypted_url, key_hex = refreshed
+                        key_bytes = bytes.fromhex(key_hex)
+                        continue  # retry with fresh URL
                     try:
                         response.raise_for_status()
                     except Exception as err:
