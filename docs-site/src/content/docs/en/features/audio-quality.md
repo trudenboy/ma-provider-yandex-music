@@ -28,18 +28,9 @@ Lossless FLAC in Yandex Music is delivered encrypted via the `encraw` transport.
 
 1. Requests the encryption key and codec parameters from the API.
 2. Decrypts the stream AES-CTR chunk by chunk in real time.
-3. On connection drop, resumes download aligned to a block boundary (up to 6 retries).
+3. Fetches the stream in 4 MB windows, transparently advancing to the next window.
 
-This is completely transparent to the user — Music Assistant receives a clean FLAC stream.
-
-### CDN Limitations
-
-Yandex CDN limits each HTTP connection to approximately **6–7 MB** of data. When this limit is reached, the CDN drops the connection and the provider automatically resumes the stream from where it left off.
-
-With 6 retries, the provider transparently recovers up to **~56 MB** of data (first connection ~14 MB + 6 × ~7 MB), covering most FLAC tracks up to 7 minutes in length.
-
-> [!NOTE]
-> Tracks longer than ~56 MB (typically over 7 minutes in FLAC format) may encounter an unrecoverable playback interruption if all 6 retries are exhausted. Tracks shorter than 7 MB complete without any drops.
+This is completely transparent to the user — Music Assistant receives a clean FLAC stream with no track-length restrictions.
 
 ## Subscription Requirements
 
