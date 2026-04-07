@@ -70,7 +70,12 @@ class YandexQRAuth:
                     raise LoginFailed(
                         f"Unexpected response type from {resp.url.path}: {resp.content_type}"
                     )
-                return await resp.json()  # type: ignore[no-any-return]
+                try:
+                    return await resp.json()  # type: ignore[no-any-return]
+                except (ValueError, aiohttp.ContentTypeError) as err:
+                    raise LoginFailed(
+                        f"Invalid JSON response from {resp.url.path} (HTTP {resp.status})"
+                    ) from err
         except LoginFailed:
             raise
         except aiohttp.ClientError as err:
@@ -112,7 +117,10 @@ class YandexQRAuth:
         if data.get("status") != "ok":
             raise LoginFailed("Failed to create QR auth session")
 
-        track_id = str(data["track_id"])
+        track_id_value = data.get("track_id")
+        if not track_id_value:
+            raise LoginFailed("Yandex Passport response missing track_id")
+        track_id = str(track_id_value)
         csrf_token = str(data.get("csrf_token", csrf_token))
         qr_url = f"{PASSPORT_URL}/auth/magic/code/?track_id={track_id}"
 

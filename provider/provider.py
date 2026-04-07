@@ -172,13 +172,13 @@ class YandexMusicProvider(MusicProvider):
                 await self._client.connect()
             except LoginFailed:
                 self.logger.warning("Music token is invalid or expired")
+                # Clear the dead token so restarts go straight to refresh
+                self._update_config_value(CONF_TOKEN, None, encrypted=True)
                 if x_token:
                     self.logger.info("Attempting to refresh from session token")
                     token = None
                     self._client = None
                 else:
-                    # Clear dead token and fail
-                    self._update_config_value(CONF_TOKEN, None, encrypted=True)
                     raise
 
         # Refresh from x_token if music token absent or failed
