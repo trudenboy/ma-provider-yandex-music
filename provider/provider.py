@@ -47,6 +47,7 @@ from .constants import (
     CONF_LIKED_TRACKS_MAX_TRACKS,
     CONF_MY_WAVE_MAX_TRACKS,
     CONF_TOKEN,
+    CONF_X_TOKEN,
     DEFAULT_BASE_URL,
     DISCOVERY_INITIAL_TRACKS,
     FOR_YOU_FOLDER_ID,
@@ -84,6 +85,7 @@ from .parsers import (
     parse_track,
 )
 from .streaming import YandexMusicStreamingManager
+from .yandex_auth import refresh_music_token
 
 if TYPE_CHECKING:
     from music_assistant_models.streamdetails import StreamDetails
@@ -157,12 +159,43 @@ class YandexMusicProvider(MusicProvider):
     async def handle_async_init(self) -> None:
         """Handle async initialization of the provider."""
         token = self.config.get_value(CONF_TOKEN)
-        if not token:
-            raise LoginFailed("No Yandex Music token provided")
-
+        x_token = self.config.get_value(CONF_X_TOKEN)
         base_url = self.config.get_value(CONF_BASE_URL, DEFAULT_BASE_URL)
-        self._client = YandexMusicClient(str(token), base_url=str(base_url))
-        await self._client.connect()
+
+        if not token and not x_token:
+            raise LoginFailed("No Yandex Music token provided. Please authenticate.")
+
+        # Try existing music token first (fast path)
+        if token:
+            try:
+                self._client = YandexMusicClient(str(token), base_url=str(base_url))
+                await self._client.connect()
+            except LoginFailed:
+                self.logger.warning("Music token is invalid or expired")
+                if x_token:
+                    self.logger.info("Attempting to refresh from session token")
+                    token = None
+                    self._client = None
+                else:
+                    # Clear dead token and fail
+                    self._update_config_value(CONF_TOKEN, None, encrypted=True)
+                    raise
+
+        # Refresh from x_token if music token absent or failed
+        if not token and x_token:
+            try:
+                new_music_token = await refresh_music_token(str(x_token))
+                self._update_config_value(CONF_TOKEN, new_music_token, encrypted=True)
+                self._client = YandexMusicClient(new_music_token, base_url=str(base_url))
+                await self._client.connect()
+                self.logger.info("Refreshed music token from session token")
+            except Exception as err:
+                # Both tokens dead — clear and fail
+                self.logger.warning("Session token refresh failed: %s", type(err).__name__)
+                self._update_config_value(CONF_TOKEN, None, encrypted=True)
+                self._update_config_value(CONF_X_TOKEN, None, encrypted=True)
+                raise LoginFailed("Session token expired. Please re-authenticate.") from err
+
         # Suppress yandex_music library DEBUG dumps (full API request/response JSON)
         logging.getLogger("yandex_music").setLevel(self.logger.level + 10)
         self._streaming = YandexMusicStreamingManager(self)
