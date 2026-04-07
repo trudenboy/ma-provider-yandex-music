@@ -48,6 +48,9 @@ _MOBILE_USER_AGENT = (
 QR_POLL_INTERVAL = 2.0  # seconds between status checks
 QR_POLL_TIMEOUT = 120.0  # total seconds to wait for QR scan
 
+# HTTP timeout for Passport/token requests (connect + read)
+_REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=30)
+
 
 class YandexQRAuth:
     """Yandex Passport QR authentication.
@@ -224,7 +227,9 @@ async def perform_qr_auth(mass: MusicAssistant, session_id: str) -> tuple[str, s
     """
     jar = aiohttp.CookieJar()
     headers = {"User-Agent": _MOBILE_USER_AGENT}
-    async with aiohttp.ClientSession(cookie_jar=jar, headers=headers) as session:
+    async with aiohttp.ClientSession(
+        cookie_jar=jar, headers=headers, timeout=_REQUEST_TIMEOUT
+    ) as session:
         auth = YandexQRAuth(session)
 
         # Get QR code URL
@@ -259,6 +264,6 @@ async def refresh_music_token(x_token: str) -> str:
 
     Creates a throwaway HTTP session for the single API call.
     """
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=_REQUEST_TIMEOUT) as session:
         auth = YandexQRAuth(session)
         return await auth.get_music_token(x_token)

@@ -195,6 +195,8 @@ class YandexMusicProvider(MusicProvider):
                 self._update_config_value(CONF_TOKEN, None, encrypted=True)
                 self._update_config_value(CONF_X_TOKEN, None, encrypted=True)
                 raise LoginFailed("Session token expired. Please re-authenticate.") from err
+            except asyncio.CancelledError:
+                raise
             except Exception as err:
                 # Transient/network failure — keep credentials for retry
                 self.logger.warning(
