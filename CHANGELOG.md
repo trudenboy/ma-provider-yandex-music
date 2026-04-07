@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.7.1] - 2026-04-07
+
+- fix: add mobile User-Agent to QR auth requests (`57ac5b8`)
+- chore: update changelog for v2.7.0 [skip ci] (`c18270a`)
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
 
 ## [2.6.7] - 2026-02-27
