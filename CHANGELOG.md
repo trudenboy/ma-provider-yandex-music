@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0] - 2026-04-07
+
+- fix: update playlist snapshots for MA models 1.1.110 (is_dynamic field) (`fc2c0d1`)
+- chore: fix trailing newline in development.md (`9780076`)
+- chore: bump version to 2.7.0 (`b216ccc`)
+- feat: QR-code authentication as primary login method (#68) (`60140d6`)
+- chore: sync workflow wrappers from ma-provider-tools (#67) (`894cfaa`)
+- fix: use received HTTP bytes (not decrypted) for EOF detection in windowed stream (`a038107`)
+- chore: fix codespell and trailing-newline pre-commit failures (`4258702`)
+- fix: detect EOF at exact _RANGE_WINDOW boundary via Content-Range header (`fd3e26f`)
+- chore: sync workflow wrappers from ma-provider-tools (#65) (`f8f65e8`)
+- chore: reformat CHANGELOG — use commit history instead of PR notes [skip ci] (`7d36f68`)
+- chore: reformat CHANGELOG — marker to top, releases newest-first [skip ci] (`c118d69`)
+- chore: reformat CHANGELOG — marker to top, releases newest-first [skip ci] (`cd57f25`)
+- refactor: extract _handle_stream_error to fix PLR0915 in get_audio_stream (`9bbdc8e`)
+- chore: improve manifest description and add credits field (`c396505`)
+- chore: update changelog for v2.6.7 [skip ci] (`13f671d`)
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
 
 ## [2.6.7] - 2026-02-27
