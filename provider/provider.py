@@ -189,12 +189,21 @@ class YandexMusicProvider(MusicProvider):
                 self._client = YandexMusicClient(new_music_token, base_url=str(base_url))
                 await self._client.connect()
                 self.logger.info("Refreshed music token from session token")
-            except Exception as err:
-                # Both tokens dead — clear and fail
-                self.logger.warning("Session token refresh failed: %s", type(err).__name__)
+            except LoginFailed as err:
+                # Definitive auth failure — clear dead credentials
+                self.logger.warning("Session token is invalid or expired")
                 self._update_config_value(CONF_TOKEN, None, encrypted=True)
                 self._update_config_value(CONF_X_TOKEN, None, encrypted=True)
                 raise LoginFailed("Session token expired. Please re-authenticate.") from err
+            except Exception as err:
+                # Transient/network failure — keep credentials for retry
+                self.logger.warning(
+                    "Session token refresh failed (network): %s",
+                    type(err).__name__,
+                )
+                raise ProviderUnavailableError(
+                    "Unable to refresh music token right now. Please try again later."
+                ) from err
 
         # Suppress yandex_music library DEBUG dumps (full API request/response JSON)
         logging.getLogger("yandex_music").setLevel(self.logger.level + 10)

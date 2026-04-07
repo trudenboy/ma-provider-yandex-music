@@ -10,10 +10,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import aiohttp
 from music_assistant_models.errors import LoginFailed
+from yarl import URL
 
 from music_assistant.helpers.auth import AuthenticationHelper
 
@@ -51,6 +52,30 @@ class YandexQRAuth:
         """Initialize with a dedicated aiohttp session."""
         self._session = session
 
+    async def _post_json(
+        self,
+        url: str,
+        data: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """POST request with HTTP status validation and JSON parsing.
+
+        Wraps aiohttp errors into LoginFailed with actionable messages.
+        """
+        try:
+            async with self._session.post(url, data=data, headers=headers) as resp:
+                if resp.status != 200:
+                    raise LoginFailed(f"Yandex returned HTTP {resp.status} for {resp.url.path}")
+                if "json" not in (resp.content_type or ""):
+                    raise LoginFailed(
+                        f"Unexpected response type from {resp.url.path}: {resp.content_type}"
+                    )
+                return await resp.json()  # type: ignore[no-any-return]
+        except LoginFailed:
+            raise
+        except aiohttp.ClientError as err:
+            raise LoginFailed(f"Network error during Yandex auth: {type(err).__name__}") from err
+
     async def get_qr(self) -> tuple[str, str, str]:
         """Start QR code auth session.
 
@@ -58,30 +83,37 @@ class YandexQRAuth:
         Raises LoginFailed on any error.
         """
         # Step 1: Get CSRF token from passport page
-        async with self._session.get(f"{PASSPORT_URL}/am?app_platform=android") as resp:
-            html = await resp.text()
-            match = re.search(r'"csrf_token"\s*value="([^"]+)"', html)
-            if not match:
-                raise LoginFailed("Failed to obtain CSRF token from Yandex Passport")
+        try:
+            async with self._session.get(f"{PASSPORT_URL}/am?app_platform=android") as resp:
+                if resp.status != 200:
+                    raise LoginFailed(f"Yandex Passport returned HTTP {resp.status}")
+                html = await resp.text()
+        except aiohttp.ClientError as err:
+            raise LoginFailed(
+                f"Network error reaching Yandex Passport: {type(err).__name__}"
+            ) from err
+
+        match = re.search(r'"csrf_token"\s*value="([^"]+)"', html)
+        if not match:
+            raise LoginFailed("Failed to obtain CSRF token from Yandex Passport")
 
         csrf_token = match[1]
 
         # Step 2: Create QR auth session
-        async with self._session.post(
+        data = await self._post_json(
             f"{PASSPORT_URL}/registration-validations/auth/password/submit",
             data={
                 "csrf_token": csrf_token,
                 "retpath": "https://passport.yandex.ru/profile",
                 "with_code": 1,
             },
-        ) as resp:
-            data = await resp.json()
+        )
 
         if data.get("status") != "ok":
             raise LoginFailed("Failed to create QR auth session")
 
-        track_id = data["track_id"]
-        csrf_token = data.get("csrf_token", csrf_token)
+        track_id = str(data["track_id"])
+        csrf_token = str(data.get("csrf_token", csrf_token))
         qr_url = f"{PASSPORT_URL}/auth/magic/code/?track_id={track_id}"
 
         _LOGGER.debug("QR auth session created, track_id=%s", track_id)
@@ -92,26 +124,25 @@ class YandexQRAuth:
 
         Returns True if approved, False if still pending.
         """
-        async with self._session.post(
+        data = await self._post_json(
             f"{PASSPORT_URL}/auth/new/magic/status/",
             data={"csrf_token": csrf_token, "track_id": track_id},
-        ) as resp:
-            data = await resp.json()
-
+        )
         return bool(data.get("status") == "ok")
 
     async def get_x_token(self) -> str:
         """Exchange session cookies for x_token.
 
         Must be called after successful QR auth (cookies are in the session jar).
+        Uses the public filter_cookies API to build the cookie header.
         """
-        cookies = "; ".join(
-            f"{c.key}={c.value}"
-            for c in self._session.cookie_jar
-            if c["domain"].endswith("yandex.ru")
-        )
+        passport_url = URL("https://passport.yandex.ru")
+        filtered = self._session.cookie_jar.filter_cookies(passport_url)
+        if not filtered:
+            raise LoginFailed("No Yandex session cookies found after QR auth")
+        cookies = "; ".join(f"{k}={v.value}" for k, v in filtered.items())
 
-        async with self._session.post(
+        data = await self._post_json(
             f"{PASSPORT_API_URL}/1/bundle/oauth/token_by_sessionid",
             data={
                 "client_id": PASSPORT_CLIENT_ID,
@@ -121,8 +152,7 @@ class YandexQRAuth:
                 "Ya-Client-Host": "passport.yandex.ru",
                 "Ya-Client-Cookie": cookies,
             },
-        ) as resp:
-            data = await resp.json()
+        )
 
         if "access_token" not in data:
             raise LoginFailed("Failed to exchange session for x_token")
@@ -134,7 +164,7 @@ class YandexQRAuth:
 
         Can be called standalone (no prior QR flow needed) for token refresh.
         """
-        async with self._session.post(
+        data = await self._post_json(
             MUSIC_TOKEN_URL,
             data={
                 "client_id": MUSIC_CLIENT_ID,
@@ -142,8 +172,7 @@ class YandexQRAuth:
                 "grant_type": "x-token",
                 "access_token": x_token,
             },
-        ) as resp:
-            data = await resp.json()
+        )
 
         if "access_token" not in data:
             raise LoginFailed("Failed to obtain music token from x_token")
