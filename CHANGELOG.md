@@ -32,6 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.7.2] - 2026-04-07
+
+- fix: try multiple CSRF token extraction patterns for Yandex Passport (`f6f7817`)
+- chore: update changelog for v2.7.1 [skip ci] (`84199cc`)
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
 
 ## [2.6.7] - 2026-02-27
