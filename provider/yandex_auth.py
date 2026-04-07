@@ -36,6 +36,14 @@ PASSPORT_URL = "https://passport.yandex.ru"
 PASSPORT_API_URL = "https://mobileproxy.passport.yandex.net"
 MUSIC_TOKEN_URL = "https://oauth.mobile.yandex.net/1/token"
 
+# Mobile User-Agent required for Yandex Passport to return CSRF token in HTML
+# Without it, Passport returns a SPA page with empty csrf_token
+_MOBILE_USER_AGENT = (
+    "Mozilla/5.0 (Linux; Android 13; Pixel 7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/120.0.0.0 Mobile Safari/537.36"
+)
+
 # Polling settings
 QR_POLL_INTERVAL = 2.0  # seconds between status checks
 QR_POLL_TIMEOUT = 120.0  # total seconds to wait for QR scan
@@ -196,7 +204,9 @@ async def perform_qr_auth(mass: MusicAssistant, session_id: str) -> tuple[str, s
 
     Returns (x_token, music_token).
     """
-    async with aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar()) as session:
+    jar = aiohttp.CookieJar()
+    headers = {"User-Agent": _MOBILE_USER_AGENT}
+    async with aiohttp.ClientSession(cookie_jar=jar, headers=headers) as session:
         auth = YandexQRAuth(session)
 
         # Get QR code URL
