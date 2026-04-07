@@ -1,6 +1,6 @@
 [project]
 name = "ma-provider-yandex-music"
-version = "2.0.0"
+version = "2.7.0"
 description = "Yandex Music provider for Music Assistant"
 requires-python = ">=3.12"
 dependencies = []
