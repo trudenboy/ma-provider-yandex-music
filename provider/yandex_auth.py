@@ -106,11 +106,29 @@ class YandexQRAuth:
                 f"Network error reaching Yandex Passport: {type(err).__name__}"
             ) from err
 
-        match = re.search(r'"csrf_token"\s*value="([^"]+)"', html)
-        if not match:
+        # Try multiple patterns — Yandex serves different page formats
+        # depending on User-Agent, cookies, and repeat requests
+        csrf_patterns = [
+            r'"csrf_token"\s*value="([^"]+)"',  # HTML input attribute
+            r"'csrf_token'\s*:\s*'([^']+)'",  # JS object (single quotes)
+            r'"csrf_token"\s*:\s*"([^"]+)"',  # JSON in script tag
+        ]
+        csrf_token_value = None
+        for pattern in csrf_patterns:
+            match = re.search(pattern, html)
+            if match and match[1]:
+                csrf_token_value = match[1]
+                break
+
+        if not csrf_token_value:
+            _LOGGER.debug(
+                "CSRF extraction failed, page length=%d, status=%s",
+                len(html),
+                "has_csrf_key" if "csrf_token" in html else "no_csrf_key",
+            )
             raise LoginFailed("Failed to obtain CSRF token from Yandex Passport")
 
-        csrf_token = match[1]
+        csrf_token = csrf_token_value
 
         # Step 2: Create QR auth session
         data = await self._post_json(
