@@ -39,6 +39,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.8.0] - 2026-04-09
+
+- fix: read bitrate from API and use lossless quality for MP3 320 (`b5f6a24`)
+- fix: parse real audio params from API and container headers (`6f45425`)
+- fix: auto-parse codec strings so content_type reflects audio codec, not container (`27b830a`)
+- fix: trim trailing blank lines in development.md (`ea3139b`)
+- fix: use or-operator instead of ternary for FURB110 lint rule (`5ba024e`)
+- refactor: unify streaming under get-file-info with raw transport (#71) (`a89972b`)
+- chore: sync workflow wrappers from ma-provider-tools (#70) (`060126d`)
+- fix: make CONF_TOKEN required to prevent saving without credentials (`95118d3`)
+- fix: address Copilot review feedback on QR auth PR (`09dda3b`)
+- chore: update changelog for v2.7.2 [skip ci] (`8b5baf4`)
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
 
 ## [2.6.7] - 2026-02-27
