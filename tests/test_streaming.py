@@ -291,42 +291,87 @@ def test_select_best_quality_high_only_flac_returns_flac(
     assert result.codec == "flac"
 
 
-# --- Audio params tests ---
+# --- _build_audio_format tests ---
 
 
-def test_get_audio_params_flac_mp4(
+def test_build_audio_format_passes_api_params(
     streaming_manager: YandexMusicStreamingManager,
 ) -> None:
-    """flac-mp4 returns 48kHz/24bit."""
-    assert streaming_manager._get_audio_params("flac-mp4") == (48000, 24)
+    """_build_audio_format forwards API-provided params to AudioFormat."""
+    fmt = streaming_manager._build_audio_format(
+        "flac-mp4",
+        bit_rate=0,
+        sample_rate=48000,
+        bit_depth=24,
+    )
+    assert fmt.content_type == ContentType.FLAC
+    assert fmt.sample_rate == 48000
+    assert fmt.bit_depth == 24
 
 
-def test_get_audio_params_flac_mp4_case_insensitive(
+def test_build_audio_format_keeps_defaults_when_zero(
     streaming_manager: YandexMusicStreamingManager,
 ) -> None:
-    """flac-mp4 matching is case-insensitive."""
-    assert streaming_manager._get_audio_params("FLAC-MP4") == (48000, 24)
+    """Without explicit params, AudioFormat keeps its defaults (44100/16)."""
+    fmt = streaming_manager._build_audio_format("mp3")
+    assert fmt.content_type == ContentType.MP3
+    assert fmt.sample_rate == 44100
+    assert fmt.bit_depth == 16
 
 
-def test_get_audio_params_flac(
+# --- Container probe parser tests ---
+
+
+def test_parse_flac_streaminfo_valid(
     streaming_manager: YandexMusicStreamingManager,
 ) -> None:
-    """Plain FLAC returns CD-quality defaults."""
-    assert streaming_manager._get_audio_params("flac") == (44100, 16)
+    """Parse real FLAC STREAMINFO: 48kHz, 24-bit."""
+    # Build a minimal FLAC header: magic + block header + 34-byte STREAMINFO
+    # STREAMINFO bytes 10-13: sample_rate(20) | channels(3) | bps(5) | total(36 high bits)
+    # 48000 Hz = 0xBB80, 24-bit = 23 (stored as bps-1), stereo = 1 (channels-1)
+    # bits: 00001011101110000000 001 10111 0000...
+    # = 0x0BB80 << 12 | 0x1 << 9 | 23 << 4 | 0x0 = 0x0BB80BE0 ... but let's compute:
+    sr = 48000
+    channels_minus1 = 1  # stereo
+    bps_minus1 = 23  # 24-bit
+    val = (sr << 12) | (channels_minus1 << 9) | (bps_minus1 << 4)
+    # Build 34-byte STREAMINFO payload
+    payload = bytearray(34)
+    payload[10:14] = val.to_bytes(4, "big")
+    # Full header: "fLaC" + block header (type=0, length=34) + payload
+    block_header = b"\x80" + (34).to_bytes(3, "big")  # last-metadata-block flag + length
+    header = b"fLaC" + block_header + bytes(payload)
+
+    result = streaming_manager._parse_flac_streaminfo(header)
+    assert result == (48000, 24)
 
 
-def test_get_audio_params_mp3(
+def test_parse_flac_streaminfo_invalid(
     streaming_manager: YandexMusicStreamingManager,
 ) -> None:
-    """MP3 returns CD-quality defaults."""
-    assert streaming_manager._get_audio_params("mp3") == (44100, 16)
+    """Non-FLAC data returns (0, 0)."""
+    assert streaming_manager._parse_flac_streaminfo(b"not flac data") == (0, 0)
+    assert streaming_manager._parse_flac_streaminfo(b"") == (0, 0)
 
 
-def test_get_audio_params_none(
+def test_parse_mp4_dfla_box(
     streaming_manager: YandexMusicStreamingManager,
 ) -> None:
-    """None codec returns CD-quality defaults."""
-    assert streaming_manager._get_audio_params(None) == (44100, 16)
+    """Parse dfLa box (FLAC-in-MP4) with STREAMINFO inside."""
+    sr = 48000
+    bps_minus1 = 23
+    val = (sr << 12) | (1 << 9) | (bps_minus1 << 4)
+    streaminfo = bytearray(34)
+    streaminfo[10:14] = val.to_bytes(4, "big")
+    # dfLa box: size(4) + "dfLa" + version/flags(4) + block_header(4) + STREAMINFO(34)
+    block_header = b"\x80\x00\x00\x22"  # type=0 (last), length=34
+    box_size = (4 + 4 + 4 + 4 + 34).to_bytes(4, "big")
+    dfla_box = box_size + b"dfLa" + b"\x00\x00\x00\x00" + block_header + bytes(streaminfo)
+    # Wrap in some padding to simulate real MP4 structure
+    header = b"\x00" * 100 + dfla_box + b"\x00" * 100
+
+    result = streaming_manager._parse_mp4_audio_params(header)
+    assert result == (48000, 24)
 
 
 # --- get_audio_stream tests ---
