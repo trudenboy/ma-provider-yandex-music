@@ -343,9 +343,12 @@ def _make_encrypted_stream_details(
         audio_format=AudioFormat(content_type=ContentType.MP4),
         stream_type=StreamType.CUSTOM,
         data={
-            "encrypted_url": url,
+            "url": url,
             "decryption_key": key_hex,
             "codec": "flac-mp4",
+            "transport": "encraw",
+            "fi_quality": "lossless",
+            "fi_codecs": "flac-mp4,flac,aac-mp4,aac,he-aac,mp3,he-aac-mp4",
         },
     )
 
@@ -450,7 +453,7 @@ async def test_get_audio_stream_http_error_raises_media_not_found(
         _MockResponse([], error=RuntimeError("403 Forbidden"))
     )
 
-    with pytest.raises(MediaNotFoundError, match="Failed to fetch encrypted stream"):
+    with pytest.raises(MediaNotFoundError, match="Failed to fetch stream"):
         async for _ in streaming_manager.get_audio_stream(sd):
             pass
 
@@ -538,9 +541,9 @@ async def test_get_audio_stream_refreshes_url_on_410(
     streaming_provider_stub.mass.http_session = unittest.mock.MagicMock()
     streaming_provider_stub.mass.http_session.get = _get
 
-    # Mock get_track_file_info_lossless to return a fresh URL
+    # Mock get_track_file_info to return a fresh URL
     streaming_provider_stub.client = unittest.mock.AsyncMock()
-    streaming_provider_stub.client.get_track_file_info_lossless = unittest.mock.AsyncMock(
+    streaming_provider_stub.client.get_track_file_info = unittest.mock.AsyncMock(
         return_value={"url": fresh_url, "codec": "flac-mp4", "key": key.hex()}
     )
     streaming_manager.client = streaming_provider_stub.client
@@ -553,8 +556,11 @@ async def test_get_audio_stream_refreshes_url_on_410(
             result += chunk
 
     assert result == plaintext
-    streaming_provider_stub.client.get_track_file_info_lossless.assert_called_once_with(
-        "test_track_123"
+    streaming_provider_stub.client.get_track_file_info.assert_called_once_with(
+        "test_track_123",
+        quality="lossless",
+        codecs="flac-mp4,flac,aac-mp4,aac,he-aac,mp3,he-aac-mp4",
+        transport="encraw",
     )
 
 
@@ -567,7 +573,7 @@ async def test_get_audio_stream_raises_after_all_retries_on_410(
     sd = _make_encrypted_stream_details(key.hex())
     streaming_provider_stub.mass.http_session = _MockHttpSession(_MockResponse([], status=410))
     streaming_provider_stub.client = unittest.mock.AsyncMock()
-    streaming_provider_stub.client.get_track_file_info_lossless = unittest.mock.AsyncMock(
+    streaming_provider_stub.client.get_track_file_info = unittest.mock.AsyncMock(
         return_value={"url": "https://cdn.example.com/still-expired.flac", "key": key.hex()}
     )
     streaming_manager.client = streaming_provider_stub.client
@@ -676,15 +682,13 @@ async def test_get_audio_stream_fails_immediately_when_url_refresh_returns_nothi
     streaming_manager: YandexMusicStreamingManager,
     streaming_provider_stub: StreamingProviderStub,
 ) -> None:
-    """If get_track_file_info_lossless returns no URL, stream fails without wasting retries."""
+    """If get_track_file_info returns no URL, stream fails without wasting retries."""
     key = b"\x88" * 32
     sd = _make_encrypted_stream_details(key.hex())
     streaming_provider_stub.mass.http_session = _MockHttpSession(_MockResponse([], status=410))
     streaming_provider_stub.client = unittest.mock.AsyncMock()
     # Simulate API returning no usable URL (None result)
-    streaming_provider_stub.client.get_track_file_info_lossless = unittest.mock.AsyncMock(
-        return_value=None
-    )
+    streaming_provider_stub.client.get_track_file_info = unittest.mock.AsyncMock(return_value=None)
     streaming_manager.client = streaming_provider_stub.client
 
     with (
@@ -695,7 +699,7 @@ async def test_get_audio_stream_fails_immediately_when_url_refresh_returns_nothi
             pass
 
     # Should have given up after attempt 0 (refresh returned None → no stale URL reuse)
-    assert streaming_provider_stub.client.get_track_file_info_lossless.call_count == 1
+    assert streaming_provider_stub.client.get_track_file_info.call_count == 1
 
 
 async def test_get_audio_stream_exact_window_boundary(
@@ -789,3 +793,131 @@ async def test_get_audio_stream_continues_after_non_block_boundary_drop(
     assert session.calls[0]["headers"] == {"Range": "bytes=0-31"}
     assert session.calls[1]["headers"] == {"Range": "bytes=16-47"}  # AES-aligned reconnect
     assert session.calls[2]["headers"] == {"Range": "bytes=48-79"}  # second window
+
+
+# --- Raw (unencrypted) windowed streaming tests ---
+
+
+def _make_raw_stream_details(
+    url: str = "https://cdn.example.com/track.flac",
+    codec: str = "flac-mp4",
+) -> StreamDetails:
+    """Build StreamDetails for raw (unencrypted) windowed stream tests."""
+    return StreamDetails(
+        item_id="test_track_123",
+        provider="yandex_music_instance",
+        audio_format=AudioFormat(content_type=ContentType.MP4),
+        stream_type=StreamType.CUSTOM,
+        data={
+            "url": url,
+            "codec": codec,
+            "transport": "raw",
+            "fi_quality": "lossless",
+            "fi_codecs": "flac-mp4,flac,aac-mp4,aac,he-aac,mp3,he-aac-mp4",
+        },
+    )
+
+
+async def test_get_audio_stream_raw_single_window(
+    streaming_manager: YandexMusicStreamingManager,
+    streaming_provider_stub: StreamingProviderStub,
+) -> None:
+    """Raw stream smaller than _RANGE_WINDOW is fetched in one request."""
+    plaintext = b"Hello raw FLAC data!" * 50  # 1000 bytes
+    sd = _make_raw_stream_details()
+    streaming_provider_stub.mass.http_session = _MockHttpSession(_MockResponse([plaintext]))
+
+    result = b""
+    async for chunk in streaming_manager.get_audio_stream(sd):
+        result += chunk
+
+    assert result == plaintext
+
+
+async def test_get_audio_stream_raw_multi_window(
+    streaming_manager: YandexMusicStreamingManager,
+    streaming_provider_stub: StreamingProviderStub,
+) -> None:
+    """Raw stream larger than _RANGE_WINDOW uses multiple windowed requests."""
+    small_window = 32
+    plaintext = b"A" * 50  # 50 bytes → two windows (32 + 18)
+
+    resp1 = _MockResponse([plaintext[:small_window]], status=206)
+    resp2 = _MockResponse([plaintext[small_window:]], status=206)
+    session = _MultiCallHttpSession([resp1, resp2])
+    streaming_provider_stub.mass.http_session = session
+
+    result = b""
+    with unittest.mock.patch.object(_streaming_mod, "_RANGE_WINDOW", small_window):
+        async for chunk in streaming_manager.get_audio_stream(_make_raw_stream_details()):
+            result += chunk
+
+    assert result == plaintext
+    assert len(session.calls) == 2
+    assert session.calls[0]["headers"] == {"Range": "bytes=0-31"}
+    assert session.calls[1]["headers"] == {"Range": "bytes=32-63"}
+
+
+async def test_get_audio_stream_raw_retry_on_drop(
+    streaming_manager: YandexMusicStreamingManager,
+    streaming_provider_stub: StreamingProviderStub,
+) -> None:
+    """Raw stream reconnects with correct Range header after TCP drop."""
+    plaintext = b"B" * 96
+    drop_at = 48
+
+    first_resp = _MockResponse([plaintext[:drop_at]], drop_payload_error=True)
+    second_resp = _MockResponse([plaintext[drop_at:]], status=206)
+    session = _MultiCallHttpSession([first_resp, second_resp])
+    streaming_provider_stub.mass.http_session = session
+
+    result = b""
+    with unittest.mock.patch("asyncio.sleep"):
+        async for chunk in streaming_manager.get_audio_stream(_make_raw_stream_details()):
+            result += chunk
+
+    assert result == plaintext
+    assert len(session.calls) == 2
+    # Raw uses exact byte offset (no AES block alignment)
+    assert session.calls[1]["headers"] == {"Range": f"bytes={drop_at}-{drop_at + 4194304 - 1}"}
+
+
+async def test_get_audio_stream_raw_url_refresh_on_403(
+    streaming_manager: YandexMusicStreamingManager,
+    streaming_provider_stub: StreamingProviderStub,
+) -> None:
+    """Raw stream refreshes URL on 403 and continues."""
+    plaintext = b"C" * 64
+    fresh_url = "https://cdn.example.com/refreshed-track.flac"
+
+    expired_resp = _MockResponse([], status=403)
+    fresh_resp = _MockResponse([plaintext])
+
+    call_count = 0
+
+    def _get(_url: str, **_kwargs: object) -> _MockResponse:
+        nonlocal call_count
+        call_count += 1
+        return expired_resp if call_count == 1 else fresh_resp
+
+    streaming_provider_stub.mass.http_session = unittest.mock.MagicMock()
+    streaming_provider_stub.mass.http_session.get = _get
+
+    streaming_provider_stub.client = unittest.mock.AsyncMock()
+    streaming_provider_stub.client.get_track_file_info = unittest.mock.AsyncMock(
+        return_value={"url": fresh_url, "codec": "flac-mp4"}
+    )
+    streaming_manager.client = streaming_provider_stub.client
+
+    result = b""
+    with unittest.mock.patch("asyncio.sleep"):
+        async for chunk in streaming_manager.get_audio_stream(_make_raw_stream_details()):
+            result += chunk
+
+    assert result == plaintext
+    streaming_provider_stub.client.get_track_file_info.assert_called_once_with(
+        "test_track_123",
+        quality="lossless",
+        codecs="flac-mp4,flac,aac-mp4,aac,he-aac,mp3,he-aac-mp4",
+        transport="raw",
+    )
