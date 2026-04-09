@@ -50,7 +50,7 @@ QUALITY_FILE_INFO_PARAMS: Final[dict[str, dict[str, str]]] = {
     },
     QUALITY_HIGH: {
         "quality": "lossless",
-        "codecs": "mp3,aac-mp4,aac,flac-mp4,flac",
+        "codecs": "mp3",
     },
     QUALITY_BALANCED: {
         "quality": "nq",

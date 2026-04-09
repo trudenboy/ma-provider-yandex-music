@@ -130,7 +130,7 @@ class YandexMusicStreamingManager:
             needs_decryption = file_info.get("needs_decryption", False)
 
             # Gather audio params: API response first, then probe container
-            bit_rate = file_info.get("bitrate_in_kbps") or 0
+            bit_rate = file_info.get("bitrate") or file_info.get("bitrate_in_kbps") or 0
             sample_rate = file_info.get("sample_rate") or 0
             bit_depth = file_info.get("bit_depth") or 0
 
