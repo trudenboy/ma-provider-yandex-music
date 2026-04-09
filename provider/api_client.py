@@ -701,6 +701,8 @@ class YandexMusicClient:
         :param transport: Transport mode ("raw" or "encraw").
         :return: Parsed downloadInfo dict (url, codec, key?, ...) or None on error.
         """
+        # Normalize codecs: strip whitespace from each token to prevent HMAC mismatches
+        codecs = ",".join(c.strip() for c in codecs.split(",") if c.strip())
 
         def _build_signed_params(client: ClientAsync) -> tuple[str, dict[str, Any]]:
             """Build URL and signed params using current client and timestamp.

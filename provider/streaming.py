@@ -327,10 +327,10 @@ class YandexMusicStreamingManager:
 
         Updates streamdetails.data in-place with new URL (and key for encraw).
 
-        :return: True on success, None if retries exhausted.
+        :return: True on success, False if retries exhausted.
         """
         if attempt >= max_retries:
-            return None  # type: ignore[return-value]
+            return False
         data = streamdetails.data
         track_id = self._track_id_from_item_id(streamdetails.item_id)
         self.logger.warning(
@@ -355,7 +355,7 @@ class YandexMusicStreamingManager:
             if "decryption_key" in data and file_info.get("key"):
                 data["decryption_key"] = file_info["key"]
             return True
-        return None  # type: ignore[return-value]
+        return False
 
     async def _decrypt_response_stream(
         self,
@@ -547,10 +547,23 @@ class YandexMusicStreamingManager:
                             bytes_yielded += len(chunk)
                             yield chunk
                     else:
-                        block_skip = 0
-                        async for chunk in response.content.iter_chunked(_CHUNK_SIZE):
-                            bytes_yielded += len(chunk)
-                            yield chunk
+                        # If server ignored Range (200 instead of 206) and we've
+                        # already delivered bytes, skip the already-yielded prefix.
+                        range_ignored = response.status == 200 and block_start > 0
+                        skip_bytes = bytes_before if range_ignored else 0
+                        block_skip = skip_bytes
+                        async for raw_chunk in response.content.iter_chunked(_CHUNK_SIZE):
+                            if skip_bytes > 0:
+                                if len(raw_chunk) <= skip_bytes:
+                                    skip_bytes -= len(raw_chunk)
+                                    continue
+                                usable = raw_chunk[skip_bytes:]
+                                skip_bytes = 0
+                                bytes_yielded += len(usable)
+                                yield usable
+                                continue
+                            bytes_yielded += len(raw_chunk)
+                            yield raw_chunk
 
                     # Window complete — check if EOF
                     window_got = bytes_yielded - bytes_before

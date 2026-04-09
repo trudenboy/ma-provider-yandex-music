@@ -921,3 +921,31 @@ async def test_get_audio_stream_raw_url_refresh_on_403(
         codecs="flac-mp4,flac,aac-mp4,aac,he-aac,mp3,he-aac-mp4",
         transport="raw",
     )
+
+
+async def test_get_audio_stream_raw_resets_on_range_ignored(
+    streaming_manager: YandexMusicStreamingManager,
+    streaming_provider_stub: StreamingProviderStub,
+) -> None:
+    """If server returns 200 instead of 206 after raw reconnect, skip already-delivered bytes."""
+    small_window = 32
+    plaintext = b"G" * 96  # 96 bytes
+
+    drop_at = 48
+    # First response drops after 48 bytes
+    first_resp = _MockResponse([plaintext[:drop_at]], drop_payload_error=True)
+    # Second response ignores Range and returns full file with 200
+    second_resp = _MockResponse([plaintext], status=200)
+    session = _MultiCallHttpSession([first_resp, second_resp])
+    streaming_provider_stub.mass.http_session = session
+
+    result = b""
+    with (
+        unittest.mock.patch.object(_streaming_mod, "_RANGE_WINDOW", small_window),
+        unittest.mock.patch("asyncio.sleep"),
+    ):
+        async for chunk in streaming_manager.get_audio_stream(_make_raw_stream_details()):
+            result += chunk
+
+    # Should get the full plaintext without duplication
+    assert result == plaintext
