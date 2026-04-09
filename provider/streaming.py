@@ -17,11 +17,16 @@ from music_assistant_models.streamdetails import StreamDetails
 from music_assistant.helpers.throttle_retry import BYPASS_THROTTLER
 
 from .constants import (
+    CONF_CODECS,
     CONF_QUALITY,
+    CONF_TRANSPORT,
+    QUALITY_BALANCED,
     QUALITY_EFFICIENT,
+    QUALITY_FILE_INFO_PARAMS,
     QUALITY_HIGH,
     QUALITY_SUPERB,
     RADIO_TRACK_ID_SEP,
+    TRANSPORT_RAW,
 )
 
 if TYPE_CHECKING:
@@ -30,14 +35,14 @@ if TYPE_CHECKING:
     from .provider import YandexMusicProvider
 
 
-# Encrypted-stream tuning constants
+# Windowed-stream tuning constants
 _CHUNK_SIZE = 16384  # smaller than default 65536 for faster first-byte after retry
 _STREAM_TIMEOUT = aiohttp.ClientTimeout(total=None, sock_read=30)
-# Yandex CDN drops TCP every ~6-7 MB per connection (observed via live traffic capture).
-# By capping each Range request to 4 MB we stay well below that limit, so CDN drops
-# should never occur during normal windowed playback.
-_RANGE_WINDOW = 4 * 1024 * 1024  # 4 MB — must be a multiple of AES block size (16)
-# Flat short delays for any residual TCP drops (network glitches within a 4 MB window)
+# Yandex CDN drops TCP connections for slow consumers (observed at ~45s for raw transport
+# at real-time playback rate ~200 KB/s). By capping each Range request to 4 MB we download
+# each window quickly, preventing CDN drops for both raw and encrypted transports.
+_RANGE_WINDOW = 4 * 1024 * 1024  # 4 MB per Range request
+# Flat short delays for TCP drops (network glitches within a 4 MB window)
 _TCP_DROP_DELAYS = (0.5, 1.0, 2.0)
 # Exponential delays for true network stalls (read timeout)
 _STALL_DELAYS = (2.0, 4.0, 8.0)
@@ -65,6 +70,9 @@ class YandexMusicStreamingManager:
     async def get_stream_details(self, item_id: str) -> StreamDetails:
         """Get stream details for a track.
 
+        Uses the unified /get-file-info endpoint for all quality tiers.
+        Falls back to /tracks/{id}/download-info if get-file-info fails.
+
         :param item_id: Track ID or composite track_id@station_id for My Wave.
         :return: StreamDetails for the track (item_id preserved for on_streamed).
         :raises MediaNotFoundError: If stream URL cannot be obtained.
@@ -74,103 +82,96 @@ class YandexMusicStreamingManager:
         if not track:
             raise MediaNotFoundError(f"Track {item_id} not found")
 
-        quality = self.provider.config.get_value(CONF_QUALITY)
-        quality_str = str(quality) if quality is not None else None
-        preferred_normalized = (quality_str or "").strip().lower()
+        quality = (
+            str(self.provider.config.get_value(CONF_QUALITY) or QUALITY_BALANCED).strip().lower()
+        )
+        transport = (
+            str(self.provider.config.get_value(CONF_TRANSPORT) or TRANSPORT_RAW).strip().lower()
+        )
 
-        # Check for superb (lossless) quality
-        want_lossless = preferred_normalized in (QUALITY_SUPERB, "superb")
+        # Backward compatibility: old "lossless" config value
+        if quality == "lossless":
+            quality = QUALITY_SUPERB
 
-        # Backward compatibility: also check old "lossless" value (exact match)
-        if preferred_normalized == "lossless":
-            want_lossless = True
+        fi_params = QUALITY_FILE_INFO_PARAMS.get(
+            quality, QUALITY_FILE_INFO_PARAMS[QUALITY_BALANCED]
+        )
 
-        # When user wants lossless, try get-file-info first (FLAC; download-info often MP3 only)
-        if want_lossless:
-            self.logger.debug("Requesting lossless via get-file-info for track %s", track_id)
-            file_info = await self.client.get_track_file_info_lossless(track_id)
-            if file_info:
-                url = file_info.get("url")
-                codec = file_info.get("codec") or ""
-                needs_decryption = file_info.get("needs_decryption", False)
+        # Allow advanced users to override codecs
+        codecs_override = str(self.provider.config.get_value(CONF_CODECS) or "").strip()
+        codecs = codecs_override if codecs_override else fi_params["codecs"]
 
-                if url and codec.lower() in ("flac", "flac-mp4"):
-                    audio_format = self._build_audio_format(codec)
+        self.logger.debug(
+            "Requesting stream for track %s: quality=%s, transport=%s, codecs=%s",
+            track_id,
+            quality,
+            transport,
+            codecs,
+        )
 
-                    # Handle encrypted URLs from encraw transport
-                    if needs_decryption and "key" in file_info:
-                        self.logger.info(
-                            "Streaming encrypted %s for track %s - will decrypt on-the-fly",
-                            codec,
-                            track_id,
-                        )
-                        # Return StreamType.CUSTOM for streaming decryption.
-                        # can_seek=False: provider always streams from position 0;
-                        # allow_seek=True: ffmpeg handles seek with -ss input flag.
-                        return StreamDetails(
-                            item_id=item_id,
-                            provider=self.provider.instance_id,
-                            audio_format=audio_format,
-                            stream_type=StreamType.CUSTOM,
-                            duration=track.duration,
-                            data={
-                                "encrypted_url": url,
-                                "decryption_key": file_info["key"],
-                                "codec": codec,
-                            },
-                            can_seek=False,
-                            allow_seek=True,
-                        )
-                    # Unencrypted URL, use directly
-                    self.logger.debug(
-                        "Unencrypted stream for track %s: codec=%s",
-                        item_id,
-                        codec,
-                    )
-                    return StreamDetails(
-                        item_id=item_id,
-                        provider=self.provider.instance_id,
-                        audio_format=audio_format,
-                        stream_type=StreamType.HTTP,
-                        duration=track.duration,
-                        path=url,
-                        can_seek=True,
-                        allow_seek=True,
-                        expiration=50,  # get-file-info URLs expire; force MA to re-fetch
-                    )
+        file_info = await self.client.get_track_file_info(
+            track_id,
+            quality=fi_params["quality"],
+            codecs=codecs,
+            transport=transport,
+        )
 
-        # Default: use /tracks/.../download-info and select best quality
+        if file_info and file_info.get("url"):
+            url = file_info["url"]
+            codec = file_info.get("codec") or ""
+            needs_decryption = file_info.get("needs_decryption", False)
+            audio_format = self._build_audio_format(codec)
+
+            # Always use StreamType.CUSTOM with windowed Range requests to prevent CDN drops.
+            # can_seek=False: provider always streams from position 0;
+            # allow_seek=True: ffmpeg handles seek with -ss input flag.
+            data: dict[str, Any] = {
+                "url": url,
+                "codec": codec,
+                "transport": transport,
+                # Stored for URL refresh on 4xx:
+                "fi_quality": fi_params["quality"],
+                "fi_codecs": codecs,
+            }
+            if needs_decryption and "key" in file_info:
+                data["decryption_key"] = file_info["key"]
+
+            return StreamDetails(
+                item_id=item_id,
+                provider=self.provider.instance_id,
+                audio_format=audio_format,
+                stream_type=StreamType.CUSTOM,
+                duration=track.duration,
+                data=data,
+                can_seek=False,
+                allow_seek=True,
+            )
+
+        # Fallback: /tracks/{id}/download-info (defensive, should rarely trigger)
+        self.logger.warning(
+            "get-file-info failed for track %s, falling back to download-info", track_id
+        )
         download_infos = await self.client.get_track_download_info(track_id, get_direct_links=True)
         if not download_infos:
             raise MediaNotFoundError(f"No stream info available for track {item_id}")
 
-        codecs_available = [
-            (getattr(i, "codec", None), getattr(i, "bitrate_in_kbps", None)) for i in download_infos
-        ]
-        self.logger.debug(
-            "Stream quality for track %s: config quality=%s, available codecs=%s",
-            track_id,
-            quality_str,
-            codecs_available,
-        )
-        selected_info = self._select_best_quality(download_infos, quality_str)
-
+        selected_info = self._select_best_quality(download_infos, quality)
         if not selected_info or not selected_info.direct_link:
             raise MediaNotFoundError(f"No stream URL available for track {item_id}")
 
         self.logger.debug(
-            "Stream selected for track %s: codec=%s, bitrate=%s",
+            "Fallback stream for track %s: codec=%s, bitrate=%s",
             track_id,
             getattr(selected_info, "codec", None),
             getattr(selected_info, "bitrate_in_kbps", None),
         )
 
-        bitrate = selected_info.bitrate_in_kbps or 0
-
         return StreamDetails(
             item_id=item_id,
             provider=self.provider.instance_id,
-            audio_format=self._build_audio_format(selected_info.codec, bit_rate=bitrate),
+            audio_format=self._build_audio_format(
+                selected_info.codec, bit_rate=selected_info.bitrate_in_kbps or 0
+            ),
             stream_type=StreamType.HTTP,
             duration=track.duration,
             path=selected_info.direct_link,
@@ -183,6 +184,8 @@ class YandexMusicStreamingManager:
         self, download_infos: list[Any], preferred_quality: str | None
     ) -> DownloadInfo | None:
         """Select the best quality download info based on user preference.
+
+        Used as fallback when get-file-info is unavailable.
 
         :param download_infos: List of DownloadInfo objects.
         :param preferred_quality: User's quality preference (efficient/high/balanced/superb).
@@ -202,8 +205,6 @@ class YandexMusicStreamingManager:
 
         # Superb: Prefer FLAC (backward compatibility with "lossless")
         if preferred_normalized == QUALITY_SUPERB or "lossless" in preferred_normalized:
-            # Note: flac-mp4 typically comes from get-file-info API, not download-info,
-            # but we check here for forward compatibility in case the API changes.
             for codec in ("flac-mp4", "flac"):
                 for info in sorted_infos:
                     if info.codec and info.codec.lower() == codec:
@@ -215,12 +216,10 @@ class YandexMusicStreamingManager:
 
         # Efficient: Prefer lowest bitrate AAC/MP3
         if preferred_normalized == QUALITY_EFFICIENT:
-            # Sort ascending for lowest bitrate
             sorted_infos_asc = sorted(
                 download_infos,
                 key=lambda x: x.bitrate_in_kbps or 999,
             )
-            # Prefer AAC for efficiency, then MP3 (include MP4 container variants)
             for codec in ("aac-mp4", "aac", "he-aac-mp4", "he-aac", "mp3"):
                 for info in sorted_infos_asc:
                     if info.codec and info.codec.lower() == codec:
@@ -229,7 +228,6 @@ class YandexMusicStreamingManager:
 
         # High: Prefer high bitrate MP3 (~320kbps)
         if preferred_normalized == QUALITY_HIGH:
-            # Look for MP3 with bitrate >= 256kbps
             high_quality_mp3 = [
                 info
                 for info in sorted_infos
@@ -239,44 +237,35 @@ class YandexMusicStreamingManager:
                 and info.bitrate_in_kbps >= 256
             ]
             if high_quality_mp3:
-                return high_quality_mp3[0]  # Already sorted by bitrate descending
+                return high_quality_mp3[0]
 
-            # Fallback: any MP3 available (highest bitrate)
             for info in sorted_infos:
                 if info.codec and info.codec.lower() == "mp3":
                     return info
 
-            # If no MP3, use highest available (excluding FLAC)
             for info in sorted_infos:
                 if info.codec and info.codec.lower() not in ("flac", "flac-mp4"):
                     return info
 
-            # Last resort: highest available
             return sorted_infos[0]
 
-        # Balanced (default): Prefer ~192kbps AAC, or medium quality MP3
-        # Look for bitrate around 192kbps (within range 128-256)
+        # Balanced (default): Prefer ~192kbps AAC
         balanced_infos = [
             info
             for info in sorted_infos
             if info.bitrate_in_kbps and 128 <= info.bitrate_in_kbps <= 256
         ]
         if balanced_infos:
-            # Prefer AAC over MP3 at similar bitrate (include MP4 container variants)
             for codec in ("aac-mp4", "aac", "he-aac-mp4", "he-aac", "mp3"):
                 for info in balanced_infos:
                     if info.codec and info.codec.lower() == codec:
                         return info
             return balanced_infos[0]
 
-        # Fallback to highest available if no balanced option
         return sorted_infos[0] if sorted_infos else None
 
     def _get_content_type(self, codec: str | None) -> tuple[ContentType, ContentType]:
         """Determine container and codec type from Yandex API codec string.
-
-        Yandex API returns codec strings like "flac-mp4" (FLAC in MP4 container),
-        "aac-mp4" (AAC in MP4 container), or plain "flac", "mp3", "aac".
 
         :param codec: Codec string from Yandex API.
         :return: Tuple of (content_type/container, codec_type).
@@ -286,13 +275,10 @@ class YandexMusicStreamingManager:
 
         codec_lower = codec.lower()
 
-        # MP4 container variants: codec is inside an MP4 container
         if codec_lower == "flac-mp4":
             return ContentType.MP4, ContentType.FLAC
         if codec_lower in ("aac-mp4", "he-aac-mp4"):
             return ContentType.MP4, ContentType.AAC
-
-        # Plain single-codec formats: codec is implied by content_type, no separate codec_type
         if codec_lower == "flac":
             return ContentType.FLAC, ContentType.UNKNOWN
         if codec_lower in ("mp3", "mpeg"):
@@ -305,22 +291,17 @@ class YandexMusicStreamingManager:
     def _get_audio_params(self, codec: str | None) -> tuple[int, int]:
         """Return (sample_rate, bit_depth) defaults based on codec string.
 
-        The Yandex get-file-info API does not return sample rate or bit depth,
-        so we use codec-based defaults. These values help the core select the
-        correct PCM output format and avoid unnecessary resampling.
-
-        :param codec: Codec string from Yandex API (e.g. "flac-mp4", "flac", "mp3").
+        :param codec: Codec string from Yandex API.
         :return: Tuple of (sample_rate, bit_depth).
         """
         if codec and codec.lower() == "flac-mp4":
             return 48000, 24
-        # CD-quality defaults for all other codecs
         return 44100, 16
 
     def _build_audio_format(self, codec: str | None, bit_rate: int = 0) -> AudioFormat:
         """Build AudioFormat with content type and codec-based audio params.
 
-        :param codec: Codec string from Yandex API (e.g. "flac-mp4", "flac", "mp3").
+        :param codec: Codec string from Yandex API.
         :param bit_rate: Bitrate in kbps (0 for variable/unknown).
         :return: Configured AudioFormat instance.
         """
@@ -334,27 +315,26 @@ class YandexMusicStreamingManager:
             bit_depth=bit_depth,
         )
 
-    async def _refresh_encrypted_url(
+    async def _refresh_stream_url(
         self,
-        track_item_id: str,
-        current_url: str,
-        current_key_hex: str,
+        streamdetails: StreamDetails,
         http_status: int,
         bytes_yielded: int,
         attempt: int,
         max_retries: int,
-    ) -> tuple[str, str] | None:
-        """Re-fetch an expired encrypted stream URL.
+    ) -> bool:
+        """Re-fetch an expired stream URL (works for both raw and encraw).
 
-        Called when the CDN responds with 4xx (URL expired or access revoked).
+        Updates streamdetails.data in-place with new URL (and key for encraw).
 
-        :return: (new_url, new_key_hex) on success, or None if retries exhausted.
+        :return: True on success, False if retries exhausted.
         """
         if attempt >= max_retries:
-            return None
-        raw_track_id = self._track_id_from_item_id(track_item_id)
+            return False
+        data = streamdetails.data
+        track_id = self._track_id_from_item_id(streamdetails.item_id)
         self.logger.warning(
-            "Encrypted stream URL expired (HTTP %d) at %d bytes (attempt %d/%d) — re-fetching",
+            "Stream URL expired (HTTP %d) at %d bytes (attempt %d/%d) — re-fetching",
             http_status,
             bytes_yielded,
             attempt + 1,
@@ -362,12 +342,20 @@ class YandexMusicStreamingManager:
         )
         token = BYPASS_THROTTLER.set(True)
         try:
-            file_info = await self.client.get_track_file_info_lossless(raw_track_id)
+            file_info = await self.client.get_track_file_info(
+                track_id,
+                quality=data["fi_quality"],
+                codecs=data["fi_codecs"],
+                transport=data.get("transport", TRANSPORT_RAW),
+            )
         finally:
             BYPASS_THROTTLER.reset(token)
         if file_info and file_info.get("url"):
-            return file_info["url"], file_info.get("key", current_key_hex)
-        return None
+            data["url"] = file_info["url"]
+            if "decryption_key" in data and file_info.get("key"):
+                data["decryption_key"] = file_info["key"]
+            return True
+        return False
 
     async def _decrypt_response_stream(
         self,
@@ -441,14 +429,14 @@ class YandexMusicStreamingManager:
         attempt += 1
         if attempt <= max_retries:
             self.logger.warning(
-                "Encrypted stream %s at %d bytes (attempt %d/%d) — retrying",
+                "Stream %s at %d bytes (attempt %d/%d) — retrying",
                 label,
                 bytes_yielded,
                 attempt,
                 max_retries,
             )
             return attempt, delay
-        raise MediaNotFoundError(f"Encrypted stream {label} after retries were exhausted") from err
+        raise MediaNotFoundError(f"Stream {label} after retries were exhausted") from err
 
     @staticmethod
     def _is_content_range_eof(headers: Any, window_end: int) -> bool:
@@ -469,40 +457,39 @@ class YandexMusicStreamingManager:
         except ValueError:
             return False
 
-    async def get_audio_stream(
+    async def get_audio_stream(  # noqa: PLR0915
         self, streamdetails: StreamDetails, seek_position: int = 0
     ) -> AsyncGenerator[bytes, None]:
-        """Return the audio stream for the provider item with on-the-fly decryption.
+        """Return the audio stream via windowed Range requests.
 
-        Downloads and decrypts the encrypted stream in windowed Range requests of
-        _RANGE_WINDOW bytes each. Yandex CDN drops TCP every ~6-7 MB per connection;
-        keeping each request at 4 MB prevents that limit from being reached.
+        Handles both raw (direct) and encraw (AES-CTR encrypted) transports.
+        Downloads in windowed Range requests of _RANGE_WINDOW bytes each to prevent
+        Yandex CDN from dropping slow-consumer TCP connections.
 
-        On connection drop (ClientPayloadError, ServerDisconnectedError), the current
-        window is retried with a flat short backoff (0.5s/1.0s/2.0s).
-        On read stall (asyncio.TimeoutError), the current window is retried with
-        exponential backoff (2s/4s/8s).
-        On URL expiry (HTTP 4xx), re-fetches the URL and resumes from bytes_yielded.
-        Up to max_retries retries per window; the retry counter resets on each
-        successful window so long tracks get the same protection as short ones.
+        On connection drop: flat short backoff (0.5s/1.0s/2.0s).
+        On read stall: exponential backoff (2s/4s/8s).
+        On URL expiry (HTTP 4xx): re-fetches URL and resumes from bytes_yielded.
+        Retry counter resets after each successful window.
 
-        If the server ignores a Range header (returns 200 instead of 206), the decryptor
-        is reset to position 0 so decryption stays consistent with the restarted byte stream.
-
-        :param streamdetails: Stream details containing encrypted URL and key.
+        :param streamdetails: Stream details with URL (and optional decryption key).
         :param seek_position: Always 0 (seeking delegated to ffmpeg via allow_seek=True).
-        :return: Async generator yielding decrypted audio bytes.
+        :return: Async generator yielding audio bytes.
         """
-        encrypted_url: str = streamdetails.data["encrypted_url"]
-        track_item_id: str = streamdetails.item_id
-        key_hex: str = streamdetails.data["decryption_key"]
-        key_bytes = bytes.fromhex(key_hex)
-        if len(key_bytes) not in (16, 24, 32):
-            raise MediaNotFoundError(f"Unsupported AES key length: {len(key_bytes)} bytes")
+        data = streamdetails.data
+        is_encrypted = "decryption_key" in data
+        url: str = data["url"]
+
+        if is_encrypted:
+            key_hex: str = data["decryption_key"]
+            key_bytes = bytes.fromhex(key_hex)
+            if len(key_bytes) not in (16, 24, 32):
+                raise MediaNotFoundError(f"Unsupported AES key length: {len(key_bytes)} bytes")
+        else:
+            key_bytes = None
 
         block_size = 16  # AES-CTR block size in bytes
         max_retries = 6
-        bytes_yielded = 0  # total decrypted bytes delivered to caller
+        bytes_yielded = 0  # total bytes delivered to caller
         attempt = 0  # retry counter; resets to 0 after each successful window
         retry_delay: float = 0.0
 
@@ -510,66 +497,79 @@ class YandexMusicStreamingManager:
             if attempt > 0:
                 await asyncio.sleep(retry_delay)
 
-            block_start = (bytes_yielded // block_size) * block_size
+            # For encrypted transport, align to AES block boundary for correct decryption.
+            # For raw transport, start exactly where we left off.
+            if is_encrypted:
+                block_start = (bytes_yielded // block_size) * block_size
+            else:
+                block_start = bytes_yielded
+
             window_end = block_start + _RANGE_WINDOW - 1
             headers = {"Range": f"bytes={block_start}-{window_end}"}
 
             try:
+                url = data["url"]  # re-read in case _refresh_stream_url updated it
                 async with self.mass.http_session.get(
-                    encrypted_url, headers=headers, timeout=_STREAM_TIMEOUT
+                    url, headers=headers, timeout=_STREAM_TIMEOUT
                 ) as response:
                     if response.status in (401, 403, 410):
-                        # URL expired — re-fetch via helper and retry
-                        refreshed = await self._refresh_encrypted_url(
-                            track_item_id,
-                            encrypted_url,
-                            key_hex,
+                        refreshed = await self._refresh_stream_url(
+                            streamdetails,
                             response.status,
                             bytes_yielded,
                             attempt,
                             max_retries,
                         )
-                        if refreshed is None:
+                        if not refreshed:
                             raise MediaNotFoundError(
-                                f"Encrypted stream URL expired (HTTP {response.status}) "
+                                f"Stream URL expired (HTTP {response.status}) "
                                 "after retries exhausted"
                             )
-                        encrypted_url, key_hex = refreshed
-                        key_bytes = bytes.fromhex(key_hex)
+                        if is_encrypted:
+                            key_hex = data["decryption_key"]
+                            key_bytes = bytes.fromhex(key_hex)
                         retry_delay = 0.0
-                        attempt += 1  # consume one retry slot, same as TCP-drop path
+                        attempt += 1
                         continue
                     try:
                         response.raise_for_status()
                     except Exception as err:
-                        raise MediaNotFoundError(
-                            f"Failed to fetch encrypted stream: {err}"
-                        ) from err
+                        raise MediaNotFoundError(f"Failed to fetch stream: {err}") from err
 
                     bytes_before = bytes_yielded
-                    # block_skip = bytes re-downloaded for AES-block alignment.
-                    # Needed below to compute actual HTTP bytes received.
-                    block_skip = bytes_before - block_start
-                    async for chunk in self._decrypt_response_stream(
-                        response, key_bytes, block_size, bytes_yielded
-                    ):
-                        bytes_yielded += len(chunk)
-                        yield chunk
 
-                    # window complete — check if EOF
+                    if is_encrypted:
+                        assert key_bytes is not None
+                        block_skip = bytes_before - block_start
+                        async for chunk in self._decrypt_response_stream(
+                            response, key_bytes, block_size, bytes_yielded
+                        ):
+                            bytes_yielded += len(chunk)
+                            yield chunk
+                    else:
+                        # If server ignored Range (200 instead of 206) and we've
+                        # already delivered bytes, skip the already-yielded prefix.
+                        range_ignored = response.status == 200 and block_start > 0
+                        skip_bytes = bytes_before if range_ignored else 0
+                        block_skip = skip_bytes
+                        async for raw_chunk in response.content.iter_chunked(_CHUNK_SIZE):
+                            if skip_bytes > 0:
+                                if len(raw_chunk) <= skip_bytes:
+                                    skip_bytes -= len(raw_chunk)
+                                    continue
+                                usable = raw_chunk[skip_bytes:]
+                                skip_bytes = 0
+                                bytes_yielded += len(usable)
+                                yield usable
+                                continue
+                            bytes_yielded += len(raw_chunk)
+                            yield raw_chunk
+
+                    # Window complete — check if EOF
                     window_got = bytes_yielded - bytes_before
-                    # received = actual HTTP bytes the server sent for this Range
-                    # request.  window_got alone understates the window when
-                    # block_skip > 0 (reconnect at a non-AES-block boundary):
-                    # the decryptor skips block_skip bytes, so window_got would be
-                    # smaller than _RANGE_WINDOW even for a full server response,
-                    # causing premature stream termination without this correction.
                     received = window_got + block_skip
                     if response.status == 200 or received < _RANGE_WINDOW:
                         return  # full file received or last partial window
-                    # Exact-boundary guard: if file size is an exact multiple of
-                    # _RANGE_WINDOW the size check above won't catch EOF.
-                    # Use Content-Range to confirm no bytes remain.
                     if self._is_content_range_eof(response.headers, window_end):
                         return
                     # more data expected: advance to next window
