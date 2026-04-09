@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import aiohttp
 from aiohttp import ClientPayloadError, ServerDisconnectedError
@@ -264,29 +264,48 @@ class YandexMusicStreamingManager:
 
         return sorted_infos[0] if sorted_infos else None
 
-    def _get_content_type(self, codec: str | None) -> tuple[ContentType, ContentType]:
-        """Determine container and codec type from Yandex API codec string.
+    # Normalize Yandex codec names to MA ContentType values
+    _CODEC_ALIASES: ClassVar[dict[str, str]] = {
+        "he-aac": "aac",
+        "mpeg": "mp3",
+    }
 
-        :param codec: Codec string from Yandex API.
-        :return: Tuple of (content_type/container, codec_type).
+    def _get_content_type(self, codec: str | None) -> tuple[ContentType, ContentType]:
+        """Determine content_type and codec_type from Yandex API codec string.
+
+        Parses the codec string automatically:
+        - Simple codecs ("flac", "mp3", "aac") → (ContentType.<codec>, UNKNOWN)
+        - Compound "codec-container" ("flac-mp4", "aac-mp4") →
+          (ContentType.<codec>, ContentType.<codec>)
+
+        content_type always reflects the audio codec (not the container),
+        so MA's is_lossless() correctly identifies lossless streams and
+        ffmpeg gets the right decoder name via codec_type.
+
+        :param codec: Codec string from Yandex API (e.g. "flac-mp4", "mp3").
+        :return: Tuple of (content_type, codec_type).
         """
         if not codec:
             return ContentType.UNKNOWN, ContentType.UNKNOWN
 
         codec_lower = codec.lower()
 
-        if codec_lower == "flac-mp4":
-            return ContentType.MP4, ContentType.FLAC
-        if codec_lower in ("aac-mp4", "he-aac-mp4"):
-            return ContentType.MP4, ContentType.AAC
-        if codec_lower == "flac":
-            return ContentType.FLAC, ContentType.UNKNOWN
-        if codec_lower in ("mp3", "mpeg"):
-            return ContentType.MP3, ContentType.UNKNOWN
-        if codec_lower in ("aac", "he-aac"):
-            return ContentType.AAC, ContentType.UNKNOWN
+        # Strip container suffix: "flac-mp4" → "flac", "he-aac-mp4" → "he-aac"
+        has_container = codec_lower.endswith("-mp4")
+        audio_part = codec_lower[:-4] if has_container else codec_lower
 
-        return ContentType.UNKNOWN, ContentType.UNKNOWN
+        # Normalize aliases (he-aac → aac, mpeg → mp3)
+        audio_part = self._CODEC_ALIASES.get(audio_part, audio_part)
+
+        try:
+            content_type = ContentType(audio_part)
+        except ValueError:
+            self.logger.debug("Unknown codec from Yandex API: %s", codec)
+            return ContentType.UNKNOWN, ContentType.UNKNOWN
+
+        # For compound formats, set codec_type so ffmpeg knows the decoder
+        codec_type = content_type if has_container else ContentType.UNKNOWN
+        return content_type, codec_type
 
     def _get_audio_params(self, codec: str | None) -> tuple[int, int]:
         """Return (sample_rate, bit_depth) defaults based on codec string.

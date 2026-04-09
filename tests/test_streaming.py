@@ -143,12 +143,12 @@ def test_select_best_quality_none_preferred_returns_highest_bitrate(
     assert result.bitrate_in_kbps == 320
 
 
-def test_get_content_type_flac_mp4_returns_mp4_container_with_flac_codec(
+def test_get_content_type_flac_mp4_returns_flac_with_flac_codec(
     streaming_manager: YandexMusicStreamingManager,
 ) -> None:
-    """flac-mp4 codec from get-file-info is mapped to MP4 container with FLAC codec."""
-    assert streaming_manager._get_content_type("flac-mp4") == (ContentType.MP4, ContentType.FLAC)
-    assert streaming_manager._get_content_type("FLAC-MP4") == (ContentType.MP4, ContentType.FLAC)
+    """flac-mp4 codec: content_type=FLAC (lossless), codec_type=FLAC (ffmpeg decoder)."""
+    assert streaming_manager._get_content_type("flac-mp4") == (ContentType.FLAC, ContentType.FLAC)
+    assert streaming_manager._get_content_type("FLAC-MP4") == (ContentType.FLAC, ContentType.FLAC)
 
 
 def test_get_content_type_flac_returns_flac_container_with_unknown_codec(
@@ -168,11 +168,11 @@ def test_get_content_type_aac_variants_return_aac(
     assert streaming_manager._get_content_type("AAC") == (ContentType.AAC, ContentType.UNKNOWN)
     assert streaming_manager._get_content_type("he-aac") == (ContentType.AAC, ContentType.UNKNOWN)
     assert streaming_manager._get_content_type("HE-AAC") == (ContentType.AAC, ContentType.UNKNOWN)
-    # MP4 container variants
-    assert streaming_manager._get_content_type("aac-mp4") == (ContentType.MP4, ContentType.AAC)
-    assert streaming_manager._get_content_type("AAC-MP4") == (ContentType.MP4, ContentType.AAC)
-    assert streaming_manager._get_content_type("he-aac-mp4") == (ContentType.MP4, ContentType.AAC)
-    assert streaming_manager._get_content_type("HE-AAC-MP4") == (ContentType.MP4, ContentType.AAC)
+    # MP4 container variants — content_type=AAC (audio codec), codec_type=AAC (ffmpeg decoder)
+    assert streaming_manager._get_content_type("aac-mp4") == (ContentType.AAC, ContentType.AAC)
+    assert streaming_manager._get_content_type("AAC-MP4") == (ContentType.AAC, ContentType.AAC)
+    assert streaming_manager._get_content_type("he-aac-mp4") == (ContentType.AAC, ContentType.AAC)
+    assert streaming_manager._get_content_type("HE-AAC-MP4") == (ContentType.AAC, ContentType.AAC)
 
 
 # --- Efficient quality tests ---
@@ -340,7 +340,7 @@ def _make_encrypted_stream_details(
     return StreamDetails(
         item_id="test_track_123",
         provider="yandex_music_instance",
-        audio_format=AudioFormat(content_type=ContentType.MP4),
+        audio_format=AudioFormat(content_type=ContentType.FLAC),
         stream_type=StreamType.CUSTOM,
         data={
             "url": url,
@@ -806,7 +806,7 @@ def _make_raw_stream_details(
     return StreamDetails(
         item_id="test_track_123",
         provider="yandex_music_instance",
-        audio_format=AudioFormat(content_type=ContentType.MP4),
+        audio_format=AudioFormat(content_type=ContentType.FLAC),
         stream_type=StreamType.CUSTOM,
         data={
             "url": url,
