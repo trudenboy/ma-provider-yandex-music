@@ -99,7 +99,7 @@ class YandexMusicStreamingManager:
 
         # Allow advanced users to override codecs
         codecs_override = str(self.provider.config.get_value(CONF_CODECS) or "").strip()
-        codecs = codecs_override if codecs_override else fi_params["codecs"]
+        codecs = codecs_override or fi_params["codecs"]
 
         self.logger.debug(
             "Requesting stream for track %s: quality=%s, transport=%s, codecs=%s",
