@@ -79,3 +79,5 @@ test: add test for Z
 
 1. PR: `dev` → `main`
 2. Actions → Release → Run workflow → ввести версию
+
+
