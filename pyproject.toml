@@ -3,8 +3,7 @@
 name = "ma-provider-yandex-music"
 description = "Yandex Music provider for Music Assistant"
 requires-python = ">=3.12"
-# Version source of truth is manifest.json — this placeholder satisfies setuptools.
-version = "0.0.0"
+dynamic = ["version"]
 dependencies = []
 
 [project.optional-dependencies]
@@ -25,6 +24,9 @@ test = [
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.dynamic]
+version = {file = "VERSION"}
 
 [tool.setuptools.packages.find]
 where = ["."]
