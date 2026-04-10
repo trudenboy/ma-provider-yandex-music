@@ -106,5 +106,3 @@ python3 scripts/dev-workspace.py status --dir ~/ma-workspace
 
 Workspace использует один `trudenboy/ma-server` fork и общий `.venv` (Python 3.12).
 Каждый провайдер подключается через симлинк в `ma-server/music_assistant/providers/`.
-
-
