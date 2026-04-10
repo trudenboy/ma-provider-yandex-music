@@ -11,21 +11,73 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-env_name="${1:-.venv}"
 
-uv venv "$REPO_ROOT/$env_name"
-source "$REPO_ROOT/$env_name/bin/activate"
+# Parse arguments
+WORKSPACE=""
+ENV_NAME=".venv"
+for arg in "$@"; do
+  case "$arg" in
+    --workspace=*) WORKSPACE="${arg#*=}" ;;
+    --workspace)   shift_next=1 ;;
+    *)
+      if [ "${shift_next:-}" = "1" ]; then
+        WORKSPACE="$arg"
+        shift_next=0
+      else
+        ENV_NAME="$arg"
+      fi
+      ;;
+  esac
+done
+
+if [ -n "$WORKSPACE" ]; then
+  # ── Workspace mode: reuse shared ma-server + .venv ──
+  WORKSPACE="$(cd "$WORKSPACE" && pwd)"
+  if [ ! -d "$WORKSPACE/ma-server" ] || [ ! -d "$WORKSPACE/.venv" ]; then
+    echo "ERROR: Workspace not initialised. Run: python3 scripts/dev-workspace.py init --dir $WORKSPACE"
+    exit 1
+  fi
+
+  echo "Using shared workspace at $WORKSPACE"
+
+  # Create symlink from workspace ma-server into this provider
+  LINK="$WORKSPACE/ma-server/music_assistant/providers/yandex_music"
+  TARGET="$(python3 -c "import os; print(os.path.relpath('$REPO_ROOT/provider/', '$(dirname "$LINK")'))")"
+  rm -f "$LINK"
+  ln -s "$TARGET" "$LINK"
+  echo "Symlink: yandex_music → $TARGET"
+
+  # Install runtime requirements from manifest
+  if [ -f "$REPO_ROOT/provider/manifest.json" ]; then
+    REQS=$(python3 -c "import json; m=json.load(open('$REPO_ROOT/provider/manifest.json')); print(' '.join(m.get('requirements',[])))")
+    if [ -n "$REQS" ]; then
+      VIRTUAL_ENV="$WORKSPACE/.venv" uv pip install $REQS
+    fi
+  fi
+
+  # Install pre-commit hooks
+  if [ -f "$REPO_ROOT/.pre-commit-config.yaml" ]; then
+    cd "$REPO_ROOT"
+    VIRTUAL_ENV="$WORKSPACE/.venv" uv run pre-commit install 2>/dev/null || true
+  fi
+
+  echo "Provider yandex_music linked to workspace. Activate: source $WORKSPACE/.venv/bin/activate"
+else
+  # ── Standalone mode (original behavior) ──
+  uv venv "$REPO_ROOT/$ENV_NAME"
+  source "$REPO_ROOT/$ENV_NAME/bin/activate"
 
 
-# Install upstream MA server + provider in editable mode
-uv pip install \
-  "git+https://github.com/music-assistant/server.git@dev" \
-  -e "$REPO_ROOT/.[test]"
+  # Install upstream MA server + provider in editable mode
+  uv pip install \
+    "git+https://github.com/music-assistant/server.git@dev" \
+    -e "$REPO_ROOT/.[test]"
 
 
-# Set up pre-commit hooks if available
-if command -v pre-commit &>/dev/null; then
-  cd "$REPO_ROOT" && pre-commit install
+  # Set up pre-commit hooks if available
+  if command -v pre-commit &>/dev/null; then
+    cd "$REPO_ROOT" && pre-commit install
+  fi
+
+  echo "Setup complete. Activate with: source $ENV_NAME/bin/activate"
 fi
-
-echo "Setup complete. Activate with: source $env_name/bin/activate"

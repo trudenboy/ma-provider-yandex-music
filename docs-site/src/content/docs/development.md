@@ -80,4 +80,31 @@ test: add test for Z
 1. PR: `dev` → `main`
 2. Actions → Release → Run workflow → ввести версию
 
+## Shared Workspace (мульти-провайдер)
+
+Для одновременной разработки нескольких провайдеров с общим MA-сервером:
+
+```bash
+# В репозитории ma-provider-tools:
+python3 scripts/dev-workspace.py init --dir ~/ma-workspace --all
+
+# Добавить конкретный провайдер в существующий workspace:
+python3 scripts/dev-workspace.py add yandex_music
+
+# Подключить текущий репозиторий к workspace:
+./scripts/setup.sh --workspace ~/ma-workspace
+
+# Обновить всё до последних версий:
+python3 scripts/dev-workspace.py update --dir ~/ma-workspace
+
+# Запустить MA-сервер:
+python3 scripts/dev-workspace.py run --dir ~/ma-workspace
+
+# Статус workspace:
+python3 scripts/dev-workspace.py status --dir ~/ma-workspace
+```
+
+Workspace использует один `trudenboy/ma-server` fork и общий `.venv` (Python 3.12).
+Каждый провайдер подключается через симлинк в `ma-server/music_assistant/providers/`.
+
 
