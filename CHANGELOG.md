@@ -39,6 +39,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.9.0] - 2026-04-10
+
+- feat: replace manual QR auth with ya-passport-auth library (#85) (`8529ce2`)
+- chore: switch ya-passport-auth to stable PyPI release (#87) (`5e3824d`)
+- fix: handle ValueError in hex key decoding and TimeoutError in auth (`900c8a1`)
+- fix: correct MP4 sample_rate offset and re-raise CancelledError in probe (`fcde68c`)
+- fix: update stream detail assertions to match CUSTOM stream type (`dd245e4`)
+- fix: mock get_track_file_info in integration tests to prevent coroutine error (`4e49fd0`)
+
+---
+
 ## [2.8.0] - 2026-04-09
 
 - fix: read bitrate from API and use lossless quality for MP3 320 (`b5f6a24`)
