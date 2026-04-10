@@ -85,6 +85,7 @@ jobs:
       provider_domain: yandex_music
       provider_path: provider/
       manifest_path: provider/manifest.json
+      autofix: true
 
   # ── 3. Release (conditional: only when version changed) ──────────────────
   release:
