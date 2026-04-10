@@ -65,6 +65,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.9.0] - 2026-04-10
+
+- chore: bump version to 2.9.0 (`db8fe83`)
+- chore: switch ya-passport-auth to stable PyPI release (#87) (`5e3824d`)
+- feat: replace manual QR auth with ya-passport-auth library (#85) (`8529ce2`)
+- chore: sync workflow wrappers from ma-provider-tools (#83) (`909a9c2`)
+- chore: sync workflow wrappers from ma-provider-tools (#81) (`da563e9`)
+- chore: sync workflow wrappers from ma-provider-tools (#79) (`87dc2a3`)
+- chore: add VERSION file (2.8.0) (`3e20fe0`)
+- chore: sync workflow wrappers from ma-provider-tools (#76) (`eb1156b`)
+- chore: sync workflow wrappers from ma-provider-tools (#74) (`22eb1e3`)
+- chore: sync workflow wrappers from ma-provider-tools (#72) (`83fcf19`)
+- fix: handle ValueError in hex key decoding and TimeoutError in auth (`900c8a1`)
+- fix: correct MP4 sample_rate offset and re-raise CancelledError in probe (`fcde68c`)
+- fix: update stream detail assertions to match CUSTOM stream type (`dd245e4`)
+- fix: mock get_track_file_info in integration tests to prevent coroutine error (`4e49fd0`)
+- chore: update changelog for v2.8.0 [skip ci] (`6fbf729`)
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
 
 ## [2.6.7] - 2026-02-27
