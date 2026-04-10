@@ -4,7 +4,7 @@ name = "ma-provider-yandex-music"
 description = "Yandex Music provider for Music Assistant"
 requires-python = ">=3.12"
 dynamic = ["version"]
-dependencies = []
+dependencies = ["ya-passport-auth>=1.0.0rc1"]
 
 [project.optional-dependencies]
 test = [
@@ -89,10 +89,17 @@ warn_unused_ignores = true
 module = "tests.*"
 warn_unused_ignores = false
 
+[tool.uv]
+index-strategy = "unsafe-best-match"
+
+[[tool.uv.index]]
+name = "pypi"
+url = "https://pypi.org/simple/"
+default = true
+
 [[tool.uv.index]]
 name = "testpypi"
 url = "https://test.pypi.org/simple/"
-explicit = true
 
 [tool.uv.sources]
 ya-passport-auth = { index = "testpypi" }

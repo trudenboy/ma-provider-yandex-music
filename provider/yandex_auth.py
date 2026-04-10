@@ -68,6 +68,6 @@ async def validate_x_token(x_token: SecretStr) -> bool:
     """Return True if *x_token* is still accepted by Yandex Passport."""
     try:
         async with PassportClient.create() as client:
-            return await client.validate_x_token(x_token)
+            return bool(await client.validate_x_token(x_token))
     except YaPassportError:
         return False

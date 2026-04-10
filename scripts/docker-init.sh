@@ -35,7 +35,25 @@ PYEOF
 )
 if [ -n "$DEPS" ]; then
     echo "==> Installing provider dependencies: $DEPS"
-    /app/venv/bin/pip install --quiet $DEPS
+    /app/venv/bin/uv pip install --quiet $DEPS
+fi
+
+# Install manifest.json requirements (includes TestPyPI packages like ya-passport-auth)
+MANIFEST_DEPS=$(/app/venv/bin/python3 - <<'PYEOF'
+import json
+try:
+    with open("/tmp/provider/manifest.json") as f:
+        m = json.load(f)
+    print(" ".join(m.get("requirements", [])))
+except Exception:
+    pass
+PYEOF
+)
+if [ -n "$MANIFEST_DEPS" ]; then
+    echo "==> Installing manifest requirements: $MANIFEST_DEPS"
+    /app/venv/bin/uv pip install --quiet \
+        --extra-index-url https://test.pypi.org/simple/ \
+        $MANIFEST_DEPS
 fi
 
 echo "==> Starting Music Assistant..."
