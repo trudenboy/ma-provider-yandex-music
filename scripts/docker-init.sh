@@ -38,7 +38,7 @@ if [ -n "$DEPS" ]; then
     /app/venv/bin/uv pip install --quiet $DEPS
 fi
 
-# Install manifest.json requirements (includes TestPyPI packages like ya-passport-auth)
+# Install manifest.json requirements
 MANIFEST_DEPS=$(/app/venv/bin/python3 - <<'PYEOF'
 import json
 try:
@@ -51,9 +51,7 @@ PYEOF
 )
 if [ -n "$MANIFEST_DEPS" ]; then
     echo "==> Installing manifest requirements: $MANIFEST_DEPS"
-    /app/venv/bin/uv pip install --quiet \
-        --extra-index-url https://test.pypi.org/simple/ \
-        $MANIFEST_DEPS
+    /app/venv/bin/uv pip install --quiet $MANIFEST_DEPS
 fi
 
 echo "==> Starting Music Assistant..."
