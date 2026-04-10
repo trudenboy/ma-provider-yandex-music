@@ -19,6 +19,7 @@ test = [
   "mypy>=1.19",
   "pre-commit>=4.5",
   "pre-commit-hooks>=6.0",
+  "ya-passport-auth>=1.0.0rc1",
 ]
 
 [build-system]
@@ -87,3 +88,11 @@ warn_unused_ignores = true
 [[tool.mypy.overrides]]
 module = "tests.*"
 warn_unused_ignores = false
+
+[[tool.uv.index]]
+name = "testpypi"
+url = "https://test.pypi.org/simple/"
+explicit = true
+
+[tool.uv.sources]
+ya-passport-auth = { index = "testpypi" }

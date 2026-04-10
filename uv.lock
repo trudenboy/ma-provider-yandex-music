@@ -1134,15 +1134,12 @@ wheels = [
 
 [[package]]
 name = "ma-provider-yandex-music"
-version = "2.7.0"
 source = { editable = "." }
 
 [package.optional-dependencies]
 test = [
     { name = "codespell" },
-    { name = "cryptography" },
     { name = "music-assistant" },
-    { name = "music-assistant-models" },
     { name = "mypy" },
     { name = "pre-commit" },
     { name = "pre-commit-hooks" },
@@ -1152,25 +1149,23 @@ test = [
     { name = "pytest-cov" },
     { name = "ruff" },
     { name = "syrupy" },
-    { name = "yandex-music" },
+    { name = "ya-passport-auth" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "codespell", marker = "extra == 'test'", specifier = "==2.4.1" },
-    { name = "cryptography", marker = "extra == 'test'" },
+    { name = "codespell", marker = "extra == 'test'", specifier = ">=2.4" },
     { name = "music-assistant", marker = "extra == 'test'", git = "https://github.com/music-assistant/server.git?rev=dev" },
-    { name = "music-assistant-models", marker = "extra == 'test'", specifier = ">=1.1.99" },
-    { name = "mypy", marker = "extra == 'test'", specifier = "==1.19.1" },
-    { name = "pre-commit", marker = "extra == 'test'", specifier = "==4.5.1" },
-    { name = "pre-commit-hooks", marker = "extra == 'test'", specifier = "==6.0.0" },
-    { name = "pytest", marker = "extra == 'test'", specifier = "==9.0.2" },
-    { name = "pytest-aiohttp", marker = "extra == 'test'", specifier = "==1.1.0" },
+    { name = "mypy", marker = "extra == 'test'", specifier = ">=1.19" },
+    { name = "pre-commit", marker = "extra == 'test'", specifier = ">=4.5" },
+    { name = "pre-commit-hooks", marker = "extra == 'test'", specifier = ">=6.0" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0" },
+    { name = "pytest-aiohttp", marker = "extra == 'test'", specifier = ">=1.1" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=0.24" },
-    { name = "pytest-cov", marker = "extra == 'test'", specifier = "==7.0.0" },
-    { name = "ruff", marker = "extra == 'test'", specifier = "==0.14.13" },
-    { name = "syrupy", marker = "extra == 'test'", specifier = "==5.0.0" },
-    { name = "yandex-music", marker = "extra == 'test'", specifier = "==2.2.0" },
+    { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=7.0" },
+    { name = "ruff", marker = "extra == 'test'", specifier = ">=0.14" },
+    { name = "syrupy", marker = "extra == 'test'", specifier = ">=5.0" },
+    { name = "ya-passport-auth", marker = "extra == 'test'", specifier = ">=1.0.0rc1", index = "https://test.pypi.org/simple/" },
 ]
 provides-extras = ["test"]
 
@@ -1974,15 +1969,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pysocks"
-version = "1.7.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/bd/11/293dd436aea955d45fc4e8a35b6ae7270f5b8e00b53cf6c024c83b657a11/PySocks-1.7.1.tar.gz", hash = "sha256:3f8804571ebe159c380ac6de37643bb4685970655d3bba243530d6558b799aa0", size = 284429, upload-time = "2019-09-20T02:07:35.714Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/8d/59/b4572118e098ac8e46e399a1dd0f2d85403ce8bbaad9ec79373ed6badaf9/PySocks-1.7.1-py3-none-any.whl", hash = "sha256:2725bd0a9925919b9b51739eea5f9e2bae91e83288108a9ad338b2e3a4435ee5", size = 16725, upload-time = "2019-09-20T02:06:22.938Z" },
-]
-
-[[package]]
 name = "pytest"
 version = "9.0.2"
 source = { registry = "https://pypi.org/simple" }
@@ -2122,11 +2108,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/c9/74/b3ff8e6c8446842c3f5c837e9c3dfcfe2018ea6ecef224c710c85ef728f4/requests-2.32.5.tar.gz", hash = "sha256:dbba0bac56e100853db0ea71b82b4dfd5fe2bf6d3754a8893c3af500cec7d7cf", size = 134517, upload-time = "2025-08-18T20:46:02.573Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1e/db/4254e3eabe8020b458f1a747140d32277ec7a271daf1d235b70dc0b4e6e3/requests-2.32.5-py3-none-any.whl", hash = "sha256:2462f94637a34fd532264295e186976db0f5d453d1cdd31473c85a6a161affb6", size = 64738, upload-time = "2025-08-18T20:46:00.542Z" },
-]
-
-[package.optional-dependencies]
-socks = [
-    { name = "pysocks" },
 ]
 
 [[package]]
@@ -2510,15 +2491,17 @@ wheels = [
 ]
 
 [[package]]
-name = "yandex-music"
-version = "2.2.0"
-source = { registry = "https://pypi.org/simple" }
+name = "ya-passport-auth"
+version = "1.0.0rc1"
+source = { registry = "https://test.pypi.org/simple/" }
 dependencies = [
-    { name = "aiofiles" },
     { name = "aiohttp" },
-    { name = "requests", extra = ["socks"] },
+    { name = "yarl" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/42/85/9f1d9e1327b558d74ee43e3d3f84b7b7e536c79a372cf83fcbf392ab2d3c/yandex-music-2.2.0.tar.gz", hash = "sha256:46beaacf8206de212323264c89e0bd4f4e2e626483dfa58f95e78cacd1a102cf", size = 168538, upload-time = "2023-12-24T21:28:08.382Z" }
+sdist = { url = "https://test-files.pythonhosted.org/packages/10/de/82532ed1b969ab24b76888362a28152a6db65e955a02ac5f638131ae4577/ya_passport_auth-1.0.0rc1.tar.gz", hash = "sha256:cf90af22531ca91c20d9d8151540b7be2013826e48345f4447581d3f08e0a7f9", size = 40240, upload-time = "2026-04-10T13:55:21.815Z" }
+wheels = [
+    { url = "https://test-files.pythonhosted.org/packages/78/3e/7835f4ab08cf10657df8fda387b7922478a42e212765162585d382e6dd00/ya_passport_auth-1.0.0rc1-py3-none-any.whl", hash = "sha256:566a248579c2bedc3a8a0d20ae052390b38431c49b49ca3902118b2c1fe63d5b", size = 29023, upload-time = "2026-04-10T13:55:20.542Z" },
+]
 
 [[package]]
 name = "yarl"
