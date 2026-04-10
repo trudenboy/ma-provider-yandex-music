@@ -7,6 +7,7 @@ on:
       - 'provider/manifest.json'
       - 'tests/**'
       - 'pyproject.toml'
+      - 'VERSION'
   workflow_dispatch:
 
 concurrency:
@@ -19,7 +20,7 @@ permissions:
   issues: write
 
 jobs:
-  # ── 1. Prepare: read manifest, resolve version & channel ─────────────────
+  # ── 1. Prepare: read VERSION, resolve version & channel ─────────────────
   prepare:
     runs-on: ubuntu-latest
     timeout-minutes: 3
@@ -34,13 +35,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Resolve version from manifest
+      - name: Resolve version and channel
         id: resolve
         run: |
           set -euo pipefail
-          MANIFEST="provider/manifest.json"
-          VERSION=$(python3 -c "import json; print(json.load(open('${MANIFEST}'))['version'])")
-          DOMAIN=$(python3 -c "import json; print(json.load(open('${MANIFEST}'))['domain'])")
+          VERSION=$(cat VERSION | tr -d '[:space:]')
+          DOMAIN=$(python3 -c "import json; print(json.load(open('provider/manifest.json'))['domain'])")
 
           # Determine channel (PEP 440: X.Y.Z = stable, X.Y.ZbN = beta)
           if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -50,7 +50,7 @@ jobs:
             CHANNEL="beta"
             IS_BETA="true"
           else
-            echo "::error::Invalid version in manifest: '${VERSION}'. Expected PEP 440: X.Y.Z or X.Y.ZbN"
+            echo "::error::Invalid version in VERSION file: '${VERSION}'. Expected PEP 440: X.Y.Z or X.Y.ZbN"
             exit 1
           fi
 
