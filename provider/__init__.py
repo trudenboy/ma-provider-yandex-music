@@ -145,7 +145,7 @@ async def get_config_entries(
             label="Yandex Music Token (manual)",
             description="Advanced: manually enter a music token. "
             "See the documentation for how to obtain it.",
-            required=False,
+            required=True,
             hidden=is_authenticated,
             advanced=True,
             value=cast("str", values.get(CONF_TOKEN)) if values else None,
