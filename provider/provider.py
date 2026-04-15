@@ -2350,7 +2350,7 @@ class YandexMusicProvider(MusicProvider):
         Handles both raw (direct) and encrypted (encraw) transports.
 
         :param streamdetails: Stream details with URL and optional decryption key.
-        :param seek_position: Seek position in seconds (delegated to ffmpeg).
+        :param seek_position: Seek position in seconds (handled by provider for raw transport).
         :return: Async generator yielding audio chunks.
         """
         async for chunk in self.streaming.get_audio_stream(streamdetails, seek_position):
