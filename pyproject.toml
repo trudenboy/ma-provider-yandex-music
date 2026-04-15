@@ -4,7 +4,8 @@ name = "ma-provider-yandex-music"
 description = "Yandex Music provider for Music Assistant"
 requires-python = ">=3.12"
 dynamic = ["version"]
-dependencies = []
+dependencies = [
+]
 
 [project.optional-dependencies]
 test = [
