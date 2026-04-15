@@ -697,7 +697,9 @@ class YandexMusicStreamingManager:
             raise MediaNotFoundError(f"Unsupported AES key length: {len(key_bytes)} bytes")
         return True, key_bytes
 
-    def _calculate_seek_offset(self, data: dict, seek_position: int, is_encrypted: bool) -> int:
+    def _calculate_seek_offset(
+        self, data: dict[str, Any], seek_position: int, is_encrypted: bool
+    ) -> int:
         """Calculate initial byte offset for raw transport seeking.
 
         :param data: Stream data dict (must contain 'bit_rate' in kbps).
@@ -705,12 +707,12 @@ class YandexMusicStreamingManager:
         :param is_encrypted: Whether the stream uses AES encryption.
         :return: Byte offset to start streaming from (0 if not applicable).
         """
-        if not seek_position or is_encrypted:
+        if seek_position <= 0 or is_encrypted:
             return 0
         bit_rate = data.get("bit_rate") or 0
         if not bit_rate:
             return 0
-        byte_offset = int(seek_position * bit_rate * 1000 / 8)
+        byte_offset = seek_position * bit_rate * 1000 // 8
         self.logger.debug(
             "Seeking to %ds: byte offset %d (bitrate %d kbps)",
             seek_position,
