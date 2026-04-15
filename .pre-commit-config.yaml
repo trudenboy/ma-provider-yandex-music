@@ -6,7 +6,7 @@ repos:
         name: 🐶 Ruff Linter
         language: system
         types: [python]
-        entry: uv run ruff check --fix
+        entry: uv run --active ruff check --fix
         require_serial: true
         stages: [pre-commit, pre-push, manual]
 
@@ -14,7 +14,7 @@ repos:
         name: 🐶 Ruff Formatter
         language: system
         types: [python]
-        entry: uv run ruff format
+        entry: uv run --active ruff format
         require_serial: true
         stages: [pre-commit, pre-push, manual]
 
@@ -22,50 +22,50 @@ repos:
         name: 🐍 Check Python AST
         language: system
         types: [python]
-        entry: uv run check-ast
+        entry: uv run --active check-ast
 
       - id: check-json
         name: ｛ Check JSON files
         language: system
         types: [json]
-        entry: uv run check-json
+        entry: uv run --active check-json
         files: ^(provider\/manifest.json)|(tests/fixtures/.+\.json)$
 
       - id: check-toml
         name: ✅ Check TOML files
         language: system
         types: [toml]
-        entry: uv run check-toml
+        entry: uv run --active check-toml
 
       - id: check-merge-conflict
         name: 💥 Check for merge conflicts
         language: system
         types: [text]
-        entry: uv run check-merge-conflict
+        entry: uv run --active check-merge-conflict
 
       - id: codespell
         name: ✅ Check code for common misspellings
         language: system
         types: [text]
-        entry: uv run codespell
+        entry: uv run --active codespell
 
       - id: detect-private-key
         name: 🕵️ Detect Private Keys
         language: system
         types: [text]
-        entry: uv run detect-private-key
+        entry: uv run --active detect-private-key
 
       - id: end-of-file-fixer
         name: ⮐ Fix End of Files
         language: system
         types: [text]
-        entry: uv run end-of-file-fixer
+        entry: uv run --active end-of-file-fixer
         stages: [pre-commit, pre-push, manual]
 
       - id: no-commit-to-branch
         name: 🛑 Don't commit to main branch
         language: system
-        entry: uv run no-commit-to-branch
+        entry: uv run --active no-commit-to-branch
         pass_filenames: false
         always_run: true
         args:
@@ -75,12 +75,12 @@ repos:
         name: ✄ Trim Trailing Whitespace
         language: system
         types: [text]
-        entry: uv run trailing-whitespace-fixer
+        entry: uv run --active trailing-whitespace-fixer
         stages: [pre-commit, pre-push, manual]
 
       - id: mypy
         name: 🔍 Mypy Type Checker
-        entry: uv run mypy
+        entry: uv run --active mypy
         language: system
         types: [python]
         require_serial: true

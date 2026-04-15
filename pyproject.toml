@@ -4,7 +4,7 @@ name = "ma-provider-yandex-music"
 description = "Yandex Music provider for Music Assistant"
 requires-python = ">=3.12"
 dynamic = ["version"]
-dependencies = ["ya-passport-auth>=1.2.3"]
+dependencies = []
 
 [project.optional-dependencies]
 test = [
@@ -19,7 +19,6 @@ test = [
   "mypy>=1.19",
   "pre-commit>=4.5",
   "pre-commit-hooks>=6.0",
-  "ya-passport-auth>=1.0.0rc1",
 ]
 
 [build-system]
