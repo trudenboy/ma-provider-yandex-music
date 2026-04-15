@@ -20,6 +20,8 @@ services:
       - "8927:8927"
     privileged: true
     restart: "no"
+    environment:
+      UV_INDEX_STRATEGY: unsafe-best-match
     volumes:
       - ./.ma-data:/data
       - ./provider/:/tmp/provider:ro

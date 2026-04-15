@@ -49,7 +49,7 @@ echo "→ Linked   : providers/$PROVIDER_DOMAIN → $PROVIDER_DIR"
 
 # ---------- Venv in worktree (reuses uv cache) ----------
 uv venv "$WORKTREE/.venv" --python 3.13 -q
-uv pip install --python "$WORKTREE/.venv/bin/python" \
+uv pip install --python "$WORKTREE/.venv/bin/python" --index-strategy unsafe-best-match \
    "$WORKTREE[test]" -r "$WORKTREE/requirements_all.txt" -q 2>&1 | tail -2
 
 # ---------- Run MA ----------
