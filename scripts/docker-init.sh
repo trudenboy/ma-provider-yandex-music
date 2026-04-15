@@ -35,23 +35,7 @@ PYEOF
 )
 if [ -n "$DEPS" ]; then
     echo "==> Installing provider dependencies: $DEPS"
-    /app/venv/bin/uv pip install --quiet $DEPS
-fi
-
-# Install manifest.json requirements
-MANIFEST_DEPS=$(/app/venv/bin/python3 - <<'PYEOF'
-import json
-try:
-    with open("/tmp/provider/manifest.json") as f:
-        m = json.load(f)
-    print(" ".join(m.get("requirements", [])))
-except Exception:
-    pass
-PYEOF
-)
-if [ -n "$MANIFEST_DEPS" ]; then
-    echo "==> Installing manifest requirements: $MANIFEST_DEPS"
-    /app/venv/bin/uv pip install --quiet $MANIFEST_DEPS
+    /app/venv/bin/pip install --quiet $DEPS
 fi
 
 echo "==> Starting Music Assistant..."
