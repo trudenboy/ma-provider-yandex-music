@@ -48,7 +48,7 @@ skip = "*.min.js,*.svg,docs-site/package-lock.json"
 ignore-words-list = "provid,hass,followings,childs,explict,additionals,commitish,nam,"
 
 [tool.mypy]
-python_version = "3.14"
+python_version = "3.12"
 platform = "linux"
 follow_imports = "silent"
 ignore_missing_imports = true
