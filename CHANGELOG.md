@@ -85,6 +85,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.9.1] - 2026-04-16
+
+- Bump version from 2.9.0 to 2.9.1 (`491cd85`)
+- chore: sync workflow wrappers from ma-provider-tools (#100) (`c9abb3f`)
+- fix(streaming): only set can_seek when byte offset is computable (`b24cadb`)
+- fix: re-raise CancelledError in get_track_file_info, fix docstring (`d04d453`)
+- fix(ci): add runtime deps to pyproject.toml for test discovery (`cf6424f`)
+- chore: sync workflow wrappers from ma-provider-tools (#98) (`82b5d02`)
+- Update Python version in mypy configuration (`044407a`)
+- chore: sync workflow wrappers from ma-provider-tools (#96) (`2c30ad2`)
+- chore: sync workflow wrappers from ma-provider-tools (#94) (`5ad5b45`)
+- chore: sync workflow wrappers from ma-provider-tools (#90) (`a7adb85`)
+- fix(dev): use unsafe-best-match index strategy for dev deps (`6d5bccd`)
+- feat(streaming): native seek support for raw transport (#88) (`afc589a`)
+- feat: add get_rotor_station_tracks and get_quality wrapper methods (`b84630b`)
+- chore: bump ya-passport-auth to 1.2.3 (`2865bd8`)
+- fix: make CONF_TOKEN required to prevent saving without auth (`acc0c5e`)
+- fix: raise InvalidDataError for missing session_id in QR auth (`a331238`)
+- fix: pin ya-passport-auth==1.0.0 in manifest.json (`6af4819`)
+- chore: update changelog for v2.9.0 [skip ci] (`7378d79`)
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
 
 ## [2.6.7] - 2026-02-27
