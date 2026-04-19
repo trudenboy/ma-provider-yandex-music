@@ -9,9 +9,11 @@ which uses the same Passport Android ``client_id`` as the QR flow.
 
 from __future__ import annotations
 
+import html
 import logging
 from typing import TYPE_CHECKING
 
+from aiohttp import web
 from music_assistant_models.errors import LoginFailed
 from ya_passport_auth import PassportClient
 from ya_passport_auth.exceptions import DeviceCodeTimeoutError, YaPassportError
@@ -23,13 +25,118 @@ if TYPE_CHECKING:
 
 _LOGGER = logging.getLogger(__name__)
 
+_DEVICE_CODE_PAGE_PATH = "/yandex_music/device_code"
+
+
+def _build_device_code_page(user_code: str, verification_url: str) -> str:
+    """Render the HTML page shown to the user during Device Flow login.
+
+    Yandex's verification page does not pre-fill the code from query params,
+    and the MA frontend opens auth URLs in a popup that hides the address bar.
+    Serving an intermediate page lets us display the code prominently and give
+    the user an explicit "continue" action.
+    """
+    safe_code = html.escape(user_code)
+    safe_url = html.escape(verification_url, quote=True)
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Yandex Music — Device Code</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        :root {{ color-scheme: light dark; }}
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0; padding: 2rem 1rem;
+            display: flex; align-items: center; justify-content: center;
+            min-height: 100vh; box-sizing: border-box;
+            background: #f5f5f7; color: #1d1d1f;
+        }}
+        @media (prefers-color-scheme: dark) {{
+            body {{ background: #1d1d1f; color: #f5f5f7; }}
+            .card {{ background: #2c2c2e; }}
+            #code {{ background: #3a3a3c; color: #fff; }}
+        }}
+        .card {{
+            background: #fff; border-radius: 14px; padding: 2rem;
+            max-width: 28rem; width: 100%;
+            box-shadow: 0 4px 20px rgba(0,0,0,.08);
+            text-align: center;
+        }}
+        h1 {{ margin: 0 0 .5rem; font-size: 1.25rem; }}
+        p {{ margin: .5rem 0 1.25rem; opacity: .75; line-height: 1.45; }}
+        #code {{
+            display: inline-block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 2rem; font-weight: 600; letter-spacing: .15em;
+            padding: .75rem 1.25rem; border-radius: 10px;
+            background: #f2f2f7; user-select: all;
+        }}
+        button, .btn {{
+            display: inline-block; margin-top: 1.5rem; padding: .75rem 1.5rem;
+            font-size: 1rem; font-weight: 600; text-decoration: none;
+            border: none; border-radius: 10px; cursor: pointer;
+            background: #ffcc00; color: #1d1d1f;
+        }}
+        button:hover, .btn:hover {{ background: #ffd633; }}
+        #copy {{
+            margin-top: .75rem; background: transparent; color: inherit;
+            border: 1px solid currentColor; opacity: .7; padding: .4rem 1rem;
+            font-size: .85rem; font-weight: 400;
+        }}
+        #copy:hover {{ background: rgba(127,127,127,.1); opacity: 1; }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Login to Yandex Music</h1>
+        <p>Open the link below and enter this code to authorize Music Assistant.</p>
+        <div id="code">{safe_code}</div>
+        <div>
+            <button id="copy" type="button">Copy code</button>
+        </div>
+        <a class="btn" href="{safe_url}" target="_blank" rel="noopener">Continue to Yandex</a>
+    </div>
+    <script>
+        const copyButton = document.getElementById('copy');
+        const codeElement = document.getElementById('code');
+
+        function selectCodeForManualCopy() {{
+            if (!codeElement) return;
+            const selection = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(codeElement);
+            selection.removeAllRanges();
+            selection.addRange(range);
+            if (copyButton) copyButton.textContent = 'Press Ctrl/Cmd+C';
+        }}
+
+        copyButton?.addEventListener('click', async function() {{
+            const code = codeElement?.textContent?.trim();
+            if (!code) return;
+            if (!navigator.clipboard?.writeText) {{
+                selectCodeForManualCopy();
+                return;
+            }}
+            try {{
+                await navigator.clipboard.writeText(code);
+                this.textContent = 'Copied';
+            }} catch {{
+                selectCodeForManualCopy();
+            }}
+        }});
+    </script>
+</body>
+</html>
+"""
+
 
 async def perform_device_auth(mass: MusicAssistant, session_id: str) -> tuple[str, str, str]:
     """Perform Yandex OAuth Device Flow and return credential tokens.
 
-    Asks Yandex for a device code, presents the verification URL and user
-    code in the MA frontend, then polls until the user confirms or the code
-    expires.
+    Asks Yandex for a device code, presents it to the user via an intermediate
+    HTML page served from MA's own webserver, then polls until the user
+    confirms or the code expires.
 
     Returns (x_token, music_token, refresh_token) as plain strings for MA
     config storage.
@@ -38,10 +145,6 @@ async def perform_device_auth(mass: MusicAssistant, session_id: str) -> tuple[st
         async with PassportClient.create() as client:
             session = await client.start_device_login()
 
-            # AuthenticationHelper can only open one URL — append the user
-            # code as a query param so the verification page can pre-fill
-            # it (and so the user can read it from the address bar).
-            url = f"{session.verification_url}?user_code={session.user_code}"
             _LOGGER.info(
                 "Device flow started: open %s and enter code %s (expires in %ss)",
                 session.verification_url,
@@ -49,9 +152,28 @@ async def perform_device_auth(mass: MusicAssistant, session_id: str) -> tuple[st
                 session.expires_in,
             )
 
-            async with AuthenticationHelper(mass, session_id) as auth_helper:
-                auth_helper.send_url(url)
-                creds = await client.poll_device_until_confirmed(session)
+            page_path = f"{_DEVICE_CODE_PAGE_PATH}/{session_id}"
+            page_html = _build_device_code_page(session.user_code, session.verification_url)
+
+            async def _serve_page(_request: web.Request) -> web.Response:
+                return web.Response(
+                    text=page_html,
+                    content_type="text/html",
+                    charset="utf-8",
+                    headers={
+                        "Cache-Control": "no-store",
+                        "Pragma": "no-cache",
+                        "Expires": "0",
+                    },
+                )
+
+            mass.webserver.register_dynamic_route(page_path, _serve_page, "GET")
+            try:
+                async with AuthenticationHelper(mass, session_id) as auth_helper:
+                    auth_helper.send_url(f"{mass.webserver.base_url}{page_path}")
+                    creds = await client.poll_device_until_confirmed(session)
+            finally:
+                mass.webserver.unregister_dynamic_route(page_path, "GET")
 
             music_token = creds.music_token
             if music_token is None:
