@@ -155,7 +155,8 @@ async def test_perform_device_auth_route_handler_renders_code_and_url() -> None:
 
     handler = mock_mass.webserver.register_dynamic_route.call_args.args[1]
     response = await handler(mock.MagicMock())
-    body = response.body.decode("utf-8") if isinstance(response.body, bytes) else response.body
+    body = response.text
+    assert body is not None
     assert "ABCD-1234" in body
     assert "https://oauth.yandex.ru/device" in body
     assert response.content_type == "text/html"

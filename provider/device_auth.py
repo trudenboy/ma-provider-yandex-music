@@ -135,7 +135,7 @@ async def perform_device_auth(mass: MusicAssistant, session_id: str) -> tuple[st
             page_html = _build_device_code_page(session.user_code, session.verification_url)
 
             async def _serve_page(_request: web.Request) -> web.Response:
-                return web.Response(body=page_html, content_type="text/html", charset="utf-8")
+                return web.Response(text=page_html, content_type="text/html", charset="utf-8")
 
             mass.webserver.register_dynamic_route(page_path, _serve_page, "GET")
             try:
