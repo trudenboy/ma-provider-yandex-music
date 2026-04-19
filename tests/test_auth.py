@@ -1,29 +1,43 @@
-"""Unit tests for device_auth.py (ya-passport-auth Device Flow)."""
+"""Unit tests for auth.py (ya-passport-auth QR + Device Flow)."""
 
 from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Awaitable, Callable, Generator
+from typing import TYPE_CHECKING
 from unittest import mock
 
 import pytest
 from music_assistant_models.errors import LoginFailed
-from ya_passport_auth import Credentials, DeviceCodeSession, SecretStr
+from ya_passport_auth import Credentials, DeviceCodeSession, QrSession, SecretStr
 from ya_passport_auth.exceptions import (
     DeviceCodeTimeoutError,
+    InvalidCredentialsError,
+    QRTimeoutError,
+    RateLimitedError,
 )
 from ya_passport_auth.exceptions import (
     NetworkError as PassportNetworkError,
 )
 
-from music_assistant.providers.yandex_music.device_auth import perform_device_auth
+from music_assistant.providers.yandex_music.auth import (
+    perform_device_auth,
+    perform_qr_auth,
+    refresh_credentials_via_passport,
+    refresh_music_token,
+    validate_x_token,
+)
+
+if TYPE_CHECKING:
+    from aiohttp import web
 
 
 @pytest.fixture(autouse=True)
-def skip_grace_sleep() -> mock.AsyncMock:
+def skip_grace_sleep() -> Generator[mock.AsyncMock, None, None]:
     """Bypass the post-auth grace ``asyncio.sleep`` so tests run instantly."""
     with mock.patch(
-        "music_assistant.providers.yandex_music.device_auth.asyncio.sleep",
+        "music_assistant.providers.yandex_music.auth.asyncio.sleep",
         new=mock.AsyncMock(),
     ) as patched:
         yield patched
@@ -61,6 +75,15 @@ def _make_credentials(
     )
 
 
+def _make_qr_session() -> QrSession:
+    """Build a QrSession for testing."""
+    return QrSession(
+        track_id="track123",
+        csrf_token="csrf_abc",
+        qr_url="https://passport.yandex.ru/auth/magic/code/?track_id=track123",
+    )
+
+
 # -- perform_device_auth -------------------------------------------------------
 
 
@@ -78,10 +101,10 @@ async def test_perform_device_auth_returns_three_tokens() -> None:
 
     with (
         mock.patch(
-            "music_assistant.providers.yandex_music.device_auth.PassportClient.create",
+            "music_assistant.providers.yandex_music.auth.PassportClient.create",
         ) as mock_create,
         mock.patch(
-            "music_assistant.providers.yandex_music.device_auth.AuthenticationHelper",
+            "music_assistant.providers.yandex_music.auth.AuthenticationHelper",
             return_value=mock_auth_helper,
         ),
     ):
@@ -114,10 +137,10 @@ async def test_perform_device_auth_serves_intermediate_page_and_cleans_up() -> N
 
     with (
         mock.patch(
-            "music_assistant.providers.yandex_music.device_auth.PassportClient.create",
+            "music_assistant.providers.yandex_music.auth.PassportClient.create",
         ) as mock_create,
         mock.patch(
-            "music_assistant.providers.yandex_music.device_auth.AuthenticationHelper",
+            "music_assistant.providers.yandex_music.auth.AuthenticationHelper",
             return_value=mock_auth_helper,
         ),
     ):
@@ -164,10 +187,10 @@ async def test_perform_device_auth_status_endpoint_reports_done_after_success() 
 
     with (
         mock.patch(
-            "music_assistant.providers.yandex_music.device_auth.PassportClient.create",
+            "music_assistant.providers.yandex_music.auth.PassportClient.create",
         ) as mock_create,
         mock.patch(
-            "music_assistant.providers.yandex_music.device_auth.AuthenticationHelper",
+            "music_assistant.providers.yandex_music.auth.AuthenticationHelper",
             return_value=mock_auth_helper,
         ),
     ):
@@ -183,6 +206,7 @@ async def test_perform_device_auth_status_endpoint_reports_done_after_success() 
     )
     status_handler = status_call.args[1]
     response = await status_handler(mock.MagicMock())
+    assert isinstance(response.body, bytes)
     payload = json.loads(response.body)
     assert payload["state"] == "done"
 
@@ -204,9 +228,13 @@ async def test_perform_device_auth_status_reports_failed_on_error(
     mock_mass.webserver.base_url = "http://ma.local:8095"
     mock_auth_helper = mock.AsyncMock()
 
-    status_handlers: list = []
+    status_handlers: list[Callable[[web.Request], Awaitable[web.Response]]] = []
 
-    def _capture(path: str, handler, _method: str) -> None:
+    def _capture(
+        path: str,
+        handler: Callable[[web.Request], Awaitable[web.Response]],
+        _method: str,
+    ) -> None:
         if path.endswith("/status"):
             status_handlers.append(handler)
 
@@ -214,10 +242,10 @@ async def test_perform_device_auth_status_reports_failed_on_error(
 
     with (
         mock.patch(
-            "music_assistant.providers.yandex_music.device_auth.PassportClient.create",
+            "music_assistant.providers.yandex_music.auth.PassportClient.create",
         ) as mock_create,
         mock.patch(
-            "music_assistant.providers.yandex_music.device_auth.AuthenticationHelper",
+            "music_assistant.providers.yandex_music.auth.AuthenticationHelper",
             return_value=mock_auth_helper,
         ),
     ):
@@ -229,6 +257,7 @@ async def test_perform_device_auth_status_reports_failed_on_error(
 
     assert status_handlers, "status handler should have been registered"
     response = await status_handlers[0](mock.MagicMock())
+    assert isinstance(response.body, bytes)
     payload = json.loads(response.body)
     assert payload["state"] == "failed"
     # Grace sleep must fire on failure so the page can observe "failed" before teardown.
@@ -248,9 +277,13 @@ async def test_perform_device_auth_does_not_mark_cancellation_as_failure(
     mock_mass.webserver.base_url = "http://ma.local:8095"
     mock_auth_helper = mock.AsyncMock()
 
-    status_handlers: list = []
+    status_handlers: list[Callable[[web.Request], Awaitable[web.Response]]] = []
 
-    def _capture(path: str, handler, _method: str) -> None:
+    def _capture(
+        path: str,
+        handler: Callable[[web.Request], Awaitable[web.Response]],
+        _method: str,
+    ) -> None:
         if path.endswith("/status"):
             status_handlers.append(handler)
 
@@ -258,10 +291,10 @@ async def test_perform_device_auth_does_not_mark_cancellation_as_failure(
 
     with (
         mock.patch(
-            "music_assistant.providers.yandex_music.device_auth.PassportClient.create",
+            "music_assistant.providers.yandex_music.auth.PassportClient.create",
         ) as mock_create,
         mock.patch(
-            "music_assistant.providers.yandex_music.device_auth.AuthenticationHelper",
+            "music_assistant.providers.yandex_music.auth.AuthenticationHelper",
             return_value=mock_auth_helper,
         ),
     ):
@@ -273,6 +306,7 @@ async def test_perform_device_auth_does_not_mark_cancellation_as_failure(
 
     assert status_handlers, "status handler should have been registered"
     response = await status_handlers[0](mock.MagicMock())
+    assert isinstance(response.body, bytes)
     payload = json.loads(response.body)
     assert payload["state"] == "pending"
     skip_grace_sleep.assert_not_awaited()
@@ -295,10 +329,10 @@ async def test_perform_device_auth_route_handler_renders_code_and_url() -> None:
 
     with (
         mock.patch(
-            "music_assistant.providers.yandex_music.device_auth.PassportClient.create",
+            "music_assistant.providers.yandex_music.auth.PassportClient.create",
         ) as mock_create,
         mock.patch(
-            "music_assistant.providers.yandex_music.device_auth.AuthenticationHelper",
+            "music_assistant.providers.yandex_music.auth.AuthenticationHelper",
             return_value=mock_auth_helper,
         ),
     ):
@@ -334,10 +368,10 @@ async def test_perform_device_auth_timeout_raises_login_failed() -> None:
 
     with (
         mock.patch(
-            "music_assistant.providers.yandex_music.device_auth.PassportClient.create",
+            "music_assistant.providers.yandex_music.auth.PassportClient.create",
         ) as mock_create,
         mock.patch(
-            "music_assistant.providers.yandex_music.device_auth.AuthenticationHelper",
+            "music_assistant.providers.yandex_music.auth.AuthenticationHelper",
             return_value=mock_auth_helper,
         ),
     ):
@@ -364,10 +398,10 @@ async def test_perform_device_auth_ya_passport_error_raises_login_failed() -> No
 
     with (
         mock.patch(
-            "music_assistant.providers.yandex_music.device_auth.PassportClient.create",
+            "music_assistant.providers.yandex_music.auth.PassportClient.create",
         ) as mock_create,
         mock.patch(
-            "music_assistant.providers.yandex_music.device_auth.AuthenticationHelper",
+            "music_assistant.providers.yandex_music.auth.AuthenticationHelper",
             return_value=mock_auth_helper,
         ),
     ):
@@ -391,10 +425,10 @@ async def test_perform_device_auth_no_music_token_raises_login_failed() -> None:
 
     with (
         mock.patch(
-            "music_assistant.providers.yandex_music.device_auth.PassportClient.create",
+            "music_assistant.providers.yandex_music.auth.PassportClient.create",
         ) as mock_create,
         mock.patch(
-            "music_assistant.providers.yandex_music.device_auth.AuthenticationHelper",
+            "music_assistant.providers.yandex_music.auth.AuthenticationHelper",
             return_value=mock_auth_helper,
         ),
     ):
@@ -418,10 +452,10 @@ async def test_perform_device_auth_no_refresh_token_raises_login_failed() -> Non
 
     with (
         mock.patch(
-            "music_assistant.providers.yandex_music.device_auth.PassportClient.create",
+            "music_assistant.providers.yandex_music.auth.PassportClient.create",
         ) as mock_create,
         mock.patch(
-            "music_assistant.providers.yandex_music.device_auth.AuthenticationHelper",
+            "music_assistant.providers.yandex_music.auth.AuthenticationHelper",
             return_value=mock_auth_helper,
         ),
     ):
@@ -430,3 +464,258 @@ async def test_perform_device_auth_no_refresh_token_raises_login_failed() -> Non
 
         with pytest.raises(LoginFailed, match="no refresh token"):
             await perform_device_auth(mock_mass, "session_1")
+
+
+# -- perform_qr_auth ----------------------------------------------------------
+
+
+async def test_perform_qr_auth_success() -> None:
+    """QR flow returns (x_token, music_token) as plain strings."""
+    qr = _make_qr_session()
+    creds = _make_credentials()
+    mock_client = mock.AsyncMock()
+    mock_client.start_qr_login.return_value = qr
+    mock_client.poll_qr_until_confirmed.return_value = creds
+
+    mock_mass = mock.MagicMock()
+    mock_auth_helper = mock.AsyncMock()
+
+    with (
+        mock.patch(
+            "music_assistant.providers.yandex_music.auth.PassportClient.create",
+        ) as mock_create,
+        mock.patch(
+            "music_assistant.providers.yandex_music.auth.AuthenticationHelper",
+            return_value=mock_auth_helper,
+        ),
+    ):
+        mock_create.return_value.__aenter__ = mock.AsyncMock(return_value=mock_client)
+        mock_create.return_value.__aexit__ = mock.AsyncMock(return_value=False)
+
+        x_token, music_token = await perform_qr_auth(mock_mass, "session_1")
+
+    assert x_token == "test_x_token"
+    assert music_token == "test_music_token"
+    mock_client.start_qr_login.assert_awaited_once()
+    mock_client.poll_qr_until_confirmed.assert_awaited_once_with(qr)
+
+
+async def test_perform_qr_auth_sends_qr_url() -> None:
+    """QR URL is sent to the AuthenticationHelper."""
+    qr = _make_qr_session()
+    creds = _make_credentials()
+    mock_client = mock.AsyncMock()
+    mock_client.start_qr_login.return_value = qr
+    mock_client.poll_qr_until_confirmed.return_value = creds
+
+    mock_mass = mock.MagicMock()
+    mock_auth_helper = mock.AsyncMock()
+
+    with (
+        mock.patch(
+            "music_assistant.providers.yandex_music.auth.PassportClient.create",
+        ) as mock_create,
+        mock.patch(
+            "music_assistant.providers.yandex_music.auth.AuthenticationHelper",
+            return_value=mock_auth_helper,
+        ),
+    ):
+        mock_create.return_value.__aenter__ = mock.AsyncMock(return_value=mock_client)
+        mock_create.return_value.__aexit__ = mock.AsyncMock(return_value=False)
+
+        await perform_qr_auth(mock_mass, "session_1")
+
+    mock_auth_helper.__aenter__.return_value.send_url.assert_called_once_with(qr.qr_url)
+
+
+async def test_perform_qr_auth_timeout_raises_login_failed() -> None:
+    """QRTimeoutError from library is mapped to LoginFailed."""
+    qr = _make_qr_session()
+    mock_client = mock.AsyncMock()
+    mock_client.start_qr_login.return_value = qr
+    mock_client.poll_qr_until_confirmed.side_effect = QRTimeoutError("timed out")
+
+    mock_mass = mock.MagicMock()
+    mock_auth_helper = mock.AsyncMock()
+
+    with (
+        mock.patch(
+            "music_assistant.providers.yandex_music.auth.PassportClient.create",
+        ) as mock_create,
+        mock.patch(
+            "music_assistant.providers.yandex_music.auth.AuthenticationHelper",
+            return_value=mock_auth_helper,
+        ),
+    ):
+        mock_create.return_value.__aenter__ = mock.AsyncMock(return_value=mock_client)
+        mock_create.return_value.__aexit__ = mock.AsyncMock(return_value=False)
+
+        with pytest.raises(LoginFailed, match="timed out"):
+            await perform_qr_auth(mock_mass, "session_1")
+
+
+async def test_perform_qr_auth_passport_error_raises_login_failed() -> None:
+    """Generic YaPassportError is mapped to LoginFailed."""
+    mock_client = mock.AsyncMock()
+    mock_client.start_qr_login.side_effect = PassportNetworkError("connection lost")
+
+    mock_mass = mock.MagicMock()
+    mock_auth_helper = mock.AsyncMock()
+
+    with (
+        mock.patch(
+            "music_assistant.providers.yandex_music.auth.PassportClient.create",
+        ) as mock_create,
+        mock.patch(
+            "music_assistant.providers.yandex_music.auth.AuthenticationHelper",
+            return_value=mock_auth_helper,
+        ),
+    ):
+        mock_create.return_value.__aenter__ = mock.AsyncMock(return_value=mock_client)
+        mock_create.return_value.__aexit__ = mock.AsyncMock(return_value=False)
+
+        with pytest.raises(LoginFailed, match="Yandex auth error"):
+            await perform_qr_auth(mock_mass, "session_1")
+
+
+async def test_perform_qr_auth_no_music_token_raises() -> None:
+    """Credentials without music_token raises LoginFailed."""
+    qr = _make_qr_session()
+    creds = _make_credentials(music_token=None)
+    mock_client = mock.AsyncMock()
+    mock_client.start_qr_login.return_value = qr
+    mock_client.poll_qr_until_confirmed.return_value = creds
+
+    mock_mass = mock.MagicMock()
+    mock_auth_helper = mock.AsyncMock()
+
+    with (
+        mock.patch(
+            "music_assistant.providers.yandex_music.auth.PassportClient.create",
+        ) as mock_create,
+        mock.patch(
+            "music_assistant.providers.yandex_music.auth.AuthenticationHelper",
+            return_value=mock_auth_helper,
+        ),
+    ):
+        mock_create.return_value.__aenter__ = mock.AsyncMock(return_value=mock_client)
+        mock_create.return_value.__aexit__ = mock.AsyncMock(return_value=False)
+
+        with pytest.raises(LoginFailed, match="no music token"):
+            await perform_qr_auth(mock_mass, "session_1")
+
+
+# -- refresh_music_token -------------------------------------------------------
+
+
+async def test_refresh_music_token_success() -> None:
+    """Successful refresh returns a SecretStr."""
+    mock_client = mock.AsyncMock()
+    mock_client.refresh_music_token.return_value = SecretStr("new_music_token")
+
+    with mock.patch(
+        "music_assistant.providers.yandex_music.auth.PassportClient.create",
+    ) as mock_create:
+        mock_create.return_value.__aenter__ = mock.AsyncMock(return_value=mock_client)
+        mock_create.return_value.__aexit__ = mock.AsyncMock(return_value=False)
+
+        result = await refresh_music_token(SecretStr("my_x_token"))
+
+    assert result.get_secret() == "new_music_token"
+    mock_client.refresh_music_token.assert_awaited_once()
+
+
+async def test_refresh_music_token_auth_error_raises_login_failed() -> None:
+    """Auth failure during refresh is mapped to LoginFailed."""
+    mock_client = mock.AsyncMock()
+    mock_client.refresh_music_token.side_effect = InvalidCredentialsError("bad token")
+
+    with mock.patch(
+        "music_assistant.providers.yandex_music.auth.PassportClient.create",
+    ) as mock_create:
+        mock_create.return_value.__aenter__ = mock.AsyncMock(return_value=mock_client)
+        mock_create.return_value.__aexit__ = mock.AsyncMock(return_value=False)
+
+        with pytest.raises(LoginFailed, match="Failed to refresh"):
+            await refresh_music_token(SecretStr("bad_x_token"))
+
+
+# -- validate_x_token ----------------------------------------------------------
+
+
+async def test_validate_x_token_valid() -> None:
+    """Valid x_token returns True."""
+    mock_client = mock.AsyncMock()
+    mock_client.validate_x_token.return_value = True
+
+    with mock.patch(
+        "music_assistant.providers.yandex_music.auth.PassportClient.create",
+    ) as mock_create:
+        mock_create.return_value.__aenter__ = mock.AsyncMock(return_value=mock_client)
+        mock_create.return_value.__aexit__ = mock.AsyncMock(return_value=False)
+
+        result = await validate_x_token(SecretStr("good_token"))
+
+    assert result is True
+
+
+async def test_validate_x_token_error_returns_false() -> None:
+    """Any YaPassportError returns False (graceful degradation)."""
+    mock_client = mock.AsyncMock()
+    mock_client.validate_x_token.side_effect = RateLimitedError("429")
+
+    with mock.patch(
+        "music_assistant.providers.yandex_music.auth.PassportClient.create",
+    ) as mock_create:
+        mock_create.return_value.__aenter__ = mock.AsyncMock(return_value=mock_client)
+        mock_create.return_value.__aexit__ = mock.AsyncMock(return_value=False)
+
+        result = await validate_x_token(SecretStr("some_token"))
+
+    assert result is False
+
+
+# -- refresh_credentials_via_passport ------------------------------------------
+
+
+async def test_refresh_credentials_via_passport_success() -> None:
+    """Successful refresh returns full Credentials triple."""
+    new_creds = _make_credentials(
+        x_token="new_x",
+        music_token="new_music",
+        refresh_token="new_refresh",
+    )
+    mock_client = mock.AsyncMock()
+    mock_client.refresh_credentials.return_value = new_creds
+
+    with mock.patch(
+        "music_assistant.providers.yandex_music.auth.PassportClient.create",
+    ) as mock_create:
+        mock_create.return_value.__aenter__ = mock.AsyncMock(return_value=mock_client)
+        mock_create.return_value.__aexit__ = mock.AsyncMock(return_value=False)
+
+        result = await refresh_credentials_via_passport(
+            SecretStr("old_x"), SecretStr("old_refresh")
+        )
+
+    assert result.x_token.get_secret() == "new_x"
+    assert result.music_token is not None
+    assert result.music_token.get_secret() == "new_music"
+    assert result.refresh_token is not None
+    assert result.refresh_token.get_secret() == "new_refresh"
+    mock_client.refresh_credentials.assert_awaited_once()
+
+
+async def test_refresh_credentials_via_passport_error_raises_login_failed() -> None:
+    """Auth failure during credential refresh is mapped to LoginFailed."""
+    mock_client = mock.AsyncMock()
+    mock_client.refresh_credentials.side_effect = InvalidCredentialsError("dead")
+
+    with mock.patch(
+        "music_assistant.providers.yandex_music.auth.PassportClient.create",
+    ) as mock_create:
+        mock_create.return_value.__aenter__ = mock.AsyncMock(return_value=mock_client)
+        mock_create.return_value.__aexit__ = mock.AsyncMock(return_value=False)
+
+        with pytest.raises(LoginFailed, match="Failed to refresh credentials"):
+            await refresh_credentials_via_passport(SecretStr("bad_x"), SecretStr("bad_refresh"))

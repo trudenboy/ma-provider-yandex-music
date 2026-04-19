@@ -39,6 +39,7 @@ from music_assistant.controllers.cache import use_cache
 from music_assistant.models.music_provider import MusicProvider
 
 from .api_client import YandexMusicClient
+from .auth import refresh_credentials_via_passport, refresh_music_token
 from .constants import (
     BROWSE_INITIAL_TRACKS,
     BROWSE_NAMES_EN,
@@ -90,7 +91,6 @@ from .parsers import (
     parse_track,
 )
 from .streaming import YandexMusicStreamingManager
-from .yandex_auth import refresh_credentials_via_passport, refresh_music_token
 
 if TYPE_CHECKING:
     from music_assistant_models.streamdetails import StreamDetails

@@ -63,13 +63,13 @@ The provider is a single Python package in `provider/` that MA loads via `manife
 | `api_client.py` | `YandexMusicClient` — thin async wrapper around `yandex-music`'s `ClientAsync`; handles auth, retries, rate limiting (5 req/s), and all Yandex API calls |
 | `parsers.py` | Pure functions (`parse_track`, `parse_album`, `parse_artist`, `parse_playlist`) that convert Yandex API objects into MA model objects |
 | `streaming.py` | `YandexMusicStreamingManager` — resolves stream URLs, selects quality, handles AES decryption of FLAC streams |
-| `yandex_auth.py` | Three async functions (`perform_qr_auth`, `refresh_music_token`, `validate_x_token`) delegating to the `ya-passport-auth` library |
+| `auth.py` | Async functions for both login flows (`perform_qr_auth`, `perform_device_auth`) and token maintenance (`refresh_music_token`, `refresh_credentials_via_passport`, `validate_x_token`) — all delegating to the `ya-passport-auth` library |
 | `constants.py` | All string constants, IDs, quality labels, locale display-name dicts, tag/category mappings |
 | `__init__.py` | Provider config schema (QR auth action, token fields, quality picker, limits) and `setup()` / `get_config_entries()` |
 
 **Data flow:** `provider.py` → `api_client.py` (fetch raw Yandex objects) → `parsers.py` (convert to MA models) → returned to MA core. Streaming is a separate path: `provider.get_stream_details()` → `streaming.get_stream_details()` → `provider.get_audio_stream()` → `streaming.get_audio_stream()`.
 
-**Auth flow:** `__init__.py` (QR action clicked) → `yandex_auth.perform_qr_auth()` → `ya-passport-auth` library (QR session + polling) → returns tokens → stored in MA config. Token refresh: `provider.py` → `yandex_auth.refresh_music_token()`.
+**Auth flow:** `__init__.py` (QR or Device Flow action clicked) → `auth.perform_qr_auth()` / `auth.perform_device_auth()` → `ya-passport-auth` library (session + polling) → returns tokens → stored in MA config. Token refresh: `provider.py` → `auth.refresh_music_token()` / `auth.refresh_credentials_via_passport()`.
 
 **Import path in tests:** The provider is imported as `music_assistant.providers.yandex_music.*` (not via relative imports), matching how MA loads it at runtime.
 
@@ -80,7 +80,7 @@ The provider is a single Python package in `provider/` that MA loads via `manife
 - `api_client.py` constructor takes `SecretStr`; calls `.get_secret()` only once inside `connect()`
 - `provider.py` wraps config strings in `SecretStr()` before passing to `api_client` — this is a **runtime** import, not `TYPE_CHECKING`
 - `api_client.py` imports `SecretStr` under `TYPE_CHECKING` (only used in type annotations; `.get_secret()` is called on the instance)
-- Auth functions in `yandex_auth.py` accept `SecretStr`, return plain strings for MA config storage
+- Auth functions in `auth.py` accept `SecretStr`, return plain strings for MA config storage
 
 ### Item ID formats
 - **Regular tracks:** plain `track_id` string
@@ -96,7 +96,7 @@ Parser functions in `parsers.py` follow the signature `parse_*(provider, yandex_
 - Parser output is snapshot-tested via `syrupy`; snapshots live in `tests/__snapshots__/test_parsers.ambr`
 - To update snapshots after an intentional parser change: `pytest tests/test_parsers.py --snapshot-update`
 - `tests/conftest.py` provides hand-written stubs (not `Mock`): `ProviderStub`, `ConfigStub`, `StreamingProviderStub`, `StreamingProviderStubWithTracking` (with `TrackingLogger`)
-- Auth tests (`test_yandex_auth.py`) use `mock.patch` on `PassportClient.create` (async context manager) and `AuthenticationHelper`
+- Auth tests (`test_auth.py`) use `mock.patch` on `PassportClient.create` (async context manager) and `AuthenticationHelper`
 
 ### Branch naming and commits
 ```
