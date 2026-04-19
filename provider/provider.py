@@ -840,8 +840,9 @@ class YandexMusicProvider(MusicProvider):
     async def _browse_history(self) -> Sequence[MediaItemType | ItemMapping | BrowseFolder]:
         """Browse user's recent listening history (flattened across days).
 
-        Returns recently played tracks (de-duplicated, most-recent-first). Album
-        contexts are kept inline so MA can resolve them via standard lookups.
+        Filters to ``type == "track"`` entries only — album/playlist context
+        items in the history feed are dropped. Tracks are de-duplicated by
+        id and returned in most-recent-first order.
 
         :return: List of recently played Track items.
         """

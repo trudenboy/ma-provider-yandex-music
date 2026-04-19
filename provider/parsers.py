@@ -249,6 +249,8 @@ def parse_track(
     :param lyrics_synced: Whether lyrics are in synced LRC format.
     :return: Music Assistant Track model.
     """
+    if track_obj.id is None:
+        raise InvalidDataError("Yandex track missing id")
     name, version = parse_title_and_version(
         track_obj.title or "Unknown Track",
         track_obj.version or None,
