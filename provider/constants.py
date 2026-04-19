@@ -17,6 +17,7 @@ CONF_ACTION_CLEAR_AUTH = "clear_auth"
 
 # QR authentication config keys
 CONF_X_TOKEN = "x_token"
+CONF_REFRESH_TOKEN: Final[str] = "refresh_token"
 CONF_REMEMBER_SESSION = "remember_session"
 
 # Labels
