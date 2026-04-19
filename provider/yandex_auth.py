@@ -14,7 +14,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from music_assistant_models.errors import LoginFailed
-from ya_passport_auth import PassportClient, SecretStr
+from ya_passport_auth import Credentials, PassportClient, SecretStr
 from ya_passport_auth.exceptions import QRTimeoutError, YaPassportError
 
 from music_assistant.helpers.auth import AuthenticationHelper
@@ -62,6 +62,25 @@ async def refresh_music_token(x_token: SecretStr) -> SecretStr:
             return await client.refresh_music_token(x_token)
     except YaPassportError as err:
         raise LoginFailed(f"Failed to refresh music token: {err}") from err
+
+
+async def refresh_credentials_via_passport(
+    x_token: SecretStr, refresh_token: SecretStr
+) -> Credentials:
+    """Silently re-issue the full credential triple using a refresh token.
+
+    Only available for accounts authenticated via the Device Flow (QR login
+    does not yield a ``refresh_token``). Rotates both ``x_token`` and
+    ``refresh_token`` server-side, so callers must persist the returned
+    Credentials.
+    """
+    try:
+        async with PassportClient.create() as client:
+            return await client.refresh_credentials(
+                Credentials(x_token=x_token, refresh_token=refresh_token)
+            )
+    except YaPassportError as err:
+        raise LoginFailed(f"Failed to refresh credentials: {err}") from err
 
 
 async def validate_x_token(x_token: SecretStr) -> bool:
