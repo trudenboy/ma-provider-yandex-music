@@ -85,7 +85,7 @@ async def test_perform_device_auth_returns_three_tokens() -> None:
 
 
 async def test_perform_device_auth_serves_intermediate_page_and_cleans_up() -> None:
-    """A temporary HTML page is registered on MA's webserver and unregistered after."""
+    """A temporary HTML page + status endpoint are registered and unregistered after."""
     session = _make_device_session(
         user_code="WXYZ-9999",
         verification_url="https://oauth.yandex.ru/device",
@@ -107,6 +107,10 @@ async def test_perform_device_auth_serves_intermediate_page_and_cleans_up() -> N
             "music_assistant.providers.yandex_music.device_auth.AuthenticationHelper",
             return_value=mock_auth_helper,
         ),
+        mock.patch(
+            "music_assistant.providers.yandex_music.device_auth.asyncio.sleep",
+            new=mock.AsyncMock(),
+        ),
     ):
         mock_create.return_value.__aenter__ = mock.AsyncMock(return_value=mock_client)
         mock_create.return_value.__aexit__ = mock.AsyncMock(return_value=False)
@@ -114,14 +118,70 @@ async def test_perform_device_auth_serves_intermediate_page_and_cleans_up() -> N
         await perform_device_auth(mock_mass, "session_1")
 
     expected_path = "/yandex_music/device_code/session_1"
-    mock_mass.webserver.register_dynamic_route.assert_called_once()
-    register_args = mock_mass.webserver.register_dynamic_route.call_args
-    assert register_args.args[0] == expected_path
-    assert register_args.args[2] == "GET"
-    mock_mass.webserver.unregister_dynamic_route.assert_called_once_with(expected_path, "GET")
+    expected_status_path = f"{expected_path}/status"
+
+    registered_paths = [
+        (c.args[0], c.args[2]) for c in mock_mass.webserver.register_dynamic_route.call_args_list
+    ]
+    assert (expected_path, "GET") in registered_paths
+    assert (expected_status_path, "GET") in registered_paths
+
+    unregistered_paths = [
+        c.args for c in mock_mass.webserver.unregister_dynamic_route.call_args_list
+    ]
+    assert (expected_path, "GET") in unregistered_paths
+    assert (expected_status_path, "GET") in unregistered_paths
+
     mock_auth_helper.__aenter__.return_value.send_url.assert_called_once_with(
         f"http://ma.local:8095{expected_path}"
     )
+
+
+async def test_perform_device_auth_status_endpoint_reports_done_after_success() -> None:
+    """The status endpoint reports state=done after the device flow completes.
+
+    Without this the popup window (opened via target=_blank) has no signal to
+    close itself after the user confirms the code.
+    """
+    import json
+
+    session = _make_device_session()
+    creds = _make_credentials()
+    mock_client = mock.AsyncMock()
+    mock_client.start_device_login.return_value = session
+    mock_client.poll_device_until_confirmed.return_value = creds
+
+    mock_mass = mock.MagicMock()
+    mock_mass.webserver.base_url = "http://ma.local:8095"
+    mock_auth_helper = mock.AsyncMock()
+
+    with (
+        mock.patch(
+            "music_assistant.providers.yandex_music.device_auth.PassportClient.create",
+        ) as mock_create,
+        mock.patch(
+            "music_assistant.providers.yandex_music.device_auth.AuthenticationHelper",
+            return_value=mock_auth_helper,
+        ),
+        mock.patch(
+            "music_assistant.providers.yandex_music.device_auth.asyncio.sleep",
+            new=mock.AsyncMock(),
+        ),
+    ):
+        mock_create.return_value.__aenter__ = mock.AsyncMock(return_value=mock_client)
+        mock_create.return_value.__aexit__ = mock.AsyncMock(return_value=False)
+
+        await perform_device_auth(mock_mass, "session_xyz")
+
+    status_call = next(
+        c
+        for c in mock_mass.webserver.register_dynamic_route.call_args_list
+        if c.args[0].endswith("/status")
+    )
+    status_handler = status_call.args[1]
+    response = await status_handler(mock.MagicMock())
+    payload = json.loads(response.body)
+    assert payload["state"] == "done"
 
 
 async def test_perform_device_auth_route_handler_renders_code_and_url() -> None:
@@ -153,7 +213,12 @@ async def test_perform_device_auth_route_handler_renders_code_and_url() -> None:
 
         await perform_device_auth(mock_mass, "session_1")
 
-    handler = mock_mass.webserver.register_dynamic_route.call_args.args[1]
+    page_call = next(
+        c
+        for c in mock_mass.webserver.register_dynamic_route.call_args_list
+        if not c.args[0].endswith("/status")
+    )
+    handler = page_call.args[1]
     response = await handler(mock.MagicMock())
     body = response.text
     assert body is not None
@@ -188,9 +253,11 @@ async def test_perform_device_auth_timeout_raises_login_failed() -> None:
         with pytest.raises(LoginFailed, match="timed out"):
             await perform_device_auth(mock_mass, "session_1")
 
-    mock_mass.webserver.unregister_dynamic_route.assert_called_once_with(
-        "/yandex_music/device_code/session_1", "GET"
-    )
+    unregistered_paths = [
+        c.args for c in mock_mass.webserver.unregister_dynamic_route.call_args_list
+    ]
+    assert ("/yandex_music/device_code/session_1", "GET") in unregistered_paths
+    assert ("/yandex_music/device_code/session_1/status", "GET") in unregistered_paths
 
 
 async def test_perform_device_auth_ya_passport_error_raises_login_failed() -> None:
