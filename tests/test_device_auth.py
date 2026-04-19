@@ -54,7 +54,6 @@ async def test_perform_device_auth_returns_token_when_user_confirms() -> None:
     helper = mock.AsyncMock()
     helper.__aenter__ = mock.AsyncMock(return_value=helper)
     helper.send_url = mock.MagicMock()
-    helper.send_text = mock.MagicMock()
 
     with (
         _patch_client_async(client),
@@ -69,9 +68,7 @@ async def test_perform_device_auth_returns_token_when_user_confirms() -> None:
     assert result == "music-token-123"
     client.request_device_code.assert_awaited_once()
     client.poll_device_token.assert_awaited_with("dev-code-xyz")
-    helper.send_url.assert_called_once_with("https://oauth.yandex.ru/device")
-    helper.send_text.assert_called_once()
-    assert "ABCD-1234" in helper.send_text.call_args.args[0]
+    helper.send_url.assert_called_once_with("https://oauth.yandex.ru/device?user_code=ABCD-1234")
 
 
 async def test_perform_device_auth_polls_until_token_returned() -> None:
@@ -86,7 +83,6 @@ async def test_perform_device_auth_polls_until_token_returned() -> None:
     helper = mock.AsyncMock()
     helper.__aenter__ = mock.AsyncMock(return_value=helper)
     helper.send_url = mock.MagicMock()
-    helper.send_text = mock.MagicMock()
 
     with (
         _patch_client_async(client),
@@ -113,7 +109,6 @@ async def test_perform_device_auth_timeout_raises_login_failed() -> None:
     helper = mock.AsyncMock()
     helper.__aenter__ = mock.AsyncMock(return_value=helper)
     helper.send_url = mock.MagicMock()
-    helper.send_text = mock.MagicMock()
 
     # Simulate time advancing past the deadline by patching the loop's time.
     times = iter([100.0, 100.0, 1000.0])  # start, first-loop, deadline-exceeded check
@@ -147,7 +142,6 @@ async def test_perform_device_auth_device_error_raises_login_failed() -> None:
     helper = mock.AsyncMock()
     helper.__aenter__ = mock.AsyncMock(return_value=helper)
     helper.send_url = mock.MagicMock()
-    helper.send_text = mock.MagicMock()
 
     with (
         _patch_client_async(client),

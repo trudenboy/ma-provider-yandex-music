@@ -37,16 +37,19 @@ async def perform_device_auth(mass: MusicAssistant, session_id: str) -> str:
         client = ClientAsync()
         device = await client.request_device_code()
 
-        message = f"Open {device.verification_url} on any device and enter code: {device.user_code}"
-        _LOGGER.debug(
-            "Device flow started: code=%s, expires_in=%ss",
+        # AuthenticationHelper can only open one URL — append the user code
+        # as a query param so the verification page can pre-fill it (and so
+        # the user can read it from the address bar if it doesn't).
+        url = f"{device.verification_url}?user_code={device.user_code}"
+        _LOGGER.info(
+            "Device flow started: open %s and enter code %s (expires in %ss)",
+            device.verification_url,
             device.user_code,
             device.expires_in,
         )
 
         async with AuthenticationHelper(mass, session_id) as auth_helper:
-            auth_helper.send_url(device.verification_url)
-            auth_helper.send_text(message)
+            auth_helper.send_url(url)
 
             interval = max(device.interval, 1)
             deadline = asyncio.get_running_loop().time() + device.expires_in
