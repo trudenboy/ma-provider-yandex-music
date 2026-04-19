@@ -12,6 +12,7 @@ CONF_BASE_URL = "base_url"
 # Actions
 CONF_ACTION_AUTH = "auth"
 CONF_ACTION_AUTH_QR = "auth_qr"
+CONF_ACTION_AUTH_DEVICE = "auth_device"
 CONF_ACTION_CLEAR_AUTH = "clear_auth"
 
 # QR authentication config keys
@@ -173,6 +174,8 @@ BROWSE_NAMES_RU: Final[dict[str, str]] = {
     # Top-level browse groups
     "for_you": "Для вас",
     "collection": "Коллекция",
+    "pinned": "Закреплённое",
+    "history": "История прослушиваний",
     # Waves / Radio (rotor station categories)
     "waves": "Радио",
     "radio": "Радио",
@@ -245,6 +248,8 @@ BROWSE_NAMES_EN: Final[dict[str, str]] = {
     # Top-level browse groups
     "for_you": "For You",
     "collection": "Collection",
+    "pinned": "Pinned",
+    "history": "Listening History",
     # Waves / Radio (rotor station categories)
     "waves": "Radio",
     "radio": "Radio",
@@ -369,6 +374,8 @@ WAVES_LANDING_FOLDER_ID: Final[str] = "waves_landing"
 # Top-level browse group folders
 FOR_YOU_FOLDER_ID: Final[str] = "for_you"
 COLLECTION_FOLDER_ID: Final[str] = "collection"
+PINNED_ITEMS_FOLDER_ID: Final[str] = "pinned"
+LISTENING_HISTORY_FOLDER_ID: Final[str] = "history"
 
 # Preferred display order for wave categories (rotor station types)
 WAVE_CATEGORY_DISPLAY_ORDER: Final[list[str]] = [

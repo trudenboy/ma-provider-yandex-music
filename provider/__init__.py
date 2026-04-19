@@ -9,6 +9,7 @@ from music_assistant_models.enums import ConfigEntryType, ProviderFeature
 from music_assistant_models.errors import InvalidDataError
 
 from .constants import (
+    CONF_ACTION_AUTH_DEVICE,
     CONF_ACTION_AUTH_QR,
     CONF_ACTION_CLEAR_AUTH,
     CONF_BASE_URL,
@@ -24,6 +25,7 @@ from .constants import (
     QUALITY_HIGH,
     QUALITY_SUPERB,
 )
+from .device_auth import perform_device_auth
 from .provider import YandexMusicProvider
 from .yandex_auth import perform_qr_auth
 
@@ -47,6 +49,7 @@ SUPPORTED_FEATURES = {
     ProviderFeature.LIBRARY_TRACKS_EDIT,
     ProviderFeature.BROWSE,
     ProviderFeature.SIMILAR_TRACKS,
+    ProviderFeature.SIMILAR_ARTISTS,
     ProviderFeature.RECOMMENDATIONS,
     ProviderFeature.LYRICS,
 }
@@ -81,6 +84,15 @@ async def get_config_entries(
         else:
             values[CONF_X_TOKEN] = None
 
+    # Handle Device Flow auth action (no x_token → no auto-refresh)
+    if action == CONF_ACTION_AUTH_DEVICE:
+        session_id = values.get("session_id")
+        if not session_id:
+            raise InvalidDataError("Missing session_id for device authentication")
+        music_token = await perform_device_auth(mass, str(session_id))
+        values[CONF_TOKEN] = music_token
+        values[CONF_X_TOKEN] = None
+
     # Handle clear auth action
     if action == CONF_ACTION_CLEAR_AUTH:
         values[CONF_TOKEN] = None
@@ -92,10 +104,10 @@ async def get_config_entries(
     # Dynamic label text
     if not is_authenticated:
         label_text = (
-            "Scan a QR code with the Yandex app on your phone to authenticate.\n\n"
+            "Scan a QR code with the Yandex app on your phone, or use the device code method.\n\n"
             "Alternatively, you can enter a music token manually in the advanced settings."
         )
-    elif action == CONF_ACTION_AUTH_QR:
+    elif action in (CONF_ACTION_AUTH_QR, CONF_ACTION_AUTH_DEVICE):
         label_text = "Authenticated to Yandex Music. Don't forget to save to complete setup."
     else:
         label_text = "Authenticated to Yandex Music."
@@ -115,6 +127,20 @@ async def get_config_entries(
             description="Opens a QR code page — scan it with the Yandex app on your phone.",
             action=CONF_ACTION_AUTH_QR,
             action_label="Login with QR code",
+            hidden=is_authenticated,
+        ),
+        # Device Flow authentication (alternative)
+        ConfigEntry(
+            key=CONF_ACTION_AUTH_DEVICE,
+            type=ConfigEntryType.ACTION,
+            label="Login with device code",
+            description=(
+                "Open a verification URL on any device and enter the short code. "
+                "Note: this method does not allow auto-refreshing the token — "
+                "you'll need to re-authenticate when it expires."
+            ),
+            action=CONF_ACTION_AUTH_DEVICE,
+            action_label="Login with device code",
             hidden=is_authenticated,
         ),
         # Remember session toggle
