@@ -5,37 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.7.0] - 2026-04-07
+## [3.0.0] - 2026-04-19
 
-- fix: update playlist snapshots for MA models 1.1.110 (is_dynamic field) (`fc2c0d1`)
-- chore: fix trailing newline in development.md (`9780076`)
-- chore: bump version to 2.7.0 (`b216ccc`)
-- feat: QR-code authentication as primary login method (#68) (`60140d6`)
-- chore: sync workflow wrappers from ma-provider-tools (#67) (`894cfaa`)
-- fix: use received HTTP bytes (not decrypted) for EOF detection in windowed stream (`a038107`)
-- chore: fix codespell and trailing-newline pre-commit failures (`4258702`)
-- fix: detect EOF at exact _RANGE_WINDOW boundary via Content-Range header (`fd3e26f`)
-- chore: sync workflow wrappers from ma-provider-tools (#65) (`f8f65e8`)
-- chore: reformat CHANGELOG — use commit history instead of PR notes [skip ci] (`7d36f68`)
-- chore: reformat CHANGELOG — marker to top, releases newest-first [skip ci] (`c118d69`)
-- chore: reformat CHANGELOG — marker to top, releases newest-first [skip ci] (`cd57f25`)
-- refactor: extract _handle_stream_error to fix PLR0915 in get_audio_stream (`9bbdc8e`)
-- chore: improve manifest description and add credits field (`c396505`)
-- chore: update changelog for v2.6.7 [skip ci] (`13f671d`)
+- feat: migrate to yandex-music v3 + Pinned/History browse + Device Flow auth (#102) (`5d4a54f`)
+- refactor: merge device_auth + yandex_auth into single auth module (#109) (`5bcaa16`)
+- fix(streaming): accept camelCase downloadInfo from yandex-music v3 (#106) (`f29fe2e`)
+- fix(streaming): restrict can_seek to byte-seekable codecs (`07001a5`)
+- fix(device-auth): show user code in MA-served intermediate page (#104) (`bacaec2`)
+- fix(device-auth): readable popup + auto-close after authorization (#107) (`b54f6ea`)
 
 ---
 
-## [2.7.1] - 2026-04-07
+## [2.9.1] - 2026-04-16
 
-- fix: add mobile User-Agent to QR auth requests (`57ac5b8`)
-- chore: update changelog for v2.7.0 [skip ci] (`c18270a`)
-
----
-
-## [2.7.2] - 2026-04-07
-
-- fix: try multiple CSRF token extraction patterns for Yandex Passport (`f6f7817`)
-- chore: update changelog for v2.7.1 [skip ci] (`84199cc`)
+- feat(streaming): native seek support for raw transport (#88) (`afc589a`)
+- feat: add get_rotor_station_tracks and get_quality wrapper methods (`b84630b`)
+- fix(streaming): only set can_seek when byte offset is computable (`b24cadb`)
+- fix: re-raise CancelledError in get_track_file_info, fix docstring (`d04d453`)
+- fix(ci): add runtime deps to pyproject.toml for test discovery (`cf6424f`)
+- fix(dev): use unsafe-best-match index strategy for dev deps (`6d5bccd`)
+- fix: make CONF_TOKEN required to prevent saving without auth (`acc0c5e`)
+- fix: raise InvalidDataError for missing session_id in QR auth (`a331238`)
+- fix: pin ya-passport-auth==1.0.0 in manifest.json (`6af4819`)
+- chore: bump ya-passport-auth to 1.2.3 (`2865bd8`)
+- chore: update Python version in mypy configuration (`044407a`)
 
 ---
 
@@ -52,71 +45,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.8.0] - 2026-04-09
 
+- refactor: unify streaming under get-file-info with raw transport (#71) (`a89972b`)
 - fix: read bitrate from API and use lossless quality for MP3 320 (`b5f6a24`)
 - fix: parse real audio params from API and container headers (`6f45425`)
 - fix: auto-parse codec strings so content_type reflects audio codec, not container (`27b830a`)
-- fix: trim trailing blank lines in development.md (`ea3139b`)
-- fix: use or-operator instead of ternary for FURB110 lint rule (`5ba024e`)
-- refactor: unify streaming under get-file-info with raw transport (#71) (`a89972b`)
-- chore: sync workflow wrappers from ma-provider-tools (#70) (`060126d`)
 - fix: make CONF_TOKEN required to prevent saving without credentials (`95118d3`)
+- fix: use or-operator instead of ternary for FURB110 lint rule (`5ba024e`)
 - fix: address Copilot review feedback on QR auth PR (`09dda3b`)
-- chore: update changelog for v2.7.2 [skip ci] (`8b5baf4`)
 
 ---
 
-## [2.9.0] - 2026-04-10
+## [2.7.2] - 2026-04-07
 
-- chore: bump version to 2.9.0 (`db8fe83`)
-- chore: switch ya-passport-auth to stable PyPI release (#87) (`5e3824d`)
-- feat: replace manual QR auth with ya-passport-auth library (#85) (`8529ce2`)
-- chore: sync workflow wrappers from ma-provider-tools (#83) (`909a9c2`)
-- chore: sync workflow wrappers from ma-provider-tools (#81) (`da563e9`)
-- chore: sync workflow wrappers from ma-provider-tools (#79) (`87dc2a3`)
-- chore: add VERSION file (2.8.0) (`3e20fe0`)
-- chore: sync workflow wrappers from ma-provider-tools (#76) (`eb1156b`)
-- chore: sync workflow wrappers from ma-provider-tools (#74) (`22eb1e3`)
-- chore: sync workflow wrappers from ma-provider-tools (#72) (`83fcf19`)
-- fix: handle ValueError in hex key decoding and TimeoutError in auth (`900c8a1`)
-- fix: correct MP4 sample_rate offset and re-raise CancelledError in probe (`fcde68c`)
-- fix: update stream detail assertions to match CUSTOM stream type (`dd245e4`)
-- fix: mock get_track_file_info in integration tests to prevent coroutine error (`4e49fd0`)
-- chore: update changelog for v2.8.0 [skip ci] (`6fbf729`)
+- fix: try multiple CSRF token extraction patterns for Yandex Passport (`f6f7817`)
 
 ---
 
-## [2.9.1] - 2026-04-16
+## [2.7.1] - 2026-04-07
 
-- Bump version from 2.9.0 to 2.9.1 (`491cd85`)
-- chore: sync workflow wrappers from ma-provider-tools (#100) (`c9abb3f`)
-- fix(streaming): only set can_seek when byte offset is computable (`b24cadb`)
-- fix: re-raise CancelledError in get_track_file_info, fix docstring (`d04d453`)
-- fix(ci): add runtime deps to pyproject.toml for test discovery (`cf6424f`)
-- chore: sync workflow wrappers from ma-provider-tools (#98) (`82b5d02`)
-- Update Python version in mypy configuration (`044407a`)
-- chore: sync workflow wrappers from ma-provider-tools (#96) (`2c30ad2`)
-- chore: sync workflow wrappers from ma-provider-tools (#94) (`5ad5b45`)
-- chore: sync workflow wrappers from ma-provider-tools (#90) (`a7adb85`)
-- fix(dev): use unsafe-best-match index strategy for dev deps (`6d5bccd`)
-- feat(streaming): native seek support for raw transport (#88) (`afc589a`)
-- feat: add get_rotor_station_tracks and get_quality wrapper methods (`b84630b`)
-- chore: bump ya-passport-auth to 1.2.3 (`2865bd8`)
-- fix: make CONF_TOKEN required to prevent saving without auth (`acc0c5e`)
-- fix: raise InvalidDataError for missing session_id in QR auth (`a331238`)
-- fix: pin ya-passport-auth==1.0.0 in manifest.json (`6af4819`)
-- chore: update changelog for v2.9.0 [skip ci] (`7378d79`)
+- fix: add mobile User-Agent to QR auth requests (`57ac5b8`)
 
 ---
 
-## [3.0.0] - 2026-04-19
+## [2.7.0] - 2026-04-07
 
-- refactor: merge device_auth + yandex_auth into single auth module (#109) (`5bcaa16`)
-- fix(device-auth): readable popup + auto-close after authorization (#107) (`b54f6ea`)
-- fix(streaming): accept camelCase downloadInfo from yandex-music v3 (#106) (`f29fe2e`)
-- fix(device-auth): show user code in MA-served intermediate page (#104) (`bacaec2`)
-- feat: migrate to yandex-music v3 + Pinned/History browse + Device Flow auth (#102) (`5d4a54f`)
-- fix(streaming): restrict can_seek to byte-seekable codecs (`07001a5`)
-- chore: update changelog for v2.9.1 [skip ci] (`6616177`)
+- feat: QR-code authentication as primary login method (#68) (`60140d6`)
+- fix: update playlist snapshots for MA models 1.1.110 (is_dynamic field) (`fc2c0d1`)
+- fix: use received HTTP bytes (not decrypted) for EOF detection in windowed stream (`a038107`)
+- fix: detect EOF at exact _RANGE_WINDOW boundary via Content-Range header (`fd3e26f`)
+- refactor: extract _handle_stream_error to fix PLR0915 in get_audio_stream (`9bbdc8e`)
+- chore: improve manifest description and add credits field (`c396505`)
 
 ---
 
