@@ -544,6 +544,41 @@ async def test_get_dashboard_stations_returns_personalized_stations() -> None:
     underlying.rotor_stations_dashboard.assert_called_once()
 
 
+# -- get_track_file_info: response key normalization -------------------------
+
+
+async def test_get_track_file_info_parses_camelcase_download_info() -> None:
+    """get_track_file_info parses the v3-style camelCase ``downloadInfo`` key.
+
+    The yandex-music v3 client no longer recursively normalises camelCase keys
+    inside ``Response.result``. The raw JSON for /get-file-info comes back as
+    ``{"downloadInfo": {...}}`` — the provider must accept both shapes.
+    """
+    client, underlying = _make_client()
+
+    raw_response = {
+        "downloadInfo": {
+            "trackId": "132401416",
+            "quality": "lossless",
+            "codec": "flac-mp4",
+            "bitrate": 0,
+            "transport": "raw",
+            "url": "https://example.com/flac-mp4.bin",
+            "realId": "132401416",
+        }
+    }
+    underlying._request = mock.MagicMock()
+    underlying._request.get = mock.AsyncMock(return_value=raw_response)
+    underlying.base_url = "https://api.music.yandex.net"
+
+    result = await client.get_track_file_info("132401416")
+
+    assert result is not None
+    assert result["url"] == "https://example.com/flac-mp4.bin"
+    assert result["codec"] == "flac-mp4"
+    assert result["needs_decryption"] is False
+
+
 async def test_get_dashboard_stations_empty_on_error() -> None:
     """get_dashboard_stations() returns empty list on network error."""
     client, underlying = _make_client()
