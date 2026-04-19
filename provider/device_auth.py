@@ -48,7 +48,9 @@ def _build_device_code_page(
     """
     safe_code = html.escape(user_code)
     safe_url = html.escape(verification_url, quote=True)
-    safe_status_url = json.dumps(status_url)
+    # json.dumps emits a JS string literal, but `</script>` would still break
+    # out of the surrounding <script> block. Escape the slash to be safe.
+    safe_status_url = json.dumps(status_url).replace("</", "<\\/")
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -228,8 +230,14 @@ async def perform_device_auth(mass: MusicAssistant, session_id: str) -> tuple[st
                     auth_helper.send_url(f"{mass.webserver.base_url}{page_path}")
                     try:
                         creds = await client.poll_device_until_confirmed(session)
-                    except BaseException:
+                    except asyncio.CancelledError:
+                        # Don't mark cancellations as auth failures.
+                        raise
+                    except Exception:
                         state["value"] = "failed"
+                        # Give the page one more poll to surface the failure
+                        # message before we tear the status route down.
+                        await asyncio.sleep(_POST_AUTH_GRACE_SECONDS)
                         raise
                     state["value"] = "done"
                     # Give the intermediate page one more poll to pick up "done"
