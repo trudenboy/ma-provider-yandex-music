@@ -1,10 +1,19 @@
-"""Yandex Music OAuth Device Flow authentication.
+"""Yandex Music authentication flows.
 
-Alternative entry point to QR auth: the user opens a verification URL on any
-device, types a short code shown by Music Assistant, and the provider polls
-Yandex Passport until the user confirms. Returns the full credential triple
-(x_token, music_token, refresh_token) thanks to ``ya-passport-auth`` v1.3.0,
-which uses the same Passport Android ``client_id`` as the QR flow.
+Two user-facing login paths, both backed by ``ya-passport-auth``:
+
+* **QR flow** — :func:`perform_qr_auth` opens a QR popup via the MA frontend
+  and polls Passport until the user scans/confirms. Yields
+  ``(x_token, music_token)``.
+* **Device Flow** — :func:`perform_device_auth` serves a short user code on
+  an MA-hosted intermediate page and polls Passport until confirmation.
+  Yields the full ``(x_token, music_token, refresh_token)`` triple thanks
+  to ``ya-passport-auth`` v1.3.0 reusing the same Passport Android
+  ``client_id`` as the QR flow.
+
+Token maintenance helpers (:func:`refresh_music_token`,
+:func:`refresh_credentials_via_passport`, :func:`validate_x_token`) live
+alongside the login flows.
 """
 
 from __future__ import annotations
@@ -17,8 +26,12 @@ from typing import TYPE_CHECKING
 
 from aiohttp import web
 from music_assistant_models.errors import LoginFailed
-from ya_passport_auth import PassportClient
-from ya_passport_auth.exceptions import DeviceCodeTimeoutError, YaPassportError
+from ya_passport_auth import Credentials, PassportClient, SecretStr
+from ya_passport_auth.exceptions import (
+    DeviceCodeTimeoutError,
+    QRTimeoutError,
+    YaPassportError,
+)
 
 from music_assistant.helpers.auth import AuthenticationHelper
 
@@ -265,3 +278,70 @@ async def perform_device_auth(mass: MusicAssistant, session_id: str) -> tuple[st
         raise LoginFailed("Device authentication timed out. Please try again.") from err
     except YaPassportError as err:
         raise LoginFailed(f"Yandex device auth error: {err}") from err
+
+
+async def perform_qr_auth(mass: MusicAssistant, session_id: str) -> tuple[str, str]:
+    """Perform full QR authentication flow.
+
+    Opens a QR code popup via MA frontend, polls for scan confirmation,
+    then returns tokens as plain strings for MA config storage.
+
+    Returns (x_token, music_token).
+    """
+    try:
+        async with PassportClient.create() as client:
+            qr = await client.start_qr_login()
+
+            async with AuthenticationHelper(mass, session_id) as auth_helper:
+                auth_helper.send_url(qr.qr_url)
+                creds = await client.poll_qr_until_confirmed(qr)
+
+            x_token = creds.x_token.get_secret()
+            music_token = creds.music_token
+            if music_token is None:
+                raise LoginFailed("QR auth succeeded but no music token was returned")
+
+            _LOGGER.debug("QR auth complete, obtained both tokens")
+            return x_token, music_token.get_secret()
+
+    except QRTimeoutError as err:
+        raise LoginFailed("QR authentication timed out. Please try again.") from err
+    except YaPassportError as err:
+        raise LoginFailed(f"Yandex auth error: {err}") from err
+
+
+async def refresh_music_token(x_token: SecretStr) -> SecretStr:
+    """Exchange an x_token for a fresh music-scoped OAuth token."""
+    try:
+        async with PassportClient.create() as client:
+            return await client.refresh_music_token(x_token)
+    except YaPassportError as err:
+        raise LoginFailed(f"Failed to refresh music token: {err}") from err
+
+
+async def refresh_credentials_via_passport(
+    x_token: SecretStr, refresh_token: SecretStr
+) -> Credentials:
+    """Silently re-issue the full credential triple using a refresh token.
+
+    Only available for accounts authenticated via the Device Flow (QR login
+    does not yield a ``refresh_token``). Rotates both ``x_token`` and
+    ``refresh_token`` server-side, so callers must persist the returned
+    Credentials.
+    """
+    try:
+        async with PassportClient.create() as client:
+            return await client.refresh_credentials(
+                Credentials(x_token=x_token, refresh_token=refresh_token)
+            )
+    except YaPassportError as err:
+        raise LoginFailed(f"Failed to refresh credentials: {err}") from err
+
+
+async def validate_x_token(x_token: SecretStr) -> bool:
+    """Return True if *x_token* is still accepted by Yandex Passport."""
+    try:
+        async with PassportClient.create() as client:
+            return bool(await client.validate_x_token(x_token))
+    except YaPassportError:
+        return False

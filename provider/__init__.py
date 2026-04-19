@@ -8,6 +8,7 @@ from music_assistant_models.config_entries import ConfigEntry, ConfigValueOption
 from music_assistant_models.enums import ConfigEntryType, ProviderFeature
 from music_assistant_models.errors import InvalidDataError
 
+from .auth import perform_device_auth, perform_qr_auth
 from .constants import (
     CONF_ACTION_AUTH_DEVICE,
     CONF_ACTION_AUTH_QR,
@@ -26,9 +27,7 @@ from .constants import (
     QUALITY_HIGH,
     QUALITY_SUPERB,
 )
-from .device_auth import perform_device_auth
 from .provider import YandexMusicProvider
-from .yandex_auth import perform_qr_auth
 
 if TYPE_CHECKING:
     from music_assistant_models.config_entries import ProviderConfig
