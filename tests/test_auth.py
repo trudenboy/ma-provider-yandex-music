@@ -5,9 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Awaitable, Callable, Generator
+from typing import TYPE_CHECKING
 from unittest import mock
-
-from aiohttp import web
 
 import pytest
 from music_assistant_models.errors import LoginFailed
@@ -29,6 +28,9 @@ from music_assistant.providers.yandex_music.auth import (
     refresh_music_token,
     validate_x_token,
 )
+
+if TYPE_CHECKING:
+    from aiohttp import web
 
 
 @pytest.fixture(autouse=True)
