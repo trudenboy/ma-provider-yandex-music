@@ -98,11 +98,32 @@ def _build_device_code_page(user_code: str, verification_url: str) -> str:
         <a class="btn" href="{safe_url}" target="_blank" rel="noopener">Continue to Yandex</a>
     </div>
     <script>
-        document.getElementById('copy').addEventListener('click', function() {{
-            const code = document.getElementById('code').textContent.trim();
-            navigator.clipboard.writeText(code).then(() => {{
+        const copyButton = document.getElementById('copy');
+        const codeElement = document.getElementById('code');
+
+        function selectCodeForManualCopy() {{
+            if (!codeElement) return;
+            const selection = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(codeElement);
+            selection.removeAllRanges();
+            selection.addRange(range);
+            if (copyButton) copyButton.textContent = 'Press Ctrl/Cmd+C';
+        }}
+
+        copyButton?.addEventListener('click', async function() {{
+            const code = codeElement?.textContent?.trim();
+            if (!code) return;
+            if (!navigator.clipboard?.writeText) {{
+                selectCodeForManualCopy();
+                return;
+            }}
+            try {{
+                await navigator.clipboard.writeText(code);
                 this.textContent = 'Copied';
-            }});
+            }} catch {{
+                selectCodeForManualCopy();
+            }}
         }});
     </script>
 </body>
@@ -135,7 +156,16 @@ async def perform_device_auth(mass: MusicAssistant, session_id: str) -> tuple[st
             page_html = _build_device_code_page(session.user_code, session.verification_url)
 
             async def _serve_page(_request: web.Request) -> web.Response:
-                return web.Response(text=page_html, content_type="text/html", charset="utf-8")
+                return web.Response(
+                    text=page_html,
+                    content_type="text/html",
+                    charset="utf-8",
+                    headers={
+                        "Cache-Control": "no-store",
+                        "Pragma": "no-cache",
+                        "Expires": "0",
+                    },
+                )
 
             mass.webserver.register_dynamic_route(page_path, _serve_page, "GET")
             try:
