@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest import mock
 
 import pytest
@@ -143,8 +144,6 @@ async def test_perform_device_auth_status_endpoint_reports_done_after_success() 
     Without this the popup window (opened via target=_blank) has no signal to
     close itself after the user confirms the code.
     """
-    import json
-
     session = _make_device_session()
     creds = _make_credentials()
     mock_client = mock.AsyncMock()
