@@ -108,6 +108,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.0.0] - 2026-04-19
+
+- refactor: merge device_auth + yandex_auth into single auth module (#109) (`5bcaa16`)
+- fix(device-auth): readable popup + auto-close after authorization (#107) (`b54f6ea`)
+- fix(streaming): accept camelCase downloadInfo from yandex-music v3 (#106) (`f29fe2e`)
+- fix(device-auth): show user code in MA-served intermediate page (#104) (`bacaec2`)
+- feat: migrate to yandex-music v3 + Pinned/History browse + Device Flow auth (#102) (`5d4a54f`)
+- fix(streaming): restrict can_seek to byte-seekable codecs (`07001a5`)
+- chore: update changelog for v2.9.1 [skip ci] (`6616177`)
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
 
 ## [2.6.7] - 2026-02-27
