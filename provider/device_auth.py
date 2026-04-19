@@ -9,7 +9,9 @@ which uses the same Passport Android ``client_id`` as the QR flow.
 
 from __future__ import annotations
 
+import asyncio
 import html
+import json
 import logging
 from typing import TYPE_CHECKING
 
@@ -26,18 +28,29 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 _DEVICE_CODE_PAGE_PATH = "/yandex_music/device_code"
+# Seconds to keep the status endpoint alive after the flow finishes so the
+# intermediate page has a chance to poll once more and close itself.
+_POST_AUTH_GRACE_SECONDS = 3
 
 
-def _build_device_code_page(user_code: str, verification_url: str) -> str:
+def _build_device_code_page(
+    user_code: str,
+    verification_url: str,
+    status_url: str,
+) -> str:
     """Render the HTML page shown to the user during Device Flow login.
 
     Yandex's verification page does not pre-fill the code from query params,
-    and the MA frontend opens auth URLs in a popup that hides the address bar.
-    Serving an intermediate page lets us display the code prominently and give
-    the user an explicit "continue" action.
+    and the MA frontend opens auth URLs in a new tab, so the user would
+    otherwise have no signal that authorization succeeded. The page polls the
+    status endpoint and closes itself (or shows a success message) when the
+    backend signals completion.
     """
     safe_code = html.escape(user_code)
     safe_url = html.escape(verification_url, quote=True)
+    # json.dumps emits a JS string literal, but `</script>` would still break
+    # out of the surrounding <script> block. Escape the slash to be safe.
+    safe_status_url = json.dumps(status_url).replace("</", "<\\/")
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -45,7 +58,7 @@ def _build_device_code_page(user_code: str, verification_url: str) -> str:
     <title>Yandex Music — Device Code</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        :root {{ color-scheme: light dark; }}
+        :root {{ color-scheme: light; }}
         body {{
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             margin: 0; padding: 2rem 1rem;
@@ -53,24 +66,22 @@ def _build_device_code_page(user_code: str, verification_url: str) -> str:
             min-height: 100vh; box-sizing: border-box;
             background: #f5f5f7; color: #1d1d1f;
         }}
-        @media (prefers-color-scheme: dark) {{
-            body {{ background: #1d1d1f; color: #f5f5f7; }}
-            .card {{ background: #2c2c2e; }}
-            #code {{ background: #3a3a3c; color: #fff; }}
-        }}
         .card {{
-            background: #fff; border-radius: 14px; padding: 2rem;
+            background: #ffffff; color: #1d1d1f;
+            border-radius: 14px; padding: 2rem;
             max-width: 28rem; width: 100%;
             box-shadow: 0 4px 20px rgba(0,0,0,.08);
             text-align: center;
         }}
-        h1 {{ margin: 0 0 .5rem; font-size: 1.25rem; }}
-        p {{ margin: .5rem 0 1.25rem; opacity: .75; line-height: 1.45; }}
+        h1 {{ margin: 0 0 .5rem; font-size: 1.25rem; color: #1d1d1f; }}
+        p {{ margin: .5rem 0 1.25rem; color: #4a4a52; line-height: 1.45; }}
         #code {{
-            display: inline-block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            display: inline-block;
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
             font-size: 2rem; font-weight: 600; letter-spacing: .15em;
             padding: .75rem 1.25rem; border-radius: 10px;
-            background: #f2f2f7; user-select: all;
+            background: #f2f2f7; color: #1d1d1f;
+            user-select: all;
         }}
         button, .btn {{
             display: inline-block; margin-top: 1.5rem; padding: .75rem 1.5rem;
@@ -80,15 +91,15 @@ def _build_device_code_page(user_code: str, verification_url: str) -> str:
         }}
         button:hover, .btn:hover {{ background: #ffd633; }}
         #copy {{
-            margin-top: .75rem; background: transparent; color: inherit;
-            border: 1px solid currentColor; opacity: .7; padding: .4rem 1rem;
+            margin-top: .75rem; background: transparent; color: #1d1d1f;
+            border: 1px solid #c8c8cd; padding: .4rem 1rem;
             font-size: .85rem; font-weight: 400;
         }}
-        #copy:hover {{ background: rgba(127,127,127,.1); opacity: 1; }}
+        #copy:hover {{ background: #f2f2f7; }}
     </style>
 </head>
 <body>
-    <div class="card">
+    <div class="card" id="card">
         <h1>Login to Yandex Music</h1>
         <p>Open the link below and enter this code to authorize Music Assistant.</p>
         <div id="code">{safe_code}</div>
@@ -100,6 +111,8 @@ def _build_device_code_page(user_code: str, verification_url: str) -> str:
     <script>
         const copyButton = document.getElementById('copy');
         const codeElement = document.getElementById('code');
+        const card = document.getElementById('card');
+        const statusUrl = {safe_status_url};
 
         function selectCodeForManualCopy() {{
             if (!codeElement) return;
@@ -125,6 +138,37 @@ def _build_device_code_page(user_code: str, verification_url: str) -> str:
                 selectCodeForManualCopy();
             }}
         }});
+
+        function showResult(title, message) {{
+            card.innerHTML =
+                '<h1>' + title + '</h1><p>' + message + '</p>';
+        }}
+
+        async function pollStatus() {{
+            try {{
+                const r = await fetch(statusUrl, {{ cache: 'no-store' }});
+                if (r.ok) {{
+                    const data = await r.json();
+                    if (data.state === 'done') {{
+                        showResult(
+                            'Authorization successful',
+                            'You can close this window.'
+                        );
+                        setTimeout(() => {{ try {{ window.close(); }} catch (e) {{}} }}, 300);
+                        return;
+                    }}
+                    if (data.state === 'failed') {{
+                        showResult(
+                            'Authorization failed',
+                            'Please return to Music Assistant and try again.'
+                        );
+                        return;
+                    }}
+                }}
+            }} catch (e) {{ /* network hiccup — retry */ }}
+            setTimeout(pollStatus, 2000);
+        }}
+        setTimeout(pollStatus, 2000);
     </script>
 </body>
 </html>
@@ -153,7 +197,13 @@ async def perform_device_auth(mass: MusicAssistant, session_id: str) -> tuple[st
             )
 
             page_path = f"{_DEVICE_CODE_PAGE_PATH}/{session_id}"
-            page_html = _build_device_code_page(session.user_code, session.verification_url)
+            status_path = f"{page_path}/status"
+            status_url = f"{mass.webserver.base_url}{status_path}"
+            state = {"value": "pending"}
+
+            page_html = _build_device_code_page(
+                session.user_code, session.verification_url, status_url
+            )
 
             async def _serve_page(_request: web.Request) -> web.Response:
                 return web.Response(
@@ -167,13 +217,35 @@ async def perform_device_auth(mass: MusicAssistant, session_id: str) -> tuple[st
                     },
                 )
 
+            async def _serve_status(_request: web.Request) -> web.Response:
+                return web.json_response(
+                    {"state": state["value"]},
+                    headers={"Cache-Control": "no-store"},
+                )
+
             mass.webserver.register_dynamic_route(page_path, _serve_page, "GET")
+            mass.webserver.register_dynamic_route(status_path, _serve_status, "GET")
             try:
                 async with AuthenticationHelper(mass, session_id) as auth_helper:
                     auth_helper.send_url(f"{mass.webserver.base_url}{page_path}")
-                    creds = await client.poll_device_until_confirmed(session)
+                    try:
+                        creds = await client.poll_device_until_confirmed(session)
+                    except asyncio.CancelledError:
+                        # Don't mark cancellations as auth failures.
+                        raise
+                    except Exception:
+                        state["value"] = "failed"
+                        # Give the page one more poll to surface the failure
+                        # message before we tear the status route down.
+                        await asyncio.sleep(_POST_AUTH_GRACE_SECONDS)
+                        raise
+                    state["value"] = "done"
+                    # Give the intermediate page one more poll to pick up "done"
+                    # and close itself before we tear the status route down.
+                    await asyncio.sleep(_POST_AUTH_GRACE_SECONDS)
             finally:
                 mass.webserver.unregister_dynamic_route(page_path, "GET")
+                mass.webserver.unregister_dynamic_route(status_path, "GET")
 
             music_token = creds.music_token
             if music_token is None:
