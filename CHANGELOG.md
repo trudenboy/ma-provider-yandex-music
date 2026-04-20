@@ -78,6 +78,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.0.1] - 2026-04-20
+
+- Update VERSION (`dc9c2bb`)
+- fix: address PR review comments (`41d1709`)
+- fix: address PR review comments (`bad8a70`)
+- test: remove integration test module (`7d82a5a`)
+- fix(manifest): drop [async] extra from yandex-music requirement (`853fa42`)
+- fix(device-auth): don't log user_code at INFO level (`24b211c`)
+- chore: clean up CHANGELOG — order, dedup, noise [skip ci] (`50bc67e`)
+- Bump version from 2.9.1 to 3.0.0 (`278b2b8`)
+- chore: update changelog for v3.0.0 [skip ci] (`fe1de36`)
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
 
 ## [2.6.7] - 2026-02-27
