@@ -1639,22 +1639,18 @@ class YandexMusicProvider(MusicProvider):
         """Get a single podcast episode by ID.
 
         The parent Podcast is reconstructed from the track's parent album. If
-        the album isn't present on the track, the episode is returned with a
-        minimal ItemMapping-like placeholder — unlikely in practice.
+        the album isn't present on the track, the episode cannot be converted
+        into a valid MA model and InvalidDataError is raised.
         """
         tracks = await self.client.get_tracks([prov_episode_id])
         if not tracks:
             raise MediaNotFoundError(f"Podcast episode {prov_episode_id} not found")
         track_obj = tracks[0]
-        if track_obj.albums:
-            podcast = parse_podcast(self, track_obj.albums[0])
-        else:
-            podcast = Podcast(
-                item_id="unknown",
-                provider=self.instance_id,
-                name="Unknown Podcast",
-                provider_mappings=set(),
+        if not track_obj.albums:
+            raise InvalidDataError(
+                f"Podcast episode {prov_episode_id} is missing parent podcast album data"
             )
+        podcast = parse_podcast(self, track_obj.albums[0])
         return parse_podcast_episode(self, track_obj, podcast, position=0)
 
     @use_cache(3600 * 24)

@@ -167,6 +167,33 @@ def parse_artist(
     return artist
 
 
+def _album_cover_images(
+    provider: YandexMusicProvider, album_obj: YandexAlbum
+) -> UniqueList[MediaItemImage]:
+    """Build the UniqueList of images for an album-like object.
+
+    Prefers the templated ``cover_uri`` and falls back to ``og_image`` — matches
+    the selection rules used for podcasts and audiobooks so all album-like
+    parsers stay in sync.
+    """
+    images: UniqueList[MediaItemImage] = UniqueList()
+    image_url: str | None = None
+    if album_obj.cover_uri:
+        image_url = _get_image_url(album_obj.cover_uri)
+    elif album_obj.og_image:
+        image_url = _get_image_url(album_obj.og_image)
+    if image_url:
+        images.append(
+            MediaItemImage(
+                type=ImageType.THUMB,
+                path=image_url,
+                provider=provider.instance_id,
+                remotely_accessible=True,
+            )
+        )
+    return images
+
+
 def parse_album(provider: YandexMusicProvider, album_obj: YandexAlbum) -> Album:
     """Parse Yandex album object to MA Album model.
 
@@ -232,33 +259,9 @@ def parse_album(provider: YandexMusicProvider, album_obj: YandexAlbum) -> Album:
     if album_obj.genre:
         album.metadata.genres = {album_obj.genre}
 
-    # Add cover image
-    if album_obj.cover_uri:
-        image_url = _get_image_url(album_obj.cover_uri)
-        if image_url:
-            album.metadata.images = UniqueList(
-                [
-                    MediaItemImage(
-                        type=ImageType.THUMB,
-                        path=image_url,
-                        provider=provider.instance_id,
-                        remotely_accessible=True,
-                    )
-                ]
-            )
-    elif album_obj.og_image:
-        image_url = _get_image_url(album_obj.og_image)
-        if image_url:
-            album.metadata.images = UniqueList(
-                [
-                    MediaItemImage(
-                        type=ImageType.THUMB,
-                        path=image_url,
-                        provider=provider.instance_id,
-                        remotely_accessible=True,
-                    )
-                ]
-            )
+    images = _album_cover_images(provider, album_obj)
+    if images:
+        album.metadata.images = images
 
     return album
 
@@ -439,28 +442,6 @@ def parse_playlist(
             )
 
     return playlist
-
-
-def _album_cover_images(
-    provider: YandexMusicProvider, album_obj: YandexAlbum
-) -> UniqueList[MediaItemImage]:
-    """Build the UniqueList of images for an album-like object."""
-    images: UniqueList[MediaItemImage] = UniqueList()
-    image_url: str | None = None
-    if album_obj.cover_uri:
-        image_url = _get_image_url(album_obj.cover_uri)
-    elif album_obj.og_image:
-        image_url = _get_image_url(album_obj.og_image)
-    if image_url:
-        images.append(
-            MediaItemImage(
-                type=ImageType.THUMB,
-                path=image_url,
-                provider=provider.instance_id,
-                remotely_accessible=True,
-            )
-        )
-    return images
 
 
 def parse_podcast(provider: YandexMusicProvider, album_obj: YandexAlbum) -> Podcast:
