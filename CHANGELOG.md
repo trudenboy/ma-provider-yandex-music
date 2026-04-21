@@ -121,6 +121,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.2.0] - 2026-04-21
+
+- feat(audiobook): stream audiobooks via chapter concatenation (`d9f483c`)
+- chore: update changelog for v3.1.2 [skip ci] (`d10fffb`)
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
 
 ## [2.6.7] - 2026-02-27
