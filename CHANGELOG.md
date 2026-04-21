@@ -114,6 +114,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.1.2] - 2026-04-21
+
+- fix(auth): clear stale refresh_token on QR re-auth (`48d50c4`)
+- chore: update changelog for v3.1.1 [skip ci] (`4809461`)
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
 
 ## [2.6.7] - 2026-02-27
