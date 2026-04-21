@@ -415,3 +415,5 @@ def test_parse_podcast_episode_inherits_podcast_image(provider_stub: ProviderStu
     )
     assert episode.metadata.images is not None
     assert episode.metadata.images == podcast.metadata.images
+    # Must be a separate list — mutating one shouldn't affect the other.
+    assert episode.metadata.images is not podcast.metadata.images

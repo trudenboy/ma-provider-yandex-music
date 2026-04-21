@@ -587,7 +587,7 @@ def parse_podcast_episode(
                 ]
             )
     if not episode.metadata.images and podcast.metadata.images:
-        episode.metadata.images = podcast.metadata.images
+        episode.metadata.images = UniqueList(podcast.metadata.images)
 
     return episode
 
