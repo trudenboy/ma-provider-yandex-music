@@ -38,8 +38,8 @@ if [ -n "$DEPS" ]; then
     if [ -x /app/venv/bin/pip ]; then
         /app/venv/bin/pip install --quiet $DEPS
     else
-        # nightly image ships uv instead of pip
-        /app/venv/bin/uv pip install --python /app/venv/bin/python --quiet $DEPS
+        # newer MA images (beta/nightly) ship uv instead of pip
+        /app/venv/bin/uv pip install --python /app/venv/bin/python3 --quiet $DEPS
     fi
 fi
 

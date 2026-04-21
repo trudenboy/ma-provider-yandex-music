@@ -53,6 +53,7 @@ SUPPORTED_FEATURES = {
     ProviderFeature.LIBRARY_AUDIOBOOKS_EDIT,
     ProviderFeature.BROWSE,
     ProviderFeature.SIMILAR_TRACKS,
+    ProviderFeature.SIMILAR_ARTISTS,
     ProviderFeature.RECOMMENDATIONS,
     ProviderFeature.LYRICS,
 }

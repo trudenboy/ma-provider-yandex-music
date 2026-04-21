@@ -104,6 +104,7 @@ from .streaming import YandexMusicStreamingManager
 
 if TYPE_CHECKING:
     from music_assistant_models.streamdetails import StreamDetails
+    from yandex_music import Album as YandexAlbum
 
 
 def _parse_radio_item_id(item_id: str) -> tuple[str, str | None]:
@@ -145,6 +146,10 @@ class YandexMusicProvider(MusicProvider):
     _my_wave_lock: asyncio.Lock  # Protects My Wave mutable state
     _wave_states: dict[str, _WaveState]  # Per-station state for tagged wave stations
     _wave_bg_colors: dict[str, str]  # image_url -> hex bg color for transparent covers
+    # Short-lived cache to dedupe the three library syncs (albums/podcasts/audiobooks)
+    # that all derive from the same liked-albums endpoint.
+    _liked_albums_cache: tuple[float, list[YandexAlbum]] | None = None
+    _liked_albums_lock: asyncio.Lock
 
     @property
     def client(self) -> YandexMusicClient:
@@ -280,6 +285,8 @@ class YandexMusicProvider(MusicProvider):
         # Initialize per-station wave state dict
         self._wave_states = {}
         self._wave_bg_colors = {}
+        self._liked_albums_lock = asyncio.Lock()
+        self._liked_albums_cache = None
         self.logger.info("Successfully connected to Yandex Music")
 
     async def unload(self, is_removed: bool = False) -> None:
@@ -2500,15 +2507,32 @@ class YandexMusicProvider(MusicProvider):
             except InvalidDataError as err:
                 self.logger.debug("Error parsing library artist: %s", err)
 
+    async def _get_liked_albums_cached(self, ttl: float = 30.0) -> list[YandexAlbum]:
+        """Return liked albums with a short in-process TTL cache + lock.
+
+        Albums, podcasts and audiobooks are all derived from the same
+        ``users/{uid}/likes/albums`` endpoint, so a full library sync would
+        otherwise trigger three sequential (or concurrent) identical calls.
+        The lock serializes refreshes so only one request hits the API when
+        multiple library syncs start together.
+        """
+        async with self._liked_albums_lock:
+            now = asyncio.get_running_loop().time()
+            if self._liked_albums_cache is not None:
+                cached_at, cached = self._liked_albums_cache
+                if now - cached_at < ttl:
+                    return cached
+            albums = await self.client.get_liked_albums(batch_size=TRACK_BATCH_SIZE)
+            self._liked_albums_cache = (now, albums)
+            return albums
+
     async def get_library_albums(self) -> AsyncGenerator[Album, None]:
         """Retrieve library albums from Yandex Music.
 
         Excludes entries classified as podcasts or audiobooks so they don't
         duplicate into the Albums library view.
         """
-        batch_size = TRACK_BATCH_SIZE
-        albums = await self.client.get_liked_albums(batch_size=batch_size)
-        for album in albums:
+        for album in await self._get_liked_albums_cached():
             if classify_album(album) != "music":
                 continue
             try:
@@ -2518,8 +2542,7 @@ class YandexMusicProvider(MusicProvider):
 
     async def get_library_podcasts(self) -> AsyncGenerator[Podcast, None]:
         """Retrieve library podcasts from Yandex Music (filtered liked albums)."""
-        albums = await self.client.get_liked_albums(batch_size=TRACK_BATCH_SIZE)
-        for album in albums:
+        for album in await self._get_liked_albums_cached():
             if classify_album(album) != "podcast":
                 continue
             try:
@@ -2529,8 +2552,7 @@ class YandexMusicProvider(MusicProvider):
 
     async def get_library_audiobooks(self) -> AsyncGenerator[Audiobook, None]:
         """Retrieve library audiobooks from Yandex Music (filtered liked albums)."""
-        albums = await self.client.get_liked_albums(batch_size=TRACK_BATCH_SIZE)
-        for album in albums:
+        for album in await self._get_liked_albums_cached():
             if classify_album(album) != "audiobook":
                 continue
             try:
