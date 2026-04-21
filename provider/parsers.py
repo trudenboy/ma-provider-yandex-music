@@ -51,22 +51,23 @@ AlbumKind = Literal["music", "podcast", "audiobook"]
 def classify_album(album_obj: YandexAlbum) -> AlbumKind:
     """Classify a Yandex album as music / podcast / audiobook.
 
-    Checks both `meta_type` (more reliable per LMS plugin experience) and `type`
-    fields for the substrings "podcast" / "audiobook". Values are not documented
-    in the yandex_music SDK but observed in production.
+    Checks both ``meta_type`` and ``type`` for the substrings "audiobook" /
+    "podcast". The more specific "audiobook" signal wins over "podcast" on any
+    field because Yandex tags audiobooks with ``meta_type="podcast"`` *and*
+    ``type="audiobook"`` — empirically observed in production libraries.
+    Values are not documented in the yandex_music SDK.
 
     :param album_obj: Yandex album object.
     :return: One of "music", "podcast", "audiobook".
     """
-    for field in (
-        getattr(album_obj, "meta_type", None),
-        getattr(album_obj, "type", None),
-    ):
-        v = (field or "").lower()
-        if "audiobook" in v:
-            return "audiobook"
-        if "podcast" in v:
-            return "podcast"
+    fields = [
+        (getattr(album_obj, "meta_type", None) or "").lower(),
+        (getattr(album_obj, "type", None) or "").lower(),
+    ]
+    if any("audiobook" in f for f in fields):
+        return "audiobook"
+    if any("podcast" in f for f in fields):
+        return "podcast"
     return "music"
 
 

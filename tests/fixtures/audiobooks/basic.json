@@ -19,7 +19,7 @@
     }
   ],
   "type": "audiobook",
-  "meta_type": "audiobook",
+  "meta_type": "podcast",
   "description": "A sample audiobook description.",
   "cover_uri": "avatars.yandex.net/get-music-content/ab/cover/%%"
 }

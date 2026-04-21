@@ -316,7 +316,10 @@ def test_parse_playlist_snapshot(
         ("audiobook", None, "audiobook"),
         (None, "audiobook", "audiobook"),
         ("AUDIOBOOK", None, "audiobook"),
-        # meta_type wins when both are set and disagree (it's checked first)
+        # audiobook wins over podcast on any field — empirically observed:
+        # Yandex tags audiobooks as meta_type="podcast" + type="audiobook"
+        ("podcast", "audiobook", "audiobook"),
+        ("audiobook", "podcast", "audiobook"),
         ("audiobook", "music", "audiobook"),
         # plain music
         (None, None, "music"),
