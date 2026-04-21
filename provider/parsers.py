@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from contextlib import suppress
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from music_assistant_models.enums import (
     AlbumType,
@@ -15,9 +15,12 @@ from music_assistant_models.errors import InvalidDataError
 from music_assistant_models.media_items import (
     Album,
     Artist,
+    Audiobook,
     AudioFormat,
     MediaItemImage,
     Playlist,
+    Podcast,
+    PodcastEpisode,
     ProviderMapping,
     Track,
     UniqueList,
@@ -40,6 +43,31 @@ if TYPE_CHECKING:
     from yandex_music import Track as YandexTrack
 
     from .provider import YandexMusicProvider
+
+
+AlbumKind = Literal["music", "podcast", "audiobook"]
+
+
+def classify_album(album_obj: YandexAlbum) -> AlbumKind:
+    """Classify a Yandex album as music / podcast / audiobook.
+
+    Checks both `meta_type` (more reliable per LMS plugin experience) and `type`
+    fields for the substrings "podcast" / "audiobook". Values are not documented
+    in the yandex_music SDK but observed in production.
+
+    :param album_obj: Yandex album object.
+    :return: One of "music", "podcast", "audiobook".
+    """
+    for field in (
+        getattr(album_obj, "meta_type", None),
+        getattr(album_obj, "type", None),
+    ):
+        v = (field or "").lower()
+        if "audiobook" in v:
+            return "audiobook"
+        if "podcast" in v:
+            return "podcast"
+    return "music"
 
 
 def get_canonical_provider_name(provider: YandexMusicProvider) -> str:
@@ -411,3 +439,246 @@ def parse_playlist(
             )
 
     return playlist
+
+
+def _album_cover_images(
+    provider: YandexMusicProvider, album_obj: YandexAlbum
+) -> UniqueList[MediaItemImage]:
+    """Build the UniqueList of images for an album-like object."""
+    images: UniqueList[MediaItemImage] = UniqueList()
+    image_url: str | None = None
+    if album_obj.cover_uri:
+        image_url = _get_image_url(album_obj.cover_uri)
+    elif album_obj.og_image:
+        image_url = _get_image_url(album_obj.og_image)
+    if image_url:
+        images.append(
+            MediaItemImage(
+                type=ImageType.THUMB,
+                path=image_url,
+                provider=provider.instance_id,
+                remotely_accessible=True,
+            )
+        )
+    return images
+
+
+def parse_podcast(provider: YandexMusicProvider, album_obj: YandexAlbum) -> Podcast:
+    """Parse Yandex album (meta_type=podcast) to MA Podcast model.
+
+    :param provider: The Yandex Music provider instance.
+    :param album_obj: Yandex album object classified as a podcast.
+    :return: Music Assistant Podcast model.
+    """
+    if album_obj.id is None:
+        raise InvalidDataError("Yandex podcast missing id")
+    name, _ = parse_title_and_version(
+        album_obj.title or "Unknown Podcast",
+        album_obj.version or None,
+    )
+    podcast_id = str(album_obj.id)
+    available = album_obj.available or False
+
+    # Publisher: prefer labels[0].name; fall back to first artist name
+    publisher: str | None = None
+    labels = getattr(album_obj, "labels", None)
+    if labels:
+        first = labels[0]
+        label_name = getattr(first, "name", None) if not isinstance(first, str) else first
+        if label_name:
+            publisher = label_name
+    if not publisher and album_obj.artists:
+        first_artist = album_obj.artists[0]
+        if first_artist.name:
+            publisher = first_artist.name
+
+    podcast = Podcast(
+        item_id=podcast_id,
+        provider=provider.instance_id,
+        name=name,
+        provider_mappings={
+            ProviderMapping(
+                item_id=podcast_id,
+                provider_domain=provider.domain,
+                provider_instance=provider.instance_id,
+                audio_format=AudioFormat(content_type=ContentType.UNKNOWN),
+                url=f"{WEB_BASE_URL}/album/{podcast_id}",
+                available=available,
+            )
+        },
+        publisher=publisher,
+        total_episodes=album_obj.track_count,
+    )
+
+    description = album_obj.description or album_obj.short_description
+    if description:
+        podcast.metadata.description = description
+    if album_obj.content_warning:
+        podcast.metadata.explicit = album_obj.content_warning == "explicit"
+
+    images = _album_cover_images(provider, album_obj)
+    if images:
+        podcast.metadata.images = images
+
+    if album_obj.genre:
+        podcast.metadata.genres = {album_obj.genre}
+    else:
+        podcast.metadata.genres = {"Spoken Word"}
+
+    if album_obj.release_date:
+        with suppress(ValueError):
+            podcast.metadata.release_date = datetime.fromisoformat(album_obj.release_date)
+
+    return podcast
+
+
+def parse_podcast_episode(
+    provider: YandexMusicProvider,
+    track_obj: YandexTrack,
+    podcast: Podcast,
+    position: int = 0,
+) -> PodcastEpisode:
+    """Parse Yandex track (episode of a podcast album) to MA PodcastEpisode.
+
+    :param provider: The Yandex Music provider instance.
+    :param track_obj: Yandex track object.
+    :param podcast: Parent Podcast object.
+    :param position: 1-based episode index (0 if unknown).
+    :return: Music Assistant PodcastEpisode model.
+    """
+    if track_obj.id is None:
+        raise InvalidDataError("Yandex podcast episode missing id")
+    episode_id = str(track_obj.id)
+    available = track_obj.available or False
+    duration = (track_obj.duration_ms or 0) // 1000
+
+    episode_name = track_obj.title or (f"Episode {position}" if position else "Unknown Episode")
+    episode = PodcastEpisode(
+        item_id=episode_id,
+        provider=provider.instance_id,
+        name=episode_name,
+        duration=duration,
+        podcast=podcast,
+        position=position,
+        provider_mappings={
+            ProviderMapping(
+                item_id=episode_id,
+                provider_domain=provider.domain,
+                provider_instance=provider.instance_id,
+                audio_format=AudioFormat(content_type=ContentType.UNKNOWN),
+                url=f"{WEB_BASE_URL}/track/{episode_id}",
+                available=available,
+            )
+        },
+    )
+
+    if track_obj.short_description:
+        episode.metadata.description = track_obj.short_description
+    if track_obj.content_warning:
+        episode.metadata.explicit = track_obj.content_warning == "explicit"
+
+    # Track cover → fall back to podcast cover
+    if track_obj.cover_uri:
+        image_url = _get_image_url(track_obj.cover_uri)
+        if image_url:
+            episode.metadata.images = UniqueList(
+                [
+                    MediaItemImage(
+                        type=ImageType.THUMB,
+                        path=image_url,
+                        provider=provider.instance_id,
+                        remotely_accessible=True,
+                    )
+                ]
+            )
+    elif track_obj.og_image:
+        image_url = _get_image_url(track_obj.og_image)
+        if image_url:
+            episode.metadata.images = UniqueList(
+                [
+                    MediaItemImage(
+                        type=ImageType.THUMB,
+                        path=image_url,
+                        provider=provider.instance_id,
+                        remotely_accessible=True,
+                    )
+                ]
+            )
+    if not episode.metadata.images and podcast.metadata.images:
+        episode.metadata.images = podcast.metadata.images
+
+    return episode
+
+
+def parse_audiobook(provider: YandexMusicProvider, album_obj: YandexAlbum) -> Audiobook:
+    """Parse Yandex album (meta_type=audiobook) to MA Audiobook model.
+
+    :param provider: The Yandex Music provider instance.
+    :param album_obj: Yandex album object classified as an audiobook.
+    :return: Music Assistant Audiobook model. Chapters and duration are filled
+        by the provider's get_audiobook() method after loading album tracks.
+    """
+    if album_obj.id is None:
+        raise InvalidDataError("Yandex audiobook missing id")
+    name, _ = parse_title_and_version(
+        album_obj.title or "Unknown Audiobook",
+        album_obj.version or None,
+    )
+    audiobook_id = str(album_obj.id)
+    available = album_obj.available or False
+
+    # Publisher: prefer labels[0]; fall back to nothing (authors sit on artists)
+    publisher: str | None = None
+    labels = getattr(album_obj, "labels", None)
+    if labels:
+        first = labels[0]
+        label_name = getattr(first, "name", None) if not isinstance(first, str) else first
+        if label_name:
+            publisher = label_name
+
+    authors: UniqueList[str] = UniqueList()
+    if album_obj.artists:
+        for artist in album_obj.artists:
+            if artist.name:
+                authors.append(artist.name)
+
+    audiobook = Audiobook(
+        item_id=audiobook_id,
+        provider=provider.instance_id,
+        name=name,
+        provider_mappings={
+            ProviderMapping(
+                item_id=audiobook_id,
+                provider_domain=provider.domain,
+                provider_instance=provider.instance_id,
+                audio_format=AudioFormat(content_type=ContentType.UNKNOWN),
+                url=f"{WEB_BASE_URL}/album/{audiobook_id}",
+                available=available,
+            )
+        },
+        publisher=publisher,
+        authors=authors,
+        narrators=UniqueList(),
+        duration=0,
+    )
+
+    description = album_obj.description or album_obj.short_description
+    if description:
+        audiobook.metadata.description = description
+    if album_obj.content_warning:
+        audiobook.metadata.explicit = album_obj.content_warning == "explicit"
+
+    images = _album_cover_images(provider, album_obj)
+    if images:
+        audiobook.metadata.images = images
+
+    if album_obj.genre:
+        audiobook.metadata.genres = {album_obj.genre}
+    else:
+        audiobook.metadata.genres = {"Spoken Word"}
+
+    if album_obj.release_date:
+        with suppress(ValueError):
+            audiobook.metadata.release_date = datetime.fromisoformat(album_obj.release_date)
+
+    return audiobook
