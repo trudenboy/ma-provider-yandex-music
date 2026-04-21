@@ -105,6 +105,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.1.1] - 2026-04-21
+
+- chore: bump version to 3.1.1 (`917f43e`)
+- fix(auth): wrap transient Passport errors in _reauth_via_refresh_token (`5ad9fff`)
+- chore: expand changelog for v3.1.0 [skip ci] (`55da091`)
+- chore: update changelog for v3.1.0 [skip ci] (`0f91ad1`)
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
 
 ## [2.6.7] - 2026-02-27
