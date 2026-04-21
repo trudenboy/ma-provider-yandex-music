@@ -94,10 +94,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [3.1.0] - 2026-04-21
 
-- feat(library): add podcast support + audiobook classifier (Phase 1) (#112) (`e0c27c9`)
+- feat(library): podcasts + audiobook classifier (Phase 1) — liked albums routed to music/podcast/audiobook views via `meta_type`/`type`; podcasts fully wired (list, detail, episodes, like/unlike, search, stream); audiobook chapters from `album.volumes`; audiobook streaming raises `NotImplementedError` pending Phase 2 (#112) (`e0c27c9`)
+- feat(library): short-lived `_get_liked_albums_cached` (30s, asyncio.Lock) dedupes the three library syncs into one API call per cycle (#112) (`e0c27c9`)
+- fix(classify): audiobooks in production are `meta_type=podcast` + `type=audiobook` — "audiobook" now wins over "podcast" on any field (#112) (`e0c27c9`)
+- fix(parsers): copy parent podcast images into episode instead of sharing the mutable `UniqueList` reference (#112) (`e0c27c9`)
+- fix(podcast): `get_podcast_episode` raises `InvalidDataError` when parent album is missing — no `item_id="unknown"` fallback (#112) (`e0c27c9`)
+- fix(features): restore `ProviderFeature.SIMILAR_ARTISTS` (regression from Phase 1 rebase) (#112) (`e0c27c9`)
 - fix(quality): normalize legacy 'lossless' to QUALITY_SUPERB in get_quality (`935a518`)
 - fix(auth): don't clear creds on transient Passport failures (`31abe95`)
-- chore: update changelog for v3.0.1 [skip ci] (`4bfd560`)
 
 ---
 
