@@ -92,6 +92,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.1.0] - 2026-04-21
+
+- feat(library): add podcast support + audiobook classifier (Phase 1) (#112) (`e0c27c9`)
+- fix(quality): normalize legacy 'lossless' to QUALITY_SUPERB in get_quality (`935a518`)
+- fix(auth): don't clear creds on transient Passport failures (`31abe95`)
+- chore: update changelog for v3.0.1 [skip ci] (`4bfd560`)
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
 
 ## [2.6.7] - 2026-02-27
