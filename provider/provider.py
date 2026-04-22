@@ -123,6 +123,21 @@ def _parse_radio_item_id(item_id: str) -> tuple[str, str | None]:
     return (item_id, None)
 
 
+def _extract_chapter_map_from_album(album: YandexAlbum) -> tuple[list[str], list[int]]:
+    """Flatten an audiobook album's volumes into (chapter_track_ids, chapter_durations_ms).
+
+    Shared by ``_get_audiobook_stream_details`` and ``_resolve_audiobook_chapter_map``
+    so the two code paths can't drift (e.g. when we later filter bad tracks).
+    """
+    chapter_ids: list[str] = []
+    chapter_durations_ms: list[int] = []
+    for disc in album.volumes or []:
+        for track_obj in disc:
+            chapter_ids.append(str(track_obj.id))
+            chapter_durations_ms.append(int(track_obj.duration_ms or 0))
+    return chapter_ids, chapter_durations_ms
+
+
 class _WaveState:
     """Per-station mutable state for rotor wave playback."""
 
@@ -312,6 +327,8 @@ class YandexMusicProvider(MusicProvider):
             await self._client.disconnect()
         self._client = None
         self._streaming = None
+        self._audiobook_chapter_cache.clear()
+        self._audiobook_play_ids.clear()
         await super().unload(is_removed)
 
     def get_item_mapping(self, media_type: MediaType | str, key: str, name: str) -> ItemMapping:
@@ -2737,12 +2754,7 @@ class YandexMusicProvider(MusicProvider):
         if not album or not (album.volumes or []):
             raise MediaNotFoundError(f"Audiobook {audiobook_id} has no chapters")
 
-        chapter_ids: list[str] = []
-        chapter_durations_ms: list[int] = []
-        for disc in album.volumes or []:
-            for track_obj in disc:
-                chapter_ids.append(str(track_obj.id))
-                chapter_durations_ms.append(int(track_obj.duration_ms or 0))
+        chapter_ids, chapter_durations_ms = _extract_chapter_map_from_album(album)
         if not chapter_ids:
             raise MediaNotFoundError(f"Audiobook {audiobook_id} has no chapters")
 
@@ -2818,12 +2830,7 @@ class YandexMusicProvider(MusicProvider):
         album = await self.client.get_album_with_tracks(audiobook_id)
         if not album or not (album.volumes or []):
             return [], []
-        chapter_ids: list[str] = []
-        chapter_durations_ms: list[int] = []
-        for disc in album.volumes or []:
-            for track_obj in disc:
-                chapter_ids.append(str(track_obj.id))
-                chapter_durations_ms.append(int(track_obj.duration_ms or 0))
+        chapter_ids, chapter_durations_ms = _extract_chapter_map_from_album(album)
         self._audiobook_chapter_cache[audiobook_id] = (chapter_ids, chapter_durations_ms)
         return chapter_ids, chapter_durations_ms
 
@@ -3147,8 +3154,23 @@ class YandexMusicProvider(MusicProvider):
 
         Resolves the playing chapter + offset from the cached chapter map, then
         calls play_audio so Yandex persists the position for cross-client resume.
+
+        Best-effort: a transient upstream failure (rate-limit, network blip)
+        must never break pause/stop, so ResourceTemporarilyUnavailable is
+        swallowed here in addition to the errors already absorbed inside
+        ``api_client.play_audio``.
         """
-        chapter_ids, chapter_durations_ms = await self._resolve_audiobook_chapter_map(audiobook_id)
+        try:
+            chapter_ids, chapter_durations_ms = await self._resolve_audiobook_chapter_map(
+                audiobook_id
+            )
+        except ResourceTemporarilyUnavailable as err:
+            self.logger.debug(
+                "Skipping audiobook progress report for %s (upstream unavailable): %s",
+                audiobook_id,
+                err,
+            )
+            return
         if not chapter_ids:
             self.logger.debug(
                 "Audiobook %s has no chapter map; skipping progress report", audiobook_id
@@ -3175,21 +3197,25 @@ class YandexMusicProvider(MusicProvider):
 
         Uses the streamdetails' own ``chapter_ids`` / ``chapter_durations_ms``
         (populated when the StreamDetails was created) to stay consistent with
-        what was actually played, then clears the session play_id.
+        what was actually played, then clears the session play_id and drops
+        the chapter-map cache entry so long-running instances can't grow the
+        cache without bound as users play more audiobooks.
         """
+        audiobook_id = streamdetails.item_id
         chapter_ids = data.get("chapter_ids") or []
         chapter_durations_ms = data.get("chapter_durations_ms") or []
+        play_id = self._audiobook_play_ids.pop(audiobook_id, None) or uuid.uuid4().hex
+        self._audiobook_chapter_cache.pop(audiobook_id, None)
         if not chapter_ids or not chapter_durations_ms:
             return
         absolute_sec = int(streamdetails.seek_position + (streamdetails.seconds_streamed or 0))
         idx, offset = self._resolve_audiobook_seek(
             chapter_durations_ms, max(absolute_sec, 0), len(chapter_ids)
         )
-        play_id = self._audiobook_play_ids.pop(streamdetails.item_id, uuid.uuid4().hex)
         track_length_sec = chapter_durations_ms[idx] // 1000
         await self.client.play_audio(
             track_id=chapter_ids[idx],
-            album_id=streamdetails.item_id,
+            album_id=audiobook_id,
             play_id=play_id,
             track_length_seconds=track_length_sec,
             total_played_seconds=int(offset),

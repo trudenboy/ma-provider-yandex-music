@@ -351,7 +351,9 @@ class YandexMusicClient:
         """Report playback progress for an audiobook chapter or podcast episode.
 
         Yandex persists this server-side so progress is visible across its
-        other clients. Failures are swallowed — progress sync is advisory.
+        other clients. Failures are swallowed — progress sync is advisory and
+        must never abort pause/stop handling — so auth failures, rate-limits
+        and network blips all log at debug and return False.
         """
         try:
             return bool(
@@ -367,7 +369,14 @@ class YandexMusicClient:
                     )
                 )
             )
-        except (BadRequestError, NetworkError, ProviderUnavailableError) as err:
+        except (
+            BadRequestError,
+            NetworkError,
+            ProviderUnavailableError,
+            UnauthorizedError,
+            LoginFailed,
+            ResourceTemporarilyUnavailable,
+        ) as err:
             LOGGER.debug("play_audio failed for %s: %s", track_id, err)
             return False
 

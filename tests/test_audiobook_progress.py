@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 from music_assistant_models.enums import MediaType
+from music_assistant_models.errors import ResourceTemporarilyUnavailable
 from music_assistant_models.streamdetails import StreamDetails
 
 from music_assistant.providers.yandex_music.provider import YandexMusicProvider
@@ -122,6 +123,41 @@ async def test_on_streamed_audiobook_ignores_empty_data(provider_mock: Mock) -> 
     await YandexMusicProvider._report_audiobook_final(provider_mock, sd, sd.data)
 
     provider_mock.client.play_audio.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_on_played_audiobook_swallows_upstream_unavailable(
+    provider_mock: Mock,
+) -> None:
+    """ResourceTemporarilyUnavailable from chapter_map resolution must not propagate."""
+    provider_mock._resolve_audiobook_chapter_map.side_effect = ResourceTemporarilyUnavailable(
+        "rate limited"
+    )
+
+    # Must not raise; progress report is advisory.
+    await YandexMusicProvider._report_audiobook_progress(provider_mock, "abook-42", 30)
+
+    provider_mock.client.play_audio.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_on_streamed_audiobook_evicts_cache_entry(provider_mock: Mock) -> None:
+    """After on_streamed, the chapter-map cache entry for this book is dropped."""
+    sd = StreamDetails(
+        provider="yandex_music",
+        item_id="abook-7",
+        audio_format=Mock(),
+        media_type=MediaType.AUDIOBOOK,
+        data={"chapter_ids": ["c1"], "chapter_durations_ms": [60_000]},
+    )
+    provider_mock._audiobook_chapter_cache["abook-7"] = (["c1"], [60_000])
+    provider_mock._audiobook_chapter_cache["abook-OTHER"] = (["x"], [1000])
+
+    await YandexMusicProvider._report_audiobook_final(provider_mock, sd, sd.data)
+
+    assert "abook-7" not in provider_mock._audiobook_chapter_cache
+    # Other audiobooks in cache are untouched
+    assert "abook-OTHER" in provider_mock._audiobook_chapter_cache
 
 
 @pytest.mark.asyncio
