@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+<!-- changelog entries will be added here by release workflow -->
+
+## [3.2.0] - 2026-04-21
+
+- feat(audiobook): stream audiobooks via chapter concatenation (`d9f483c`)
+- chore: update changelog for v3.1.2 [skip ci] (`d10fffb`)
+
+---
+
+## [3.1.2] - 2026-04-21
+
+- fix(auth): clear stale refresh_token on QR re-auth (`48d50c4`)
+- chore: update changelog for v3.1.1 [skip ci] (`4809461`)
+
+---
+
+## [3.1.1] - 2026-04-21
+
+- chore: bump version to 3.1.1 (`917f43e`)
+- fix(auth): wrap transient Passport errors in _reauth_via_refresh_token (`5ad9fff`)
+- chore: expand changelog for v3.1.0 [skip ci] (`55da091`)
+- chore: update changelog for v3.1.0 [skip ci] (`0f91ad1`)
+
+---
+
+## [3.1.0] - 2026-04-21
+
+- feat(library): podcasts + audiobook classifier (Phase 1) — liked albums routed to music/podcast/audiobook views via `meta_type`/`type`; podcasts fully wired (list, detail, episodes, like/unlike, search, stream); audiobook chapters from `album.volumes`; audiobook streaming raises `NotImplementedError` pending Phase 2 (#112) (`e0c27c9`)
+- feat(library): short-lived `_get_liked_albums_cached` (30s, asyncio.Lock) dedupes the three library syncs into one API call per cycle (#112) (`e0c27c9`)
+- fix(classify): audiobooks in production are `meta_type=podcast` + `type=audiobook` — "audiobook" now wins over "podcast" on any field (#112) (`e0c27c9`)
+- fix(parsers): copy parent podcast images into episode instead of sharing the mutable `UniqueList` reference (#112) (`e0c27c9`)
+- fix(podcast): `get_podcast_episode` raises `InvalidDataError` when parent album is missing — no `item_id="unknown"` fallback (#112) (`e0c27c9`)
+- fix(features): restore `ProviderFeature.SIMILAR_ARTISTS` (regression from Phase 1 rebase) (#112) (`e0c27c9`)
+- fix(quality): normalize legacy 'lossless' to QUALITY_SUPERB in get_quality (`935a518`)
+- fix(auth): don't clear creds on transient Passport failures (`31abe95`)
+
+---
+
+## [3.0.1] - 2026-04-20
+
+- Update VERSION (`dc9c2bb`)
+- fix: address PR review comments (`41d1709`)
+- fix: address PR review comments (`bad8a70`)
+- test: remove integration test module (`7d82a5a`)
+- fix(manifest): drop [async] extra from yandex-music requirement (`853fa42`)
+- fix(device-auth): don't log user_code at INFO level (`24b211c`)
+- chore: clean up CHANGELOG — order, dedup, noise [skip ci] (`50bc67e`)
+- Bump version from 2.9.1 to 3.0.0 (`278b2b8`)
+- chore: update changelog for v3.0.0 [skip ci] (`fe1de36`)
+
+---
+
 ## [3.0.0] - 2026-04-19
 
 - feat: migrate to yandex-music v3 + Pinned/History browse + Device Flow auth (#102) (`5d4a54f`)
@@ -77,58 +129,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - chore: improve manifest description and add credits field (`c396505`)
 
 ---
-
-## [3.0.1] - 2026-04-20
-
-- Update VERSION (`dc9c2bb`)
-- fix: address PR review comments (`41d1709`)
-- fix: address PR review comments (`bad8a70`)
-- test: remove integration test module (`7d82a5a`)
-- fix(manifest): drop [async] extra from yandex-music requirement (`853fa42`)
-- fix(device-auth): don't log user_code at INFO level (`24b211c`)
-- chore: clean up CHANGELOG — order, dedup, noise [skip ci] (`50bc67e`)
-- Bump version from 2.9.1 to 3.0.0 (`278b2b8`)
-- chore: update changelog for v3.0.0 [skip ci] (`fe1de36`)
-
----
-
-## [3.1.0] - 2026-04-21
-
-- feat(library): podcasts + audiobook classifier (Phase 1) — liked albums routed to music/podcast/audiobook views via `meta_type`/`type`; podcasts fully wired (list, detail, episodes, like/unlike, search, stream); audiobook chapters from `album.volumes`; audiobook streaming raises `NotImplementedError` pending Phase 2 (#112) (`e0c27c9`)
-- feat(library): short-lived `_get_liked_albums_cached` (30s, asyncio.Lock) dedupes the three library syncs into one API call per cycle (#112) (`e0c27c9`)
-- fix(classify): audiobooks in production are `meta_type=podcast` + `type=audiobook` — "audiobook" now wins over "podcast" on any field (#112) (`e0c27c9`)
-- fix(parsers): copy parent podcast images into episode instead of sharing the mutable `UniqueList` reference (#112) (`e0c27c9`)
-- fix(podcast): `get_podcast_episode` raises `InvalidDataError` when parent album is missing — no `item_id="unknown"` fallback (#112) (`e0c27c9`)
-- fix(features): restore `ProviderFeature.SIMILAR_ARTISTS` (regression from Phase 1 rebase) (#112) (`e0c27c9`)
-- fix(quality): normalize legacy 'lossless' to QUALITY_SUPERB in get_quality (`935a518`)
-- fix(auth): don't clear creds on transient Passport failures (`31abe95`)
-
----
-
-## [3.1.1] - 2026-04-21
-
-- chore: bump version to 3.1.1 (`917f43e`)
-- fix(auth): wrap transient Passport errors in _reauth_via_refresh_token (`5ad9fff`)
-- chore: expand changelog for v3.1.0 [skip ci] (`55da091`)
-- chore: update changelog for v3.1.0 [skip ci] (`0f91ad1`)
-
----
-
-## [3.1.2] - 2026-04-21
-
-- fix(auth): clear stale refresh_token on QR re-auth (`48d50c4`)
-- chore: update changelog for v3.1.1 [skip ci] (`4809461`)
-
----
-
-## [3.2.0] - 2026-04-21
-
-- feat(audiobook): stream audiobooks via chapter concatenation (`d9f483c`)
-- chore: update changelog for v3.1.2 [skip ci] (`d10fffb`)
-
----
-
-<!-- changelog entries will be added here by release workflow -->
 
 ## [2.6.7] - 2026-02-27
 
