@@ -19,6 +19,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.4.0] - 2026-04-23
+
+- feat(rotor): migrate My Wave to session API + wave modes, presets, prefetch (#118) (`529b686`)
+- chore(changelog): remove duplicate 3.3.0 and 3.3.1 entries (#117) (`7a89c08`)
+- chore: update changelog for v3.3.1 [skip ci] (`8d73362`)
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
 
 ## [3.2.1] - 2026-04-22
