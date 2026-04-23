@@ -53,14 +53,10 @@ docker compose -f docker-compose.dev.yml up
 
 ## Референсные проекты
 
-Подходы к работе с ротором и динамическими плейлистами подсмотрены в нескольких сторонних реализациях — в первую очередь за переход на session-based API (`/rotor/session/*` с долгоживущим `radioSessionId`), формат сидов пресетов (`settingDiversity:*`, `settingMoodEnergy:*`, `settingLanguage:*`) и схему событий обратной связи.
-
-| Проект | Язык | Что подсмотрено |
-|--------|------|------------------|
-| [MarshalX/yandex-music-api](https://github.com/MarshalX/yandex-music-api) | Python | Базовый SDK (уже используется как зависимость); формы запросов ротора и feedback-shortcuts |
-| [chernyshalexander/YandexMusicLMS](https://github.com/chernyshalexander/YandexMusicLMS/tree/experiment) | Perl | Session-API `/rotor/session/{new,tracks,feedback}`, набор wave-режимов (Discover / Calm / Active / …) и presets-UX |
-| [DECE2183/yamusic-tui](https://github.com/DECE2183/yamusic-tui) | Go | Семантика `queue = первый трек предыдущего батча`, порядок событий feedback перед запросом следующего батча |
-| [music-assistant/server](https://github.com/music-assistant/server) | Python | Контракты провайдера (`get_similar_tracks`, `recommendations`, `is_dynamic`); правила поведения с очередью — провайдер не трогает DSTM за пользователя |
+- [MarshalX/yandex-music-api](https://github.com/MarshalX/yandex-music-api) — неофициальный Python-клиент Яндекс Музыки (используется как зависимость)
+- [chernyshalexander/YandexMusicLMS](https://github.com/chernyshalexander/YandexMusicLMS/tree/experiment) — плагин Яндекс Музыки для Lyrion Music Server
+- [DECE2183/yamusic-tui](https://github.com/DECE2183/yamusic-tui) — терминальный клиент Яндекс Музыки
+- [music-assistant/server](https://github.com/music-assistant/server) — ядро Music Assistant
 
 ## Благодарности
 
