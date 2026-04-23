@@ -399,41 +399,51 @@ class YandexMusicProvider(MusicProvider):
             async with self._get_wave_state(ROTOR_STATION_MY_WAVE).lock:
                 return await self._browse_my_wave(path, sub_subpath)
 
-        # Wave modes listing (non-playable parent folder).
-        if subpath == MY_WAVE_MODES_FOLDER_ID:
+        # Wave modes — accept two equivalent URL forms so both browse
+        # navigation (slash form "my_wave_modes/<preset>", emitted by our
+        # listing) and MA's play-time reconstruction (underscore form
+        # "my_wave_modes_<preset>", built as "<instance>://<item_id>") work.
+        mode_preset: str | None = None
+        if subpath == MY_WAVE_MODES_FOLDER_ID and sub_subpath is None:
             return self._browse_my_wave_modes_list(path)
-
-        # Wave mode play: subpath looks like "my_wave_modes_<preset>", optional
-        # "/next" for pagination. Using the "_<preset>" form (not a /-nested
-        # path) because MA rebuilds a playable folder's path from its item_id
-        # as "<instance>://<item_id>", so item_id and subpath must match.
-        if subpath and subpath.startswith(f"{MY_WAVE_MODES_FOLDER_ID}_"):
-            preset = subpath[len(MY_WAVE_MODES_FOLDER_ID) + 1 :]
-            if preset not in WAVE_MODE_PRESETS:
+        if subpath == MY_WAVE_MODES_FOLDER_ID and sub_subpath is not None:
+            mode_preset = sub_subpath if sub_subpath != "next" else None
+            if mode_preset is None:
                 return []
-            load_more = sub_subpath == "next"
-            station_key = f"{ROTOR_STATION_MY_WAVE}{WAVE_MODE_SEP}{preset}"
+            load_more_modes = len(path_parts) > 2 and path_parts[2] == "next"
+        elif subpath and subpath.startswith(f"{MY_WAVE_MODES_FOLDER_ID}_"):
+            mode_preset = subpath[len(MY_WAVE_MODES_FOLDER_ID) + 1 :]
+            load_more_modes = sub_subpath == "next"
+        if mode_preset is not None:
+            if mode_preset not in WAVE_MODE_PRESETS:
+                return []
+            station_key = f"{ROTOR_STATION_MY_WAVE}{WAVE_MODE_SEP}{mode_preset}"
             async with self._get_wave_state(station_key).lock:
-                return await self._browse_my_wave_mode(path, station_key, load_more)
+                return await self._browse_my_wave_mode(path, station_key, load_more_modes)
 
-        # User-saved wave presets listing (non-playable parent folder).
-        if subpath == MY_WAVE_PRESETS_FOLDER_ID:
-            presets = self._get_user_wave_presets()
-            return self._browse_user_presets_list(path, presets)
-
-        # User preset play: subpath looks like "my_wave_presets_<idx>" + optional
-        # "/next". Same item_id==subpath rule as wave modes above.
-        if subpath and subpath.startswith(f"{MY_WAVE_PRESETS_FOLDER_ID}_"):
-            idx_str = subpath[len(MY_WAVE_PRESETS_FOLDER_ID) + 1 :]
+        # User-saved wave presets — same dual-form handling.
+        preset_idx: int | None = None
+        load_more_presets = False
+        if subpath == MY_WAVE_PRESETS_FOLDER_ID and sub_subpath is None:
+            return self._browse_user_presets_list(path, self._get_user_wave_presets())
+        if subpath == MY_WAVE_PRESETS_FOLDER_ID and sub_subpath is not None:
             try:
-                idx = int(idx_str)
+                preset_idx = int(sub_subpath)
             except ValueError:
                 return []
-            user_presets = self._get_user_wave_presets()
-            if not 0 <= idx < len(user_presets):
+            load_more_presets = len(path_parts) > 2 and path_parts[2] == "next"
+        elif subpath and subpath.startswith(f"{MY_WAVE_PRESETS_FOLDER_ID}_"):
+            try:
+                preset_idx = int(subpath[len(MY_WAVE_PRESETS_FOLDER_ID) + 1 :])
+            except ValueError:
                 return []
-            preset_data = user_presets[idx]
-            station_key = f"{ROTOR_STATION_MY_WAVE}{WAVE_MODE_SEP}preset_{idx}"
+            load_more_presets = sub_subpath == "next"
+        if preset_idx is not None:
+            user_presets = self._get_user_wave_presets()
+            if not 0 <= preset_idx < len(user_presets):
+                return []
+            preset_data = user_presets[preset_idx]
+            station_key = f"{ROTOR_STATION_MY_WAVE}{WAVE_MODE_SEP}preset_{preset_idx}"
             wave = self._get_wave_state(station_key)
             # Stash user-chosen settings so _fetch_rotor_session_batch sends them
             wave.settings = {
@@ -441,9 +451,8 @@ class YandexMusicProvider(MusicProvider):
                 for k, v in preset_data.items()
                 if k in ("diversity", "moodEnergy", "language") and v
             }
-            load_more = sub_subpath == "next"
             async with wave.lock:
-                return await self._browse_my_wave_mode(path, station_key, load_more)
+                return await self._browse_my_wave_mode(path, station_key, load_more_presets)
 
         # For You folder (picks + mixes)
         if subpath == FOR_YOU_FOLDER_ID:
@@ -763,39 +772,30 @@ class YandexMusicProvider(MusicProvider):
             presets.append(preset)
         return presets
 
-    @staticmethod
-    def _provider_path_prefix(path: str) -> str:
-        """Return the ``<instance_id>://`` prefix from a full browse path.
-
-        Child browse folders live at ``<prefix><item_id>`` so their `path`
-        matches the one MA rebuilds for playable folders (``<instance>://<item_id>``).
-        """
-        head, sep, _rest = path.partition("://")
-        return f"{head}://" if sep else ""
-
     def _browse_user_presets_list(
         self, path: str, presets: list[dict[str, str]]
     ) -> list[BrowseFolder]:
         """Return one playable BrowseFolder per configured user preset.
 
-        Each entry's ``path`` uses the ``my_wave_presets_<idx>`` form (not a
-        /-nested path) because MA reconstructs a playable folder's path from
-        its item_id, so item_id and the next browse subpath must match.
-        An empty preset list yields an empty browse.
+        ``path`` is nested (``my_wave_presets/<idx>``) so MA's back-nav —
+        which strips the last ``/``-segment — returns the user to the
+        listing instead of the provider root. ``item_id`` uses the
+        underscore form (``my_wave_presets_<idx>``) because MA rebuilds a
+        playable folder's path from its item_id at play time. The browse
+        dispatcher accepts both forms.
 
-        :param path: Current browse path (used only for the provider prefix).
+        :param path: Current browse path.
         :param presets: Sanitized presets from ``_get_user_wave_presets``.
         :return: List of playable BrowseFolder entries.
         """
-        prefix = self._provider_path_prefix(path)
+        base = path if path.endswith("/") else f"{path}/"
         folders: list[BrowseFolder] = []
         for idx, preset in enumerate(presets):
-            key = f"{MY_WAVE_PRESETS_FOLDER_ID}_{idx}"
             folders.append(
                 BrowseFolder(
-                    item_id=key,
+                    item_id=f"{MY_WAVE_PRESETS_FOLDER_ID}_{idx}",
                     provider=self.instance_id,
-                    path=f"{prefix}{key}",
+                    path=f"{base}{idx}",
                     name=preset.get("name", f"Preset {idx + 1}"),
                     is_playable=True,
                 )
@@ -805,24 +805,23 @@ class YandexMusicProvider(MusicProvider):
     def _browse_my_wave_modes_list(self, path: str) -> list[BrowseFolder]:
         """Return the 11 wave-mode entries as playable browse folders.
 
-        Each entry's ``path`` uses ``my_wave_modes_<preset>`` — same
-        item_id/subpath contract as user presets, so play from a browse cell
-        routes back to this provider correctly.
+        Same dual-form contract as user presets: nested ``path`` keeps
+        back-navigation intact, underscore ``item_id`` survives MA's
+        play-time reconstruction.
 
         :param path: Browse path the user navigated into.
         :return: Ordered list of BrowseFolder entries, one per preset.
         """
         names = self._get_browse_names()
-        prefix = self._provider_path_prefix(path)
+        base = path if path.endswith("/") else f"{path}/"
         folders: list[BrowseFolder] = []
         for preset in WAVE_MODE_ORDER:
             name_key = f"wave_mode_{preset}"
-            key = f"{MY_WAVE_MODES_FOLDER_ID}_{preset}"
             folders.append(
                 BrowseFolder(
-                    item_id=key,
+                    item_id=f"{MY_WAVE_MODES_FOLDER_ID}_{preset}",
                     provider=self.instance_id,
-                    path=f"{prefix}{key}",
+                    path=f"{base}{preset}",
                     name=names.get(name_key, preset.replace("_", " ").title()),
                     is_playable=True,
                 )
