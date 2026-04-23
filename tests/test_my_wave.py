@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from music_assistant_models.media_items import ProviderMapping
+from music_assistant_models.media_items import Track as MATrack
 
 from music_assistant.providers.yandex_music.constants import (
     RADIO_TRACK_ID_SEP,
@@ -151,6 +153,106 @@ async def test_fetch_rotor_session_batch_works_with_track_seed_station() -> None
 
     provider.client.rotor_session_new.assert_awaited_once_with("track:9999", settings=None)
     assert wave.session_id == "s"
+
+
+# -- wave-mode preset routing -------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_rotor_session_batch_resolves_wave_mode_preset_settings() -> None:
+    """A station key like 'user:onyourwave#discover' translates to settingDiversity=discover."""
+    provider = Mock(spec=YandexMusicProvider)
+    provider.client = AsyncMock()
+    provider.client.rotor_session_new = AsyncMock(return_value=("sess_1", [], "batch_a"))
+    wave = _WaveState()
+
+    await YandexMusicProvider._fetch_rotor_session_batch(
+        provider, wave, f"{ROTOR_STATION_MY_WAVE}#discover"
+    )
+
+    provider.client.rotor_session_new.assert_awaited_once_with(
+        ROTOR_STATION_MY_WAVE, settings={"diversity": "discover"}
+    )
+    assert wave.session_id == "sess_1"
+
+
+@pytest.mark.asyncio
+async def test_fetch_rotor_session_batch_preset_merges_with_explicit_wave_settings() -> None:
+    """Explicit wave.settings overrides preset settings on the same key."""
+    provider = Mock(spec=YandexMusicProvider)
+    provider.client = AsyncMock()
+    provider.client.rotor_session_new = AsyncMock(return_value=("s", [], "b"))
+    wave = _WaveState()
+    wave.settings = {"diversity": "popular"}  # overrides preset
+
+    await YandexMusicProvider._fetch_rotor_session_batch(
+        provider, wave, f"{ROTOR_STATION_MY_WAVE}#discover"
+    )
+
+    _, kwargs = provider.client.rotor_session_new.await_args
+    # wave.settings wins over preset
+    assert kwargs["settings"] == {"diversity": "popular"}
+
+
+@pytest.mark.asyncio
+async def test_fetch_rotor_session_batch_unknown_preset_passes_station_through() -> None:
+    """Unknown '#<x>' keys leave station_id alone so the server returns an error naturally."""
+    provider = Mock(spec=YandexMusicProvider)
+    provider.client = AsyncMock()
+    provider.client.rotor_session_new = AsyncMock(return_value=(None, [], None))
+    wave = _WaveState()
+
+    await YandexMusicProvider._fetch_rotor_session_batch(
+        provider, wave, f"{ROTOR_STATION_MY_WAVE}#does_not_exist"
+    )
+
+    # Base station still stripped; empty settings (no preset matched).
+    provider.client.rotor_session_new.assert_awaited_once_with(ROTOR_STATION_MY_WAVE, settings=None)
+
+
+# -- _parse_my_wave_track with explicit station_key --------------------------
+
+
+def test_parse_my_wave_track_uses_provided_station_key_for_item_id() -> None:
+    """_parse_my_wave_track stamps the supplied station_key on composite item_id."""
+    # Build a minimal provider instance with the attributes _parse_my_wave_track
+    # reads; don't use Mock(spec=...) because we call the real method.
+    provider = Mock(spec=YandexMusicProvider)
+    provider.instance_id = "yandex_music_instance"
+    provider.logger = Mock()
+
+    # Fake yandex track object
+    yt = type("YTrack", (), {"id": "12345", "track_id": "12345"})()
+
+    # Return a minimal MA Track from parse_track; _parse_my_wave_track rewrites
+    # its item_id in-place to the composite form.
+    base_track = MATrack(
+        item_id="12345",
+        provider="yandex_music_instance",
+        name="Test",
+        provider_mappings={
+            ProviderMapping(
+                item_id="12345",
+                provider_domain="yandex_music",
+                provider_instance="yandex_music_instance",
+            )
+        },
+    )
+    with patch(
+        "music_assistant.providers.yandex_music.provider.parse_track",
+        return_value=base_track,
+    ):
+        station_key = f"{ROTOR_STATION_MY_WAVE}#discover"
+        seen: set[str] = set()
+        result = YandexMusicProvider._parse_my_wave_track(
+            provider, yt, seen, station_key=station_key
+        )
+
+    assert result is not None
+    assert result.item_id == f"12345{RADIO_TRACK_ID_SEP}{station_key}"
+    # And round-trip via _parse_radio_item_id
+    assert _parse_radio_item_id(result.item_id) == ("12345", station_key)
+    assert "12345" in seen
 
 
 # -- _send_wave_feedback (session vs. stations API router) ---------------------

@@ -112,6 +112,42 @@ LIKED_TRACKS_PLAYLIST_ID: Final[str] = "liked_tracks"
 # Composite item_id for My Wave tracks: track_id + separator + station_id (for rotor feedback)
 RADIO_TRACK_ID_SEP: Final[str] = "@"
 
+# Wave-mode suffix separator: station keys like "user:onyourwave#discover" identify
+# a specific preset (diversity/moodEnergy/language) on top of the base My Wave station.
+# Chosen because # is not part of any rotor station ID format.
+WAVE_MODE_SEP: Final[str] = "#"
+
+# Known wave-mode presets: preset key (suffix after WAVE_MODE_SEP) → rotor session
+# settings dict. Names match the LMS YandexMusic plugin and the Desktop client UI.
+MY_WAVE_MODES_FOLDER_ID: Final[str] = "my_wave_modes"
+
+WAVE_MODE_PRESETS: Final[dict[str, dict[str, str]]] = {
+    "discover": {"diversity": "discover"},
+    "favorite": {"diversity": "favorite"},
+    "popular": {"diversity": "popular"},
+    "calm": {"moodEnergy": "calm"},
+    "active": {"moodEnergy": "active"},
+    "fun": {"moodEnergy": "fun"},
+    "sad": {"moodEnergy": "sad"},
+    "russian": {"language": "russian"},
+    "not_russian": {"language": "not-russian"},
+    "without_words": {"language": "without-words"},
+}
+
+# Ordered list of preset keys for Browse display.
+WAVE_MODE_ORDER: Final[tuple[str, ...]] = (
+    "discover",
+    "favorite",
+    "popular",
+    "calm",
+    "active",
+    "fun",
+    "sad",
+    "russian",
+    "not_russian",
+    "without_words",
+)
+
 # Browse folder names by locale (item_id -> display name)
 BROWSE_NAMES_RU: Final[dict[str, str]] = {
     "my_wave": "Моя волна",
@@ -188,6 +224,18 @@ BROWSE_NAMES_RU: Final[dict[str, str]] = {
     "genre": "Жанры",
     "epoch": "Эпоха",
     "local": "Местное",
+    # Wave-mode folder + presets (P4)
+    "my_wave_modes": "Режимы волны",
+    "wave_mode_discover": "Открытия",
+    "wave_mode_favorite": "Любимое",
+    "wave_mode_popular": "Популярное",
+    "wave_mode_calm": "Спокойнее",
+    "wave_mode_active": "Активнее",
+    "wave_mode_fun": "Весёлое",
+    "wave_mode_sad": "Грустное",
+    "wave_mode_russian": "Русское",
+    "wave_mode_not_russian": "Не русское",  # noqa: RUF001
+    "wave_mode_without_words": "Без слов",
 }
 BROWSE_NAMES_EN: Final[dict[str, str]] = {
     "my_wave": "My Wave",
@@ -264,6 +312,18 @@ BROWSE_NAMES_EN: Final[dict[str, str]] = {
     "genre": "Genres",
     "epoch": "Era",
     "local": "Local",
+    # Wave-mode folder + presets (P4)
+    "my_wave_modes": "Wave Modes",
+    "wave_mode_discover": "Discover",
+    "wave_mode_favorite": "Favorites",
+    "wave_mode_popular": "Popular",
+    "wave_mode_calm": "Calm",
+    "wave_mode_active": "Active",
+    "wave_mode_fun": "Fun",
+    "wave_mode_sad": "Sad",
+    "wave_mode_russian": "Russian",
+    "wave_mode_not_russian": "Non-Russian",
+    "wave_mode_without_words": "Without Words",
 }
 
 # Tag categories for Picks and Recommendations

@@ -65,6 +65,7 @@ from .constants import (
     LIKED_TRACKS_PLAYLIST_ID,
     LISTENING_HISTORY_FOLDER_ID,
     MY_WAVE_BATCH_SIZE,
+    MY_WAVE_MODES_FOLDER_ID,
     MY_WAVE_PLAYLIST_ID,
     MY_WAVES_FOLDER_ID,
     MY_WAVES_SET_FOLDER_ID,
@@ -85,6 +86,9 @@ from .constants import (
     TAG_SLUG_CATEGORY,
     TRACK_BATCH_SIZE,
     WAVE_CATEGORY_DISPLAY_ORDER,
+    WAVE_MODE_ORDER,
+    WAVE_MODE_PRESETS,
+    WAVE_MODE_SEP,
     WAVES_FOLDER_ID,
     WAVES_LANDING_FOLDER_ID,
 )
@@ -107,6 +111,25 @@ from .streaming import YandexMusicStreamingManager
 if TYPE_CHECKING:
     from yandex_music import Album as YandexAlbum
     from yandex_music import Track as YandexTrack
+
+
+def _split_wave_mode(station_id: str) -> tuple[str, dict[str, str]]:
+    """Split a wave-mode station key into its base station ID and preset settings.
+
+    Keys like ``user:onyourwave#discover`` encode a specific preset on top of
+    the base rotor station. The part before ``#`` is the station ID that goes
+    to Yandex; the part after is a key into WAVE_MODE_PRESETS.
+
+    :param station_id: Station key, with or without a ``#preset`` suffix.
+    :return: Tuple of (base_station_id, settings_dict). Settings is empty when
+        there is no suffix or the suffix is not a known preset — the base
+        station is returned as-is in that case so the server can complain
+        naturally.
+    """
+    if WAVE_MODE_SEP not in station_id:
+        return (station_id, {})
+    base, preset = station_id.split(WAVE_MODE_SEP, 1)
+    return (base, dict(WAVE_MODE_PRESETS.get(preset, {})))
 
 
 def _parse_radio_item_id(item_id: str) -> tuple[str, str | None]:
@@ -351,7 +374,9 @@ class YandexMusicProvider(MusicProvider):
             name=name,
         )
 
-    async def browse(self, path: str) -> Sequence[MediaItemType | ItemMapping | BrowseFolder]:
+    async def browse(  # noqa: PLR0911
+        self, path: str
+    ) -> Sequence[MediaItemType | ItemMapping | BrowseFolder]:
         """Browse provider items with locale-based folder names and My Wave.
 
         Root level shows My Wave, artists, albums, liked tracks, playlists. Names
@@ -370,6 +395,18 @@ class YandexMusicProvider(MusicProvider):
         if subpath == MY_WAVE_PLAYLIST_ID:
             async with self._get_wave_state(ROTOR_STATION_MY_WAVE).lock:
                 return await self._browse_my_wave(path, sub_subpath)
+
+        # Wave modes (My Wave with preset diversity/moodEnergy/language).
+        # Path shape: my_wave_modes → list, my_wave_modes/{preset}[/next] → tracks
+        if subpath == MY_WAVE_MODES_FOLDER_ID:
+            if sub_subpath is None:
+                return self._browse_my_wave_modes_list(path)
+            if sub_subpath in WAVE_MODE_PRESETS:
+                load_more = len(path_parts) > 2 and path_parts[2] == "next"
+                station_key = f"{ROTOR_STATION_MY_WAVE}{WAVE_MODE_SEP}{sub_subpath}"
+                async with self._get_wave_state(station_key).lock:
+                    return await self._browse_my_wave_mode(path, station_key, load_more)
+            return []
 
         # For You folder (picks + mixes)
         if subpath == FOR_YOU_FOLDER_ID:
@@ -456,6 +493,16 @@ class YandexMusicProvider(MusicProvider):
                 path=f"{base}{MY_WAVE_PLAYLIST_ID}",
                 name=names[MY_WAVE_PLAYLIST_ID],
                 is_playable=True,
+            )
+        )
+        # Wave modes folder (P4): discover / calm / active / language presets
+        folders.append(
+            BrowseFolder(
+                item_id=MY_WAVE_MODES_FOLDER_ID,
+                provider=self.instance_id,
+                path=f"{base}{MY_WAVE_MODES_FOLDER_ID}",
+                name=names.get(MY_WAVE_MODES_FOLDER_ID, "Wave Modes"),
+                is_playable=False,
             )
         )
         # For You folder — Picks + Mixes (Яндекс «Для вас»)
@@ -632,15 +679,133 @@ class YandexMusicProvider(MusicProvider):
             )
         return all_tracks
 
-    def _parse_my_wave_track(self, yt: Any, seen_ids: set[str]) -> Track | None:
+    def _browse_my_wave_modes_list(self, path: str) -> list[BrowseFolder]:
+        """Return the 11 wave-mode entries as playable browse folders.
+
+        Each entry is a BrowseFolder whose path ends with the preset key
+        (e.g. ``my_wave_modes/discover``). Selecting one starts a rotor session
+        with the preset's settings applied.
+
+        :param path: Browse path the user navigated into (always ends with the
+            my_wave_modes folder).
+        :return: Sorted list of BrowseFolder entries, one per preset.
+        """
+        names = self._get_browse_names()
+        base = path if path.endswith("/") else f"{path}/"
+        folders: list[BrowseFolder] = []
+        for preset in WAVE_MODE_ORDER:
+            name_key = f"wave_mode_{preset}"
+            folders.append(
+                BrowseFolder(
+                    item_id=f"{MY_WAVE_MODES_FOLDER_ID}_{preset}",
+                    provider=self.instance_id,
+                    path=f"{base}{preset}",
+                    name=names.get(name_key, preset.replace("_", " ").title()),
+                    is_playable=True,
+                )
+            )
+        return folders
+
+    async def _browse_my_wave_mode(
+        self, path: str, station_key: str, load_more: bool
+    ) -> list[Track | BrowseFolder]:
+        """Fetch a batch of tracks for a specific wave-mode preset.
+
+        Reuses the session-API machinery: tracks live in
+        ``_wave_states[station_key]`` where station_key is
+        ``user:onyourwave#{preset}``. Tracks carry composite item_ids that
+        route feedback back to this state.
+
+        :param path: Full browse path to this preset.
+        :param station_key: Station key with a ``#preset`` suffix.
+        :param load_more: True when called for ``.../next`` pagination.
+        :return: Tracks + optional "Load more" folder.
+        """
+        wave = self._get_wave_state(station_key)
+        max_tracks_config = int(
+            self.config.get_value(CONF_MY_WAVE_MAX_TRACKS) or 150  # type: ignore[arg-type]
+        )
+        batch_size_config = MY_WAVE_BATCH_SIZE
+        effective_limit = min(
+            BROWSE_INITIAL_TRACKS if not load_more else max_tracks_config,
+            max_tracks_config,
+        )
+        max_batches = batch_size_config if not load_more else 1
+
+        if not load_more:
+            wave.seen_track_ids = set()
+
+        all_tracks: list[Track | BrowseFolder] = []
+        last_batch_id: str | None = None
+        total_track_count = 0
+
+        for _ in range(max_batches):
+            if total_track_count >= effective_limit:
+                break
+            yandex_tracks, batch_id = await self._fetch_rotor_session_batch(wave, station_key)
+            if batch_id:
+                last_batch_id = batch_id
+            if not wave.radio_started_sent and yandex_tracks:
+                sent = await self._send_wave_feedback(wave, station_key, "radioStarted")
+                if sent:
+                    wave.radio_started_sent = True
+            first_track_id_this_batch: str | None = None
+            for yt in yandex_tracks:
+                if total_track_count >= effective_limit:
+                    break
+                track = self._parse_my_wave_track(yt, wave.seen_track_ids, station_key=station_key)
+                if track is None:
+                    continue
+                all_tracks.append(track)
+                total_track_count += 1
+                track_id = track.item_id.split(RADIO_TRACK_ID_SEP, 1)[0]
+                if first_track_id_this_batch is None:
+                    first_track_id_this_batch = track_id
+            if first_track_id_this_batch is not None:
+                wave.last_track_id = first_track_id_this_batch
+            if (
+                first_track_id_this_batch is None
+                or not batch_id
+                or not yandex_tracks
+                or total_track_count >= effective_limit
+            ):
+                break
+
+        if last_batch_id and total_track_count < max_tracks_config:
+            names = self._get_browse_names()
+            next_name = "Ещё" if names == BROWSE_NAMES_RU else "Load more"
+            all_tracks.append(
+                BrowseFolder(
+                    item_id="next",
+                    provider=self.instance_id,
+                    path=f"{path.rstrip('/')}/next",
+                    name=next_name,
+                    is_playable=False,
+                )
+            )
+        return all_tracks
+
+    def _parse_my_wave_track(
+        self,
+        yt: Any,
+        seen_ids: set[str],
+        *,
+        station_key: str = ROTOR_STATION_MY_WAVE,
+    ) -> Track | None:
         """Parse a Yandex track into a My Wave Track with composite item_id.
 
         Extracts the track_id, checks for duplicates in the seen_ids set,
-        sets composite item_id (track_id@station_id), and updates provider_mappings.
+        sets composite item_id (track_id@station_key) and updates
+        provider_mappings. `station_key` is the key in `_wave_states` under
+        which the matching session lives; for preset modes it carries a
+        `#preset` suffix so `on_played`/`on_streamed` find the right session.
+
         Callers using shared state must hold the My Wave state lock.
 
         :param yt: Yandex track object from rotor station response.
         :param seen_ids: Set of already-seen track IDs to check and update.
+        :param station_key: Station key to embed in the composite item_id.
+            Defaults to the plain My Wave station.
         :return: Parsed Track with composite item_id, or None if duplicate/invalid.
         """
         try:
@@ -658,7 +823,7 @@ class YandexMusicProvider(MusicProvider):
             return None
 
         seen_ids.add(track_id)
-        t.item_id = f"{track_id}{RADIO_TRACK_ID_SEP}{ROTOR_STATION_MY_WAVE}"
+        t.item_id = f"{track_id}{RADIO_TRACK_ID_SEP}{station_key}"
         for pm in t.provider_mappings:
             if pm.provider_instance == self.instance_id:
                 pm.item_id = t.item_id
@@ -1151,14 +1316,20 @@ class YandexMusicProvider(MusicProvider):
         and records session_id + batch_id on the wave state. On subsequent
         calls, paginates via rotor_session_tracks using wave.last_track_id.
 
+        If station_id carries a wave-mode suffix (e.g. "user:onyourwave#discover"),
+        the suffix maps to a preset in WAVE_MODE_PRESETS and its settings are
+        merged with wave.settings (wave.settings wins on key conflict). The
+        base station ID (before "#") is what actually goes to Yandex.
+
         :param wave: The _WaveState for this station (persists across calls).
-        :param station_id: Rotor station ID
-            (ROTOR_STATION_MY_WAVE or "track:{id}" today).
+        :param station_id: Rotor station key (may include a "#preset" suffix).
         :return: Tuple of (list of yandex tracks, batch_id or None).
         """
         if wave.session_id is None:
+            base_station, preset_settings = _split_wave_mode(station_id)
+            merged = {**preset_settings, **wave.settings}
             session_id, tracks, batch_id = await self.client.rotor_session_new(
-                station_id, settings=wave.settings or None
+                base_station, settings=merged or None
             )
             if session_id:
                 wave.session_id = session_id
