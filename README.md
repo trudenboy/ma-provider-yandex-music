@@ -50,7 +50,13 @@ docker compose -f docker-compose.dev.yml up
 
 - [Music Assistant](https://music-assistant.io/) — open-source музыкальный сервер от Marcel van der Veldt
 - [Яндекс Музыка](https://music.yandex.ru/) — стриминговый сервис от Яндекса
-- [yandex-music-api](https://github.com/MarshalX/yandex-music-api) — неофициальный Python-клиент от MarshalX
+
+## Референсные проекты
+
+- [MarshalX/yandex-music-api](https://github.com/MarshalX/yandex-music-api) — неофициальный Python-клиент Яндекс Музыки (используется как зависимость)
+- [chernyshalexander/YandexMusicLMS](https://github.com/chernyshalexander/YandexMusicLMS/tree/experiment) — плагин Яндекс Музыки для Lyrion Music Server
+- [DECE2183/yamusic-tui](https://github.com/DECE2183/yamusic-tui) — терминальный клиент Яндекс Музыки
+- [music-assistant/server](https://github.com/music-assistant/server) — ядро Music Assistant
 
 ## Благодарности
 

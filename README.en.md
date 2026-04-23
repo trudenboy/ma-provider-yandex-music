@@ -49,7 +49,13 @@ For the full Docker dev environment guide see [docs/dev-docker.md](docs/dev-dock
 
 - [Music Assistant](https://music-assistant.io/) — open-source music server by Marcel van der Veldt
 - [Yandex Music](https://music.yandex.ru/) — streaming service by Yandex
-- [yandex-music-api](https://github.com/MarshalX/yandex-music-api) — unofficial Python client by MarshalX
+
+## Reference projects
+
+- [MarshalX/yandex-music-api](https://github.com/MarshalX/yandex-music-api) — unofficial Python client for Yandex Music (used as a dependency)
+- [chernyshalexander/YandexMusicLMS](https://github.com/chernyshalexander/YandexMusicLMS/tree/experiment) — Yandex Music plugin for Lyrion Music Server
+- [DECE2183/yamusic-tui](https://github.com/DECE2183/yamusic-tui) — Yandex Music terminal client
+- [music-assistant/server](https://github.com/music-assistant/server) — Music Assistant core
 
 ## Acknowledgements
 
