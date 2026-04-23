@@ -116,6 +116,13 @@ if TYPE_CHECKING:
     from yandex_music import Track as YandexTrack
 
 
+# MediaType sub-paths that MA's default MusicProvider.browse() understands.
+# Used by the Collection dispatcher to delegate nested paths back to core.
+_COLLECTION_SUB_FOLDERS: frozenset[str] = frozenset(
+    {"tracks", "artists", "albums", "playlists", "audiobooks", "podcasts"}
+)
+
+
 def _split_wave_mode(station_id: str) -> tuple[str, dict[str, str]]:
     """Split a wave-mode station key into its base station ID and preset settings.
 
@@ -462,8 +469,14 @@ class YandexMusicProvider(MusicProvider):
         if subpath == FOR_YOU_FOLDER_ID:
             return await self._browse_for_you(path, path_parts)
 
-        # Collection folder (library items)
+        # Collection folder (library items). Two shapes:
+        #   <prov>://collection              → listing of library sub-folders
+        #   <prov>://collection/<sub>        → delegate to MA's library handler
+        # The nested form is what lets MA's "back" button return here (strip
+        # last /-segment) instead of dumping the user at the provider root.
         if subpath == COLLECTION_FOLDER_ID:
+            if sub_subpath in _COLLECTION_SUB_FOLDERS:
+                return await super().browse(f"{self.instance_id}://{sub_subpath}")
             return await self._browse_collection(path)
 
         # Handle picks/ path (mood, activity, era, genres)
@@ -1100,72 +1113,36 @@ class YandexMusicProvider(MusicProvider):
     ) -> Sequence[MediaItemType | ItemMapping | BrowseFolder]:
         """Browse «Collection» folder — shows library sub-folders (tracks/artists/albums/playlists).
 
+        Child ``path`` is nested (``…/collection/tracks``) so MA's "back"
+        button lands on this listing instead of the provider root. The
+        dispatcher then strips the ``collection/`` prefix and hands off to
+        core's default library handler.
+
         :param path: Full browse path.
         :return: List of library sub-folders.
         """
         names = self._get_browse_names()
-        base_parts = path.split("//", 1)
-        root_base = (base_parts[0] + "//") if len(base_parts) > 1 else path.rstrip("/") + "/"
+        base = path if path.endswith("/") else f"{path}/"
 
         folders: list[BrowseFolder] = []
-        if ProviderFeature.LIBRARY_TRACKS in self.supported_features:
+        feature_map: tuple[tuple[ProviderFeature, str, bool], ...] = (
+            (ProviderFeature.LIBRARY_TRACKS, "tracks", True),
+            (ProviderFeature.LIBRARY_ARTISTS, "artists", True),
+            (ProviderFeature.LIBRARY_ALBUMS, "albums", True),
+            (ProviderFeature.LIBRARY_PLAYLISTS, "playlists", True),
+            (ProviderFeature.LIBRARY_PODCASTS, "podcasts", False),
+            (ProviderFeature.LIBRARY_AUDIOBOOKS, "audiobooks", False),
+        )
+        for feature, sub_id, is_playable in feature_map:
+            if feature not in self.supported_features:
+                continue
             folders.append(
                 BrowseFolder(
-                    item_id="tracks",
+                    item_id=sub_id,
                     provider=self.instance_id,
-                    path=f"{root_base}tracks",
-                    name=names["tracks"],
-                    is_playable=True,
-                )
-            )
-        if ProviderFeature.LIBRARY_ARTISTS in self.supported_features:
-            folders.append(
-                BrowseFolder(
-                    item_id="artists",
-                    provider=self.instance_id,
-                    path=f"{root_base}artists",
-                    name=names["artists"],
-                    is_playable=True,
-                )
-            )
-        if ProviderFeature.LIBRARY_ALBUMS in self.supported_features:
-            folders.append(
-                BrowseFolder(
-                    item_id="albums",
-                    provider=self.instance_id,
-                    path=f"{root_base}albums",
-                    name=names["albums"],
-                    is_playable=True,
-                )
-            )
-        if ProviderFeature.LIBRARY_PLAYLISTS in self.supported_features:
-            folders.append(
-                BrowseFolder(
-                    item_id="playlists",
-                    provider=self.instance_id,
-                    path=f"{root_base}playlists",
-                    name=names["playlists"],
-                    is_playable=True,
-                )
-            )
-        if ProviderFeature.LIBRARY_PODCASTS in self.supported_features:
-            folders.append(
-                BrowseFolder(
-                    item_id="podcasts",
-                    provider=self.instance_id,
-                    path=f"{root_base}podcasts",
-                    name=names["podcasts"],
-                    is_playable=False,
-                )
-            )
-        if ProviderFeature.LIBRARY_AUDIOBOOKS in self.supported_features:
-            folders.append(
-                BrowseFolder(
-                    item_id="audiobooks",
-                    provider=self.instance_id,
-                    path=f"{root_base}audiobooks",
-                    name=names["audiobooks"],
-                    is_playable=False,
+                    path=f"{base}{sub_id}",
+                    name=names[sub_id],
+                    is_playable=is_playable,
                 )
             )
         return folders
