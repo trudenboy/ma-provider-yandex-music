@@ -49,7 +49,17 @@ For the full Docker dev environment guide see [docs/dev-docker.md](docs/dev-dock
 
 - [Music Assistant](https://music-assistant.io/) — open-source music server by Marcel van der Veldt
 - [Yandex Music](https://music.yandex.ru/) — streaming service by Yandex
-- [yandex-music-api](https://github.com/MarshalX/yandex-music-api) — unofficial Python client by MarshalX
+
+## Reference projects
+
+Rotor and dynamic-playlist plumbing draws on a few third-party implementations — notably the move to the session-based API (`/rotor/session/*` with a long-lived `radioSessionId`), the seed format for preset combinations (`settingDiversity:*`, `settingMoodEnergy:*`, `settingLanguage:*`), and the feedback-event ordering.
+
+| Project | Language | What we borrowed |
+|---------|----------|------------------|
+| [MarshalX/yandex-music-api](https://github.com/MarshalX/yandex-music-api) | Python | Base SDK (used as a dependency); rotor request shapes and feedback shortcuts |
+| [chernyshalexander/YandexMusicLMS](https://github.com/chernyshalexander/YandexMusicLMS/tree/experiment) | Perl | Session API `/rotor/session/{new,tracks,feedback}`, the set of wave modes (Discover / Calm / Active / …), and the presets UX |
+| [DECE2183/yamusic-tui](https://github.com/DECE2183/yamusic-tui) | Go | Semantics of `queue = first track of the previous batch`, order of feedback events before requesting the next batch |
+| [music-assistant/server](https://github.com/music-assistant/server) | Python | Provider contracts (`get_similar_tracks`, `recommendations`, `is_dynamic`); queue-behaviour rules — a provider must not toggle DSTM on the user's behalf |
 
 ## Acknowledgements
 
