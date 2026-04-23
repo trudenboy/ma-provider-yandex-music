@@ -270,15 +270,18 @@ async def test_fetch_rotor_session_batch_unknown_preset_strips_suffix_no_setting
 
 @pytest.mark.asyncio
 async def test_prefetch_rotor_session_fills_prefetched_when_idle() -> None:
-    """With an active session and no prefetched tracks, fills wave.prefetched."""
+    """With an active session + cursor and no prefetched tracks, fills wave.prefetched."""
     provider = Mock(spec=YandexMusicProvider)
+    provider.client = AsyncMock()
+    provider.client.rotor_session_tracks = AsyncMock(return_value=(["t1", "t2"], "batch_b"))
     wave = _WaveState()
     wave.session_id = "sess_1"
+    wave.last_track_id = "42"
     provider._wave_states = {ROTOR_STATION_MY_WAVE: wave}
-    provider._fetch_rotor_session_batch = AsyncMock(return_value=(["t1", "t2"], "batch_b"))
 
     await YandexMusicProvider._prefetch_rotor_session(provider, ROTOR_STATION_MY_WAVE)
 
+    provider.client.rotor_session_tracks.assert_awaited_once_with("sess_1", current_track_id="42")
     assert wave.prefetched == ["t1", "t2"]
 
 
@@ -286,13 +289,30 @@ async def test_prefetch_rotor_session_fills_prefetched_when_idle() -> None:
 async def test_prefetch_rotor_session_noop_without_session() -> None:
     """Prefetch does nothing when the station has no active session_id."""
     provider = Mock(spec=YandexMusicProvider)
+    provider.client = AsyncMock()
+    provider.client.rotor_session_tracks = AsyncMock()
     wave = _WaveState()
     provider._wave_states = {ROTOR_STATION_MY_WAVE: wave}
-    provider._fetch_rotor_session_batch = AsyncMock()
 
     await YandexMusicProvider._prefetch_rotor_session(provider, ROTOR_STATION_MY_WAVE)
 
-    provider._fetch_rotor_session_batch.assert_not_awaited()
+    provider.client.rotor_session_tracks.assert_not_awaited()
+    assert wave.prefetched == []
+
+
+@pytest.mark.asyncio
+async def test_prefetch_rotor_session_noop_without_cursor() -> None:
+    """Prefetch bails when session exists but no last_track_id cursor yet."""
+    provider = Mock(spec=YandexMusicProvider)
+    provider.client = AsyncMock()
+    provider.client.rotor_session_tracks = AsyncMock()
+    wave = _WaveState()
+    wave.session_id = "sess_1"  # but last_track_id still None
+    provider._wave_states = {ROTOR_STATION_MY_WAVE: wave}
+
+    await YandexMusicProvider._prefetch_rotor_session(provider, ROTOR_STATION_MY_WAVE)
+
+    provider.client.rotor_session_tracks.assert_not_awaited()
     assert wave.prefetched == []
 
 
@@ -300,15 +320,17 @@ async def test_prefetch_rotor_session_noop_without_session() -> None:
 async def test_prefetch_rotor_session_noop_when_already_prefilled() -> None:
     """Prefetch skips work when wave.prefetched already has items (avoid rate burn)."""
     provider = Mock(spec=YandexMusicProvider)
+    provider.client = AsyncMock()
+    provider.client.rotor_session_tracks = AsyncMock()
     wave = _WaveState()
     wave.session_id = "sess_1"
+    wave.last_track_id = "42"
     wave.prefetched = ["existing_track"]
     provider._wave_states = {ROTOR_STATION_MY_WAVE: wave}
-    provider._fetch_rotor_session_batch = AsyncMock()
 
     await YandexMusicProvider._prefetch_rotor_session(provider, ROTOR_STATION_MY_WAVE)
 
-    provider._fetch_rotor_session_batch.assert_not_awaited()
+    provider.client.rotor_session_tracks.assert_not_awaited()
 
 
 # -- rotor feedback on library_add (P5) ---------------------------------------

@@ -363,7 +363,16 @@ class YandexMusicClient:
             LOGGER.debug("Rotor session POST %s body_keys=%s", path, list(body.keys()))
             try:
                 result = await c._request.post(url, json=body)
-            except (NetworkError, BadRequestError) as err:
+            except NetworkError:
+                # Let the outer retry wrapper see transient drops. On the
+                # no-retry path the outer `except` below swallows it silently.
+                if with_retry:
+                    raise
+                LOGGER.debug("Rotor session POST %s: network error (no retry)", path)
+                return None
+            except BadRequestError as err:
+                # 4xx is terminal — server rejected the body; retry would only
+                # reproduce the same failure.
                 LOGGER.warning("Rotor session POST %s failed: %s", path, err)
                 return None
             if isinstance(result, dict):

@@ -1428,19 +1428,23 @@ class YandexMusicProvider(MusicProvider):
         we already have Yandex-curated wave tracks sitting in
         ``wave.prefetched`` ready to serve (no extra round-trip).
 
-        No-op when the station has no active session or already has prefetched
-        tracks waiting — the latter avoids burning rate limit.
+        No-op when the station has no active session yet (prefetch cannot
+        safely create one — that requires holding the lock across the
+        network call and would stall readers), or when the buffer already
+        has items (avoids burning rate limit).
 
-        Lock handling is deliberately split in three phases so an HTTP
-        round-trip doesn't block browse/playback code paths that need the
-        same lock (e.g. draining the prefetch buffer):
+        Three-phase lock discipline so the network round-trip does not
+        block browse / drain paths that share the lock:
 
-          1. Acquire the lock, check that a prefetch is still needed and
-             snapshot the current ``session_id``, then release.
-          2. Do the network fetch without holding the lock.
-          3. Re-acquire the lock and append only if the session is still
-             the same and the buffer is still empty (another drain could
-             have already refilled it while we were fetching).
+          1. Acquire, verify session + empty buffer, snapshot
+             ``session_id`` and ``last_track_id``, release.
+          2. Call ``client.rotor_session_tracks`` **directly** (no
+             ``_fetch_rotor_session_batch``) — that helper mutates shared
+             state (session creation, batch_id write) and would race with
+             other callers now that we hold no lock. The raw client call
+             only reads the arguments we pass in.
+          3. Re-acquire, verify the session hasn't been recycled and the
+             buffer is still empty, then ``extend``.
 
         :param station_key: Station key whose state to top up.
         """
@@ -1452,8 +1456,12 @@ class YandexMusicProvider(MusicProvider):
             if wave.session_id is None or wave.prefetched:
                 return
             session_id = wave.session_id
+            cursor = wave.last_track_id
 
-        tracks, _ = await self._fetch_rotor_session_batch(wave, station_key)
+        if not cursor:
+            return  # No anchor for the next batch yet; try again later.
+
+        tracks, _ = await self.client.rotor_session_tracks(session_id, current_track_id=str(cursor))
         if not tracks:
             return
 
@@ -2491,15 +2499,19 @@ class YandexMusicProvider(MusicProvider):
 
     @use_cache(3600 * 3)
     async def _fetch_similar_tracks_for_seed(self, track_id: str, limit: int) -> list[Track]:
-        """Create a per-seed rotor session and return up to ``limit`` tracks.
+        """Create a one-off rotor session for ``track:{id}`` and return up to ``limit`` tracks.
 
-        Pure function of ``track_id`` / ``limit`` so safe to memoise. This is
-        the path hit when there is no active wave context (e.g. MA's radio
-        mode started from a library track, or the wave buffer was exhausted).
+        Stateless by design: similar-tracks results don't participate in
+        playback feedback or prefetch, so there is no need to keep a
+        ``_WaveState`` entry around. Going through ``_fetch_rotor_session_batch``
+        would create one per unique seed and grow ``_wave_states`` without
+        bound under normal DSTM usage; call ``rotor_session_new`` directly
+        instead.
+
+        Pure function of ``track_id`` / ``limit``, hence safe to memoise
+        via ``@use_cache``.
         """
-        station_id = f"track:{track_id}"
-        wave = self._get_wave_state(station_id)
-        yandex_tracks, _ = await self._fetch_rotor_session_batch(wave, station_id)
+        _, yandex_tracks, _ = await self.client.rotor_session_new(f"track:{track_id}")
         similar_tracks: list[Track] = []
         for yt in yandex_tracks[:limit]:
             try:
