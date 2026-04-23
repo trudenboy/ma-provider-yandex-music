@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.4.1] - 2026-04-23
+
+- fix(rotor): surface UnauthorizedError on /rotor/session/* as LoginFailed (#120) (`c08adfa`)
+- fix(presets): drop whitespace-only dropdown values + strip surrounding spaces (#119) (`d375a0d`)
+- chore: update changelog for v3.4.0 [skip ci] (`41f2932`)
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
 
 ## [3.2.1] - 2026-04-22
