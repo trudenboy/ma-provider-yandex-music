@@ -1384,30 +1384,36 @@ class YandexMusicProvider(MusicProvider):
         track_id: str | None = None,
         total_played_seconds: int | None = None,
     ) -> bool:
-        """Route rotor feedback to the session or the stations endpoint.
+        """Route rotor feedback to the session endpoint.
 
-        When the wave has an active `session_id` (My Wave / track:{id} flows
-        after session-API migration), events go to /rotor/session/{id}/feedback.
-        Otherwise they fall back to the legacy stations-based endpoint — still
-        used by tagged stations (genre:rock, mood:calm, …).
+        Requires an active ``wave.session_id`` — rotor feedback is only
+        meaningful inside the session it originated from. The legacy
+        stations-based endpoint (``/rotor/station/{id}/feedback``) is no
+        longer reachable (returns 404 "not-found"), so when there's no
+        session we skip silently rather than spamming the log.
+
+        This happens when the track's composite item_id was parsed in a
+        previous provider run (e.g. loaded from MA's library cache) and
+        the corresponding session_id is not in memory any more. History
+        reporting via ``play_audio`` still works in that case — only the
+        rotor recommendation signal is lost.
 
         :param wave: Station state carrying session_id + batch_id.
-        :param station_id: Rotor station ID (used only for the fallback path).
+        :param station_id: Rotor station ID (used only for logging here).
         :param event_type: Rotor event type (radioStarted, trackStarted, …).
         :param track_id: Yandex track ID the event refers to.
         :param total_played_seconds: Seconds played (trackFinished / skip only).
-        :return: True if the feedback POST succeeded.
+        :return: True if the feedback POST succeeded, False when skipped.
         """
-        if wave.session_id:
-            return await self.client.rotor_session_feedback(
-                wave.session_id,
+        if not wave.session_id:
+            self.logger.debug(
+                "Skipping rotor feedback %s for %s: no active session",
                 event_type,
-                track_id=track_id,
-                total_played_seconds=total_played_seconds,
-                batch_id=wave.batch_id,
+                station_id,
             )
-        return await self.client.send_rotor_station_feedback(
-            station_id,
+            return False
+        return await self.client.rotor_session_feedback(
+            wave.session_id,
             event_type,
             track_id=track_id,
             total_played_seconds=total_played_seconds,
@@ -3548,12 +3554,22 @@ class YandexMusicProvider(MusicProvider):
         2. **Wave tracks** (composite item_id carries a station suffix): a
            rotor ``trackFinished`` or ``skip`` event with the actual seconds
            streamed so Yandex can improve recommendations.
-        3. **All tracks** (wave or plain library, anything with a resolved
-           ``track_id`` and ``album_id`` in stream data): a ``play_audio``
-           call that writes the track into Yandex's server-side Listening
-           History, so it shows up in Browse → Listening History (and in
-           Яндекс-клиенте тоже) the same way native playback does.
+        3. **All tracks** (wave or plain library): a ``play_audio`` call that
+           writes the track into Yandex's server-side Listening History, so
+           it shows up in Browse → Listening History (and in Яндекс-клиенте
+           тоже) the same way native playback does. Does not rely on
+           ``streamdetails.data`` — that field can be stripped by MA's IPC
+           serialisation, so we resolve ``track_id``/``album_id`` from the
+           item_id directly.
         """
+        self.logger.debug(
+            "on_streamed: type=%s item_id=%s seconds=%s duration=%s queue=%s",
+            streamdetails.media_type,
+            streamdetails.item_id,
+            streamdetails.seconds_streamed,
+            streamdetails.duration,
+            streamdetails.queue_id,
+        )
         data = streamdetails.data if isinstance(streamdetails.data, dict) else None
         if streamdetails.media_type == MediaType.AUDIOBOOK:
             # Audiobook flow has its own play_audio logic (per-chapter offsets)
@@ -3585,21 +3601,45 @@ class YandexMusicProvider(MusicProvider):
 
         # History reporting via play-audio. Skip very short plays (< 5 s) —
         # Yandex's own clients do the same, and it prevents accidental seeks
-        # or next-track skips from polluting the history. Also requires the
-        # stream data we stashed in `get_stream_details`; if missing, bail.
-        if data is None or seconds < 5:
+        # or next-track skips from polluting the history.
+        if seconds < 5 or not track_id:
             return
-        stash_track_id = data.get("track_id")
-        album_id = data.get("album_id") or ""
-        if not stash_track_id:
+        await self._report_track_play(track_id, duration, seconds)
+
+    async def _report_track_play(
+        self, track_id: str, track_length_seconds: int, played_seconds: int
+    ) -> None:
+        """Fire a play-audio event so the track lands in Yandex's history.
+
+        Resolves ``album_id`` by fetching the track via the shared client
+        (that call is already cached, so this is usually a no-op roundtrip).
+        Bail silently when no album can be found or the call fails —
+        history reporting is strictly best-effort.
+        """
+        album_id = ""
+        try:
+            fetched = await self.client.get_tracks([track_id])
+        except ResourceTemporarilyUnavailable as err:
+            self.logger.debug("play_audio hydration failed for %s: %s", track_id, err)
             return
+        if fetched:
+            albums = getattr(fetched[0], "albums", None) or []
+            if albums and getattr(albums[0], "id", None) is not None:
+                album_id = str(albums[0].id)
+        self.logger.debug(
+            "play_audio: track_id=%s album_id=%s duration=%s played=%s",
+            track_id,
+            album_id,
+            track_length_seconds,
+            played_seconds,
+        )
         await self.client.play_audio(
-            track_id=str(stash_track_id),
-            album_id=str(album_id),
+            track_id=track_id,
+            album_id=album_id,
             play_id=uuid.uuid4().hex,
-            track_length_seconds=duration,
-            total_played_seconds=seconds,
-            end_position_seconds=seconds,
+            track_length_seconds=track_length_seconds,
+            total_played_seconds=played_seconds,
+            end_position_seconds=played_seconds,
             from_="music_assistant",
         )
 

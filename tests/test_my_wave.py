@@ -644,21 +644,24 @@ async def test_send_wave_feedback_uses_session_api_when_session_id_present() -> 
 
 
 @pytest.mark.asyncio
-async def test_send_wave_feedback_falls_back_to_stations_api_without_session() -> None:
-    """When wave.session_id is None, feedback is routed to the old stations endpoint."""
+async def test_send_wave_feedback_skips_silently_without_session() -> None:
+    """Without ``wave.session_id`` the call is a silent no-op returning False.
+
+    The legacy stations-based feedback endpoint is gone (returns 404), so we
+    can't usefully fall back there. Callers treat the False result as
+    "signal was dropped" — history reporting via play_audio still fires.
+    """
     provider = Mock(spec=YandexMusicProvider)
+    provider.logger = Mock()
     provider.client = AsyncMock()
     provider.client.rotor_session_feedback = AsyncMock()
-    provider.client.send_rotor_station_feedback = AsyncMock(return_value=True)
     wave = _WaveState()
-    wave.batch_id = "batch_a"
+    wave.batch_id = "batch_a"  # session_id still None
 
     result = await YandexMusicProvider._send_wave_feedback(
         provider, wave, "genre:rock", "skip", track_id="9", total_played_seconds=7
     )
 
-    assert result is True
-    provider.client.send_rotor_station_feedback.assert_awaited_once_with(
-        "genre:rock", "skip", track_id="9", total_played_seconds=7, batch_id="batch_a"
-    )
+    assert result is False
     provider.client.rotor_session_feedback.assert_not_awaited()
+    provider.logger.debug.assert_called_once()
