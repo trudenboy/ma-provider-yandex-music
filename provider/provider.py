@@ -338,6 +338,10 @@ class YandexMusicProvider(MusicProvider):
 
         # Suppress yandex_music library DEBUG dumps (full API request/response JSON)
         logging.getLogger("yandex_music").setLevel(self.logger.level + 10)
+        # Propagate the MA instance log level to our per-module loggers
+        # (api_client, streaming, parsers, auth) so DEBUG hooks there actually
+        # print when MA is set to DEBUG for this provider.
+        logging.getLogger("music_assistant.providers.yandex_music").setLevel(self.logger.level)
         self._streaming = YandexMusicStreamingManager(self)
         # Per-station wave state (incl. My Wave under ROTOR_STATION_MY_WAVE).
         # Entries are created lazily by _get_wave_state() on first access.
@@ -1694,23 +1698,20 @@ class YandexMusicProvider(MusicProvider):
             )
 
             self.logger.debug(
-                "Browse wave station: station_id=%s path=%s last_track_id=%s",
+                "Browse wave station: station_id=%s path=%s last_track_id=%s session=%s",
                 station_id,
                 path,
                 state.last_track_id,
+                state.session_id,
             )
-            yandex_tracks, batch_id = await self.client.get_rotor_station_tracks(
-                station_id, queue=state.last_track_id
-            )
-            if batch_id:
-                state.batch_id = batch_id
+            # Tagged stations (genre:*, mood:*, activity:*, epoch:*) accept the
+            # same /rotor/session/* endpoint as user:onyourwave / track:{id},
+            # verified against the live Yandex API. Reuse the session helper so
+            # batch_id + session_id stay anchored across browse/play/feedback.
+            yandex_tracks, _ = await self._fetch_rotor_session_batch(state, station_id)
 
             if not state.radio_started_sent and yandex_tracks:
-                sent = await self.client.send_rotor_station_feedback(
-                    station_id,
-                    "radioStarted",
-                    batch_id=batch_id,
-                )
+                sent = await self._send_wave_feedback(state, station_id, "radioStarted")
                 if sent:
                     state.radio_started_sent = True
 
