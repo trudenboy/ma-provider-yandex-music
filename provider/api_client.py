@@ -337,7 +337,7 @@ class YandexMusicClient:
     # API forced us to.
 
     async def _rotor_session_request(
-        self, path: str, body: dict[str, Any]
+        self, path: str, body: dict[str, Any], *, with_retry: bool = True
     ) -> dict[str, Any] | None:
         """POST a JSON body to /rotor/session/{path} and return parsed result.
 
@@ -348,6 +348,12 @@ class YandexMusicClient:
         :param path: Path suffix after /rotor/session/ (e.g. "new",
             "{session_id}/tracks", "{session_id}/feedback").
         :param body: JSON body to send.
+        :param with_retry: When True (default), uses the same reconnect-on-
+            transient-connection-error path as normal data fetches —
+            appropriate for ``new`` and ``tracks`` which sit on the
+            user-facing browse/play path. Set to False for ``feedback``,
+            where a dropped request should be silently lost rather than
+            hammered against a potentially rate-limiting server.
         :return: Parsed result dict, or None on failure.
         """
 
@@ -366,8 +372,9 @@ class YandexMusicClient:
             LOGGER.debug("Rotor session POST %s → non-dict result: %r", path, result)
             return None
 
+        runner = self._call_with_retry if with_retry else self._call_no_retry
         try:
-            return await self._call_no_retry(_do)
+            return await runner(_do)
         except (NetworkError, ProviderUnavailableError) as err:
             LOGGER.warning("Rotor session POST %s failed: %s", path, err)
             return None
@@ -480,7 +487,7 @@ class YandexMusicClient:
             total_played_seconds,
             batch_id,
         )
-        result = await self._rotor_session_request(f"{session_id}/feedback", body)
+        result = await self._rotor_session_request(f"{session_id}/feedback", body, with_retry=False)
         return result is not None
 
     async def _hydrate_session_tracks(self, sequence: list[dict[str, Any]]) -> list[YandexTrack]:

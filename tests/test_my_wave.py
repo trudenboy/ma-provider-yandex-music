@@ -247,8 +247,8 @@ async def test_fetch_rotor_session_batch_preset_merges_with_explicit_wave_settin
 
 
 @pytest.mark.asyncio
-async def test_fetch_rotor_session_batch_unknown_preset_passes_station_through() -> None:
-    """Unknown '#<x>' keys leave station_id alone so the server returns an error naturally."""
+async def test_fetch_rotor_session_batch_unknown_preset_strips_suffix_no_settings() -> None:
+    """Unknown '#<x>' suffix is stripped from the station key and no extra settings are sent."""
     provider = Mock(spec=YandexMusicProvider)
     provider.client = AsyncMock()
     provider.client.rotor_session_new = AsyncMock(return_value=(None, [], None))
@@ -258,7 +258,7 @@ async def test_fetch_rotor_session_batch_unknown_preset_passes_station_through()
         provider, wave, f"{ROTOR_STATION_MY_WAVE}#does_not_exist"
     )
 
-    # Base station still stripped; empty settings (no preset matched).
+    # Base station is used; unknown preset yields empty settings → settings=None.
     provider.client.rotor_session_new.assert_awaited_once_with(ROTOR_STATION_MY_WAVE, settings=None)
 
 

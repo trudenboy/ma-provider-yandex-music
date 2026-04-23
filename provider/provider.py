@@ -131,10 +131,11 @@ def _split_wave_mode(station_id: str) -> tuple[str, dict[str, str]]:
     to Yandex; the part after is a key into WAVE_MODE_PRESETS.
 
     :param station_id: Station key, with or without a ``#preset`` suffix.
-    :return: Tuple of (base_station_id, settings_dict). Settings is empty when
-        there is no suffix or the suffix is not a known preset — the base
-        station is returned as-is in that case so the server can complain
-        naturally.
+    :return: Tuple of (base_station_id, settings_dict). The suffix, if
+        present, is always stripped — only the base station goes to
+        Yandex. ``settings_dict`` is the preset's settings when the suffix
+        matches a known WAVE_MODE_PRESETS key, or an empty dict otherwise
+        (unknown suffix → base station fired with no extra seeds).
     """
     if WAVE_MODE_SEP not in station_id:
         return (station_id, {})
@@ -1450,16 +1451,22 @@ class YandexMusicProvider(MusicProvider):
         No-op when the station has no active session or already has prefetched
         tracks waiting — the latter avoids burning rate limit.
 
+        The read/extend pair runs under ``wave.lock`` because
+        ``get_similar_tracks`` drains ``wave.prefetched`` under the same lock.
+        Without it, a concurrent drain could see either a stale-empty buffer
+        (triggering a redundant prefetch) or a partially-written one.
+
         :param station_key: Station key whose state to top up.
         """
         wave = self._wave_states.get(station_key)
-        if wave is None or wave.session_id is None:
+        if wave is None:
             return
-        if wave.prefetched:
-            return
-        tracks, _ = await self._fetch_rotor_session_batch(wave, station_key)
-        if tracks:
-            wave.prefetched.extend(tracks)
+        async with wave.lock:
+            if wave.session_id is None or wave.prefetched:
+                return
+            tracks, _ = await self._fetch_rotor_session_batch(wave, station_key)
+            if tracks:
+                wave.prefetched.extend(tracks)
 
     async def _fetch_rotor_session_batch(
         self, wave: _WaveState, station_id: str
@@ -1479,7 +1486,11 @@ class YandexMusicProvider(MusicProvider):
         :param station_id: Rotor station key (may include a "#preset" suffix).
         :return: Tuple of (list of yandex tracks, batch_id or None).
         """
-        if wave.session_id is None:
+        # Session-creation path: no session yet, or we have a session but no
+        # cursor yet (`tracks` with an empty queue returns a hard-to-debug
+        # empty batch — starting a fresh session is the same latency but
+        # actually yields tracks).
+        if wave.session_id is None or not wave.last_track_id:
             base_station, preset_settings = _split_wave_mode(station_id)
             merged = {**preset_settings, **wave.settings}
             session_id, tracks, batch_id = await self.client.rotor_session_new(
@@ -1488,9 +1499,8 @@ class YandexMusicProvider(MusicProvider):
             if session_id:
                 wave.session_id = session_id
         else:
-            cursor = str(wave.last_track_id or "")
             tracks, batch_id = await self.client.rotor_session_tracks(
-                wave.session_id, current_track_id=cursor
+                wave.session_id, current_track_id=str(wave.last_track_id)
             )
         if batch_id:
             wave.batch_id = batch_id
@@ -2430,17 +2440,18 @@ class YandexMusicProvider(MusicProvider):
                     self.logger.debug("Error parsing album track: %s", err)
         return tracks
 
-    @use_cache(3600 * 3)
     async def get_similar_tracks(self, prov_track_id: str, limit: int = 25) -> list[Track]:
         """Get similar tracks, preferring pre-fetched wave tracks when available.
 
-        When the seed track came from an active wave session (its item_id
-        carries a station suffix and we have pre-fetched tracks waiting), drain
-        from ``wave.prefetched`` so Music Assistant's DSTM continues the wave
-        instead of branching into a new "similar to this one track" session.
+        Split in two paths with different caching policies:
 
-        On fallback (plain track_id, no active wave, or empty prefetch buffer)
-        create a per-seed rotor session under ``track:{id}`` as before.
+        - **Wave-drain path** (the seed carries a station suffix and
+          ``wave.prefetched`` is non-empty). Uncached by design: it mutates
+          state, a cache hit would replay the same drained tracks forever and
+          the prefetch buffer would never advance.
+        - **Fallback path** (plain track_id, no active wave, or empty buffer).
+          Creates a per-seed rotor session under ``track:{id}`` and is cached
+          for 3 hours — this is pure and safe to memoise.
 
         :param prov_track_id: Provider track ID (plain or track_id@station_id).
         :param limit: Maximum number of tracks to return.
@@ -2449,21 +2460,46 @@ class YandexMusicProvider(MusicProvider):
         track_id, station_key = _parse_radio_item_id(prov_track_id)
 
         if station_key:
-            wave = self._wave_states.get(station_key)
-            if wave and wave.session_id and wave.prefetched:
-                async with wave.lock:
-                    if wave.prefetched:
-                        drained = wave.prefetched[:limit]
-                        wave.prefetched = wave.prefetched[limit:]
-                        tracks: list[Track] = []
-                        for yt in drained:
-                            try:
-                                tracks.append(parse_track(self, yt))
-                            except InvalidDataError as err:
-                                self.logger.debug("Error parsing prefetched wave track: %s", err)
-                        if tracks:
-                            return tracks
+            drained = await self._drain_prefetched_wave_tracks(station_key, limit)
+            if drained:
+                return drained
 
+        return await self._fetch_similar_tracks_for_seed(track_id, limit)
+
+    async def _drain_prefetched_wave_tracks(self, station_key: str, limit: int) -> list[Track]:
+        """Pop up to ``limit`` prefetched tracks off the wave state.
+
+        Runs under ``wave.lock`` so it doesn't race with
+        ``_prefetch_rotor_session`` which extends the same list under the
+        same lock. Returns an empty list when there's no active session or
+        nothing prefetched; callers then fall through to the cached fetch.
+
+        This method is intentionally not cached — it mutates wave state.
+        """
+        wave = self._wave_states.get(station_key)
+        if not (wave and wave.session_id and wave.prefetched):
+            return []
+        async with wave.lock:
+            if not wave.prefetched:
+                return []
+            drained_yt = wave.prefetched[:limit]
+            wave.prefetched = wave.prefetched[limit:]
+        tracks: list[Track] = []
+        for yt in drained_yt:
+            try:
+                tracks.append(parse_track(self, yt))
+            except InvalidDataError as err:
+                self.logger.debug("Error parsing prefetched wave track: %s", err)
+        return tracks
+
+    @use_cache(3600 * 3)
+    async def _fetch_similar_tracks_for_seed(self, track_id: str, limit: int) -> list[Track]:
+        """Create a per-seed rotor session and return up to ``limit`` tracks.
+
+        Pure function of ``track_id`` / ``limit`` so safe to memoise. This is
+        the path hit when there is no active wave context (e.g. MA's radio
+        mode started from a library track, or the wave buffer was exhausted).
+        """
         station_id = f"track:{track_id}"
         wave = self._get_wave_state(station_id)
         yandex_tracks, _ = await self._fetch_rotor_session_batch(wave, station_id)
