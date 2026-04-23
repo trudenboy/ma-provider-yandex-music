@@ -432,14 +432,13 @@ def test_get_user_wave_presets_empty_store_returns_empty() -> None:
     assert YandexMusicProvider._get_user_wave_presets(provider) == []
 
 
-def test_get_user_wave_presets_invalid_json_logs_warning() -> None:
-    """Malformed JSON → empty list + warning logged (no crash)."""
+def test_get_user_wave_presets_invalid_json_returns_empty() -> None:
+    """Malformed JSON → empty list (silent; matches the settings-UI parser)."""
     provider = Mock(spec=YandexMusicProvider)
     provider.config = _preset_config({"wave_presets_data": "not-json {{{"})
     provider.logger = Mock()
 
     assert YandexMusicProvider._get_user_wave_presets(provider) == []
-    provider.logger.warning.assert_called_once()
 
 
 def test_get_user_wave_presets_skips_items_without_name() -> None:

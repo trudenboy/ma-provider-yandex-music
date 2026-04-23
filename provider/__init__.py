@@ -39,38 +39,8 @@ from .constants import (
     WAVE_PRESET_LANGUAGE_VALUES,
     WAVE_PRESET_MOOD_VALUES,
 )
+from .presets import parse_stored_presets as _parse_stored_presets
 from .provider import YandexMusicProvider
-
-
-def _parse_stored_presets(raw: object) -> list[dict[str, str]]:
-    """Decode the hidden JSON wave-presets store into a clean list.
-
-    Returns presets whose ``name`` is a non-empty string, with ``diversity``,
-    ``moodEnergy`` and ``language`` carried through when present. Invalid or
-    missing data yields an empty list — the UI treats that as "no presets yet".
-    """
-    if not isinstance(raw, str) or not raw.strip():
-        return []
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        return []
-    if not isinstance(parsed, list):
-        return []
-    result: list[dict[str, str]] = []
-    for item in parsed:
-        if not isinstance(item, dict):
-            continue
-        name = item.get("name")
-        if not isinstance(name, str) or not name.strip():
-            continue
-        clean: dict[str, str] = {"name": name.strip()}
-        for key in ("diversity", "moodEnergy", "language"):
-            val = item.get(key)
-            if isinstance(val, str) and val:
-                clean[key] = val
-        result.append(clean)
-    return result
 
 
 def _save_wave_preset_action(values: dict[str, ConfigValueType]) -> None:

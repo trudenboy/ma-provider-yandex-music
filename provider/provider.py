@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import random
 import uuid
@@ -109,6 +108,7 @@ from .parsers import (
     parse_podcast_episode,
     parse_track,
 )
+from .presets import parse_stored_presets
 from .streaming import YandexMusicStreamingManager
 
 if TYPE_CHECKING:
@@ -757,38 +757,11 @@ class YandexMusicProvider(MusicProvider):
     def _get_user_wave_presets(self) -> list[dict[str, str]]:
         """Decode user-defined wave presets from the hidden JSON config key.
 
-        The settings UI maintains CONF_WAVE_PRESETS_DATA as a JSON-encoded
-        list of ``{name, diversity?, moodEnergy?, language?}`` entries via the
-        save/delete action buttons. Invalid / missing data yields an empty
-        list — no exception propagates to browse.
-
-        :return: Presets in save order, each a dict with ``name`` and any of
-            ``diversity`` / ``moodEnergy`` / ``language``.
+        Thin wrapper around :func:`presets.parse_stored_presets` so browse
+        code and settings actions use the exact same parsing — avoids schema
+        drift when preset fields are added or renamed.
         """
-        raw = self.config.get_value(CONF_WAVE_PRESETS_DATA)
-        if not isinstance(raw, str) or not raw.strip():
-            return []
-        try:
-            parsed = json.loads(raw)
-        except json.JSONDecodeError:
-            self.logger.warning("Failed to parse %s as JSON", CONF_WAVE_PRESETS_DATA)
-            return []
-        if not isinstance(parsed, list):
-            return []
-        presets: list[dict[str, str]] = []
-        for item in parsed:
-            if not isinstance(item, dict):
-                continue
-            name = item.get("name")
-            if not isinstance(name, str) or not name.strip():
-                continue
-            preset: dict[str, str] = {"name": name.strip()}
-            for key in ("diversity", "moodEnergy", "language"):
-                val = item.get(key)
-                if isinstance(val, str) and val:
-                    preset[key] = val
-            presets.append(preset)
-        return presets
+        return parse_stored_presets(self.config.get_value(CONF_WAVE_PRESETS_DATA))
 
     def _browse_user_presets_list(
         self, path: str, presets: list[dict[str, str]]
@@ -1192,8 +1165,9 @@ class YandexMusicProvider(MusicProvider):
 
         Entries without a resolvable ``track_id`` (e.g. album-only context
         rows) are skipped silently. Order is preserved — most recent first —
-        by walking tabs in response order and relying on dict-lookup order
-        from the batch call.
+        by collecting unique IDs in response order into ``ordered_ids``,
+        then rebuilding the final list by iterating ``ordered_ids`` and
+        looking up each batch-fetched track in an id→track map.
 
         :return: List of recently played Track items.
         """
@@ -1451,22 +1425,39 @@ class YandexMusicProvider(MusicProvider):
         No-op when the station has no active session or already has prefetched
         tracks waiting — the latter avoids burning rate limit.
 
-        The read/extend pair runs under ``wave.lock`` because
-        ``get_similar_tracks`` drains ``wave.prefetched`` under the same lock.
-        Without it, a concurrent drain could see either a stale-empty buffer
-        (triggering a redundant prefetch) or a partially-written one.
+        Lock handling is deliberately split in three phases so an HTTP
+        round-trip doesn't block browse/playback code paths that need the
+        same lock (e.g. draining the prefetch buffer):
+
+          1. Acquire the lock, check that a prefetch is still needed and
+             snapshot the current ``session_id``, then release.
+          2. Do the network fetch without holding the lock.
+          3. Re-acquire the lock and append only if the session is still
+             the same and the buffer is still empty (another drain could
+             have already refilled it while we were fetching).
 
         :param station_key: Station key whose state to top up.
         """
         wave = self._wave_states.get(station_key)
         if wave is None:
             return
+
         async with wave.lock:
             if wave.session_id is None or wave.prefetched:
                 return
-            tracks, _ = await self._fetch_rotor_session_batch(wave, station_key)
-            if tracks:
-                wave.prefetched.extend(tracks)
+            session_id = wave.session_id
+
+        tracks, _ = await self._fetch_rotor_session_batch(wave, station_key)
+        if not tracks:
+            return
+
+        async with wave.lock:
+            # Another task could have restarted the session or filled the
+            # buffer while we were awaiting the network call; bail in both
+            # cases to avoid stale extends.
+            if wave.session_id != session_id or wave.prefetched:
+                return
+            wave.prefetched.extend(tracks)
 
     async def _fetch_rotor_session_batch(
         self, wave: _WaveState, station_id: str
@@ -2606,31 +2597,39 @@ class YandexMusicProvider(MusicProvider):
         seen_track_ids: set[str] = set()
         items: list[Track] = []
 
-        for _ in range(batch_size_config):
-            if len(seen_track_ids) >= max_tracks_config:
-                break
-
-            yandex_tracks, _ = await self._fetch_rotor_session_batch(wave, ROTOR_STATION_MY_WAVE)
-            if not yandex_tracks:
-                break
-
-            first_track_id_this_batch: str | None = None
-            for yt in yandex_tracks:
+        # Hold the wave lock across the whole fetch chain — we mutate shared
+        # session_id/batch_id/last_track_id via _fetch_rotor_session_batch,
+        # and other call sites (browse, virtual-playlist) guard the same
+        # state with this lock. Concurrent calls without the lock would
+        # interleave cursor updates and leave the session inconsistent.
+        async with wave.lock:
+            for _ in range(batch_size_config):
                 if len(seen_track_ids) >= max_tracks_config:
                     break
 
-                track = self._parse_my_wave_track(yt, seen_ids=seen_track_ids)
-                if track is None:
-                    continue
+                yandex_tracks, _ = await self._fetch_rotor_session_batch(
+                    wave, ROTOR_STATION_MY_WAVE
+                )
+                if not yandex_tracks:
+                    break
 
-                items.append(track)
-                track_id = track.item_id.split(RADIO_TRACK_ID_SEP, 1)[0]
+                first_track_id_this_batch: str | None = None
+                for yt in yandex_tracks:
+                    if len(seen_track_ids) >= max_tracks_config:
+                        break
+
+                    track = self._parse_my_wave_track(yt, seen_ids=seen_track_ids)
+                    if track is None:
+                        continue
+
+                    items.append(track)
+                    track_id = track.item_id.split(RADIO_TRACK_ID_SEP, 1)[0]
+                    if first_track_id_this_batch is None:
+                        first_track_id_this_batch = track_id
+
                 if first_track_id_this_batch is None:
-                    first_track_id_this_batch = track_id
-
-            if first_track_id_this_batch is None:
-                break
-            wave.last_track_id = first_track_id_this_batch
+                    break
+                wave.last_track_id = first_track_id_this_batch
 
         if not items:
             return None
@@ -3437,9 +3436,14 @@ class YandexMusicProvider(MusicProvider):
         :return: Tuple of (list of yandex tracks, batch_id or None).
         """
         wave = self._get_wave_state(station_id)
-        if queue is not None:
-            wave.last_track_id = str(queue)
-        return await self._fetch_rotor_session_batch(wave, station_id)
+        # Cursor update + batch fetch run under the station's lock, matching
+        # the discipline in browse / recommendations / prefetch. Without it,
+        # ynison replenish racing with a concurrent MA browse could interleave
+        # last_track_id writes and leave session_id / batch_id out of sync.
+        async with wave.lock:
+            if queue is not None:
+                wave.last_track_id = str(queue)
+            return await self._fetch_rotor_session_batch(wave, station_id)
 
     def get_quality(self) -> str:
         """Return the configured audio quality tier (e.g. 'balanced', 'superb')."""
