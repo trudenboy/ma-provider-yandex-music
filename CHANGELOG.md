@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.3.1] - 2026-04-23
+
+- fix(search): apply limit per bucket after classify_album (#116) (`272461a`)
+- chore: update changelog for v3.3.0 [skip ci] (`ec79132`)
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
 
 ## [3.3.1] - 2026-04-23
