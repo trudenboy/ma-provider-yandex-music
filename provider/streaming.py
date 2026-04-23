@@ -165,11 +165,6 @@ class YandexMusicStreamingManager:
             # allow_seek=True lets ffmpeg handle time-based seeking via -ss in those cases.
             byte_seekable = codec.lower() in ("mp3", "mpeg")
             can_seek = not needs_decryption and bit_rate > 0 and byte_seekable
-            # album_id pulled from the MA track mapping so on_streamed can
-            # forward it to the Yandex play-audio endpoint (keeps the track in
-            # Listening History) without another round-trip.
-            album_mapping = getattr(track, "album", None)
-            album_id = getattr(album_mapping, "item_id", "") if album_mapping else ""
             data: dict[str, Any] = {
                 "url": url,
                 "codec": codec,
@@ -178,9 +173,6 @@ class YandexMusicStreamingManager:
                 # Stored for URL refresh on 4xx:
                 "fi_quality": fi_params["quality"],
                 "fi_codecs": codecs,
-                # Stored for on_streamed → play-audio history reporting:
-                "track_id": track_id,
-                "album_id": album_id,
             }
             if needs_decryption and "key" in file_info:
                 data["decryption_key"] = file_info["key"]

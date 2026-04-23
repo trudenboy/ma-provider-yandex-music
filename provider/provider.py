@@ -210,12 +210,6 @@ class YandexMusicProvider(MusicProvider):
     _audiobook_chapter_cache: dict[str, tuple[list[str], list[int]]]
     # Stable play_id per audiobook session, cleared in on_streamed.
     _audiobook_play_ids: dict[str, str]
-    # Last on_played snapshot per track, used to flush a play_audio history
-    # event when the queue moves to a different track (MA's own on_streamed
-    # only fires after 90 s or full completion; native Yandex clients record
-    # history at 30 s). Key: provider item_id. Value: (track_id, position,
-    # duration, reported_flag).
-    _last_played_snapshot: dict[str, tuple[str, int, int, bool]]
 
     @property
     def client(self) -> YandexMusicClient:
@@ -363,7 +357,6 @@ class YandexMusicProvider(MusicProvider):
         self._wave_bg_colors = {}
         self._liked_albums_lock, self._liked_albums_cache = asyncio.Lock(), None
         self._audiobook_chapter_cache, self._audiobook_play_ids = {}, {}
-        self._last_played_snapshot = {}
         self.logger.info("Successfully connected to Yandex Music")
 
     async def unload(self, is_removed: bool = False) -> None:
@@ -3521,202 +3514,56 @@ class YandexMusicProvider(MusicProvider):
     ) -> None:
         """Report periodic playback updates.
 
-        Several things happen here, in priority order:
+        - Audiobooks: persist chapter progress via play_audio so Yandex's
+          own clients resume at the right point.
+        - Wave tracks: send rotor ``trackStarted`` while actively playing and
+          kick off a background prefetch so DSTM refill serves wave-curated
+          tracks with no extra round-trip. DSTM itself is the user's toggle —
+          the provider does not flip it.
 
-        1. **Audiobooks**: persist chapter progress via play_audio so Yandex's
-           own clients resume at the right point.
-        2. **Wave tracks**: send rotor ``trackStarted`` when actively playing,
-           and kick off a background prefetch so DSTM refill serves
-           wave-curated tracks with no extra round-trip. DSTM itself is the
-           user's toggle — the provider does not flip it.
-        3. **All tracks**: snapshot ``(track_id, position, duration)`` per
-           ``prov_item_id``. When the queue moves to a *different* item_id,
-           flush the previous snapshot's play_audio event (if played ≥30 s).
-           Matches the 30-second threshold native Yandex clients use for
-           writing into the server-side Listening History, and catches the
-           skip-before-90 s case that MA's own ``on_streamed`` never sees.
+        Generic track history reporting is not attempted here — the only
+        known channel Yandex writes into ``/handlers/music-history`` is a
+        long-lived Ynison WebSocket session, which lives in the sibling
+        yandex_ynison plugin. Regular tracks played through MA are therefore
+        invisible to Listening History unless that plugin is also active.
         """
         if media_type == MediaType.AUDIOBOOK:
             await self._report_audiobook_progress(prov_item_id, position)
             return
         if media_type != MediaType.TRACK:
             return
-
-        track_id, station_id = _parse_radio_item_id(prov_item_id)
-
-        # (2) Wave rotor signal for the currently-playing track.
+        _, station_id = _parse_radio_item_id(prov_item_id)
         if station_id and is_playing:
+            track_id, _ = _parse_radio_item_id(prov_item_id)
             wave = self._wave_states.get(station_id) or self._get_wave_state(station_id)
             await self._send_wave_feedback(wave, station_id, "trackStarted", track_id=track_id)
             self.mass.create_task(self._prefetch_rotor_session(station_id))
 
-        # (3) History-reporting state machine. Flush any other tracked item
-        # (the queue has moved on) and refresh the snapshot for this one.
-        duration = int(getattr(media_item, "duration", 0) or 0)
-        await self._update_playback_snapshot(
-            prov_item_id=prov_item_id,
-            track_id=track_id,
-            position=int(position or 0),
-            duration=duration,
-            fully_played=fully_played,
-        )
-
-    async def _update_playback_snapshot(
-        self,
-        *,
-        prov_item_id: str,
-        track_id: str,
-        position: int,
-        duration: int,
-        fully_played: bool,
-    ) -> None:
-        """Track per-item playback progress, flushing old snapshots to history.
-
-        See ``on_played`` for why this lives here and not in ``on_streamed``.
-        """
-        # Flush any other snapshot we've been tracking — if the queue has
-        # moved on to a different item_id, MA won't call on_streamed for
-        # the prior one unless it hit 90 s.
-        for other_id, snap in list(self._last_played_snapshot.items()):
-            if other_id == prov_item_id:
-                continue
-            other_track_id, other_position, other_duration, reported = snap
-            if not reported and other_position >= 30:
-                await self._report_track_play(other_track_id, other_duration, other_position)
-                self._last_played_snapshot[other_id] = (
-                    other_track_id,
-                    other_position,
-                    other_duration,
-                    True,
-                )
-            # Drop the stale snapshot either way — the queue isn't watching it.
-            self._last_played_snapshot.pop(other_id, None)
-
-        # Update the current snapshot. Always record; mark `reported` so we
-        # don't double-fire when fully_played arrives right before a track
-        # change.
-        prev = self._last_played_snapshot.get(prov_item_id)
-        already_reported = bool(prev[3]) if prev else False
-        self._last_played_snapshot[prov_item_id] = (
-            track_id,
-            position,
-            duration,
-            already_reported,
-        )
-        if fully_played and not already_reported and position >= 30:
-            await self._report_track_play(track_id, duration, position)
-            self._last_played_snapshot[prov_item_id] = (track_id, position, duration, True)
-
     async def on_streamed(self, streamdetails: StreamDetails) -> None:
         """Report stream completion to Yandex.
 
-        Three things happen here, independently:
-
-        1. **Audiobooks**: a final ``play_audio`` with the absolute stream
-           position so the last listening point is preserved across Yandex
-           clients. Cleans up session state even when ``data`` was stripped.
-        2. **Wave tracks** (composite item_id carries a station suffix): a
-           rotor ``trackFinished`` or ``skip`` event with the actual seconds
-           streamed so Yandex can improve recommendations.
-        3. **All tracks** (wave or plain library): a ``play_audio`` call that
-           writes the track into Yandex's server-side Listening History, so
-           it shows up in Browse → Listening History (and in Яндекс-клиенте
-           тоже) the same way native playback does. Does not rely on
-           ``streamdetails.data`` — that field can be stripped by MA's IPC
-           serialisation, so we resolve ``track_id``/``album_id`` from the
-           item_id directly.
+        - Audiobooks: a final ``play_audio`` with the absolute stream
+          position so the last listening point is preserved across Yandex
+          clients. Cleans up session state even when ``data`` was stripped.
+        - Wave tracks (composite item_id carries a station suffix): a rotor
+          ``trackFinished`` or ``skip`` event with the actual seconds streamed
+          so Yandex can improve recommendations.
         """
-        self.logger.debug(
-            "on_streamed: type=%s item_id=%s seconds=%s duration=%s queue=%s",
-            streamdetails.media_type,
-            streamdetails.item_id,
-            streamdetails.seconds_streamed,
-            streamdetails.duration,
-            streamdetails.queue_id,
-        )
         data = streamdetails.data if isinstance(streamdetails.data, dict) else None
         if streamdetails.media_type == MediaType.AUDIOBOOK:
-            # Audiobook flow has its own play_audio logic (per-chapter offsets)
-            # so it is mutually exclusive with the generic history-reporting
-            # path below.
             await self._report_audiobook_final(streamdetails, data or {})
             return
         if streamdetails.media_type != MediaType.TRACK:
             return
-
+        track_id, station_id = _parse_radio_item_id(streamdetails.item_id)
+        if not station_id:
+            return
         seconds = int(streamdetails.seconds_streamed or 0)
         duration = int(streamdetails.duration or 0)
-
-        # Wave feedback (rotor session) — only when the composite item_id
-        # carries a station suffix that identifies an active session.
-        track_id, station_id = _parse_radio_item_id(streamdetails.item_id)
-        if station_id:
-            feedback_type = (
-                "trackFinished" if duration and seconds >= max(0, duration - 10) else "skip"
-            )
-            wave = self._wave_states.get(station_id) or self._get_wave_state(station_id)
-            await self._send_wave_feedback(
-                wave,
-                station_id,
-                feedback_type,
-                track_id=track_id,
-                total_played_seconds=seconds,
-            )
-
-        # History reporting via play-audio. Skip very short plays (< 5 s)
-        # and plays already reported from on_played's queue-advance flush.
-        if seconds < 5 or not track_id:
-            return
-        prev = self._last_played_snapshot.get(streamdetails.item_id)
-        if prev and prev[3]:  # already reported
-            self._last_played_snapshot.pop(streamdetails.item_id, None)
-            return
-        await self._report_track_play(track_id, duration, seconds)
-        # Mark as reported so a stray on_played for the same item doesn't
-        # double-fire. (The snapshot gets GC'd on the next track change.)
-        if prev:
-            self._last_played_snapshot[streamdetails.item_id] = (
-                prev[0],
-                prev[1],
-                prev[2],
-                True,
-            )
-
-    async def _report_track_play(
-        self, track_id: str, track_length_seconds: int, played_seconds: int
-    ) -> None:
-        """Fire a play-audio event so the track lands in Yandex's history.
-
-        Resolves ``album_id`` by fetching the track via the shared client
-        (that call is already cached, so this is usually a no-op roundtrip).
-        Bail silently when no album can be found or the call fails —
-        history reporting is strictly best-effort.
-        """
-        album_id = ""
-        try:
-            fetched = await self.client.get_tracks([track_id])
-        except ResourceTemporarilyUnavailable as err:
-            self.logger.debug("play_audio hydration failed for %s: %s", track_id, err)
-            return
-        if fetched:
-            albums = getattr(fetched[0], "albums", None) or []
-            if albums and getattr(albums[0], "id", None) is not None:
-                album_id = str(albums[0].id)
-        self.logger.debug(
-            "play_audio: track_id=%s album_id=%s duration=%s played=%s",
-            track_id,
-            album_id,
-            track_length_seconds,
-            played_seconds,
-        )
-        await self.client.play_audio(
-            track_id=track_id,
-            album_id=album_id,
-            play_id=uuid.uuid4().hex,
-            track_length_seconds=track_length_seconds,
-            total_played_seconds=played_seconds,
-            end_position_seconds=played_seconds,
-            from_="music_assistant",
+        feedback_type = "trackFinished" if duration and seconds >= max(0, duration - 10) else "skip"
+        wave = self._wave_states.get(station_id) or self._get_wave_state(station_id)
+        await self._send_wave_feedback(
+            wave, station_id, feedback_type, track_id=track_id, total_played_seconds=seconds
         )
 
     def _audiobook_progress_point(
