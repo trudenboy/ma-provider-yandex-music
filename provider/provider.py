@@ -3538,32 +3538,69 @@ class YandexMusicProvider(MusicProvider):
             self.mass.create_task(self._prefetch_rotor_session(station_id))
 
     async def on_streamed(self, streamdetails: StreamDetails) -> None:
-        """Report stream completion for My Wave rotor feedback and audiobooks.
+        """Report stream completion to Yandex.
 
-        For radio: sends trackFinished or skip with actual seconds_streamed so
-        Yandex can improve recommendations.
+        Three things happen here, independently:
 
-        For audiobooks: sends a final play_audio with the absolute stream position
-        so the last listening point is preserved in Yandex.
+        1. **Audiobooks**: a final ``play_audio`` with the absolute stream
+           position so the last listening point is preserved across Yandex
+           clients. Cleans up session state even when ``data`` was stripped.
+        2. **Wave tracks** (composite item_id carries a station suffix): a
+           rotor ``trackFinished`` or ``skip`` event with the actual seconds
+           streamed so Yandex can improve recommendations.
+        3. **All tracks** (wave or plain library, anything with a resolved
+           ``track_id`` and ``album_id`` in stream data): a ``play_audio``
+           call that writes the track into Yandex's server-side Listening
+           History, so it shows up in Browse → Listening History (and in
+           Яндекс-клиенте тоже) the same way native playback does.
         """
         data = streamdetails.data if isinstance(streamdetails.data, dict) else None
         if streamdetails.media_type == MediaType.AUDIOBOOK:
-            # Always let the audiobook branch run so session state
-            # (play_id + chapter cache) is cleaned up even when ``data`` was
-            # stripped. ``_report_audiobook_final`` no-ops the play_audio call
-            # when chapter data is absent.
+            # Audiobook flow has its own play_audio logic (per-chapter offsets)
+            # so it is mutually exclusive with the generic history-reporting
+            # path below.
             await self._report_audiobook_final(streamdetails, data or {})
             return
-        # Radio feedback always enabled
-        track_id, station_id = _parse_radio_item_id(streamdetails.item_id)
-        if not station_id:
+        if streamdetails.media_type != MediaType.TRACK:
             return
+
         seconds = int(streamdetails.seconds_streamed or 0)
-        duration = streamdetails.duration or 0
-        feedback_type = "trackFinished" if duration and seconds >= max(0, duration - 10) else "skip"
-        wave = self._wave_states.get(station_id) or self._get_wave_state(station_id)
-        await self._send_wave_feedback(
-            wave, station_id, feedback_type, track_id=track_id, total_played_seconds=seconds
+        duration = int(streamdetails.duration or 0)
+
+        # Wave feedback (rotor session) — only when the composite item_id
+        # carries a station suffix that identifies an active session.
+        track_id, station_id = _parse_radio_item_id(streamdetails.item_id)
+        if station_id:
+            feedback_type = (
+                "trackFinished" if duration and seconds >= max(0, duration - 10) else "skip"
+            )
+            wave = self._wave_states.get(station_id) or self._get_wave_state(station_id)
+            await self._send_wave_feedback(
+                wave,
+                station_id,
+                feedback_type,
+                track_id=track_id,
+                total_played_seconds=seconds,
+            )
+
+        # History reporting via play-audio. Skip very short plays (< 5 s) —
+        # Yandex's own clients do the same, and it prevents accidental seeks
+        # or next-track skips from polluting the history. Also requires the
+        # stream data we stashed in `get_stream_details`; if missing, bail.
+        if data is None or seconds < 5:
+            return
+        stash_track_id = data.get("track_id")
+        album_id = data.get("album_id") or ""
+        if not stash_track_id:
+            return
+        await self.client.play_audio(
+            track_id=str(stash_track_id),
+            album_id=str(album_id),
+            play_id=uuid.uuid4().hex,
+            track_length_seconds=duration,
+            total_played_seconds=seconds,
+            end_position_seconds=seconds,
+            from_="music_assistant",
         )
 
     def _audiobook_progress_point(
