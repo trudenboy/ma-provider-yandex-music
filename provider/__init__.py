@@ -20,15 +20,94 @@ from .constants import (
     CONF_REFRESH_TOKEN,
     CONF_REMEMBER_SESSION,
     CONF_TOKEN,
-    CONF_WAVE_PRESETS,
+    CONF_WAVE_PRESET_PREFIX,
     CONF_X_TOKEN,
     DEFAULT_BASE_URL,
     QUALITY_BALANCED,
     QUALITY_EFFICIENT,
     QUALITY_HIGH,
     QUALITY_SUPERB,
+    WAVE_PRESET_DIVERSITY_VALUES,
+    WAVE_PRESET_LANGUAGE_VALUES,
+    WAVE_PRESET_MOOD_VALUES,
+    WAVE_PRESET_SLOTS,
 )
 from .provider import YandexMusicProvider
+
+
+def _wave_preset_config_entries() -> list[ConfigEntry]:
+    """Build the flat config entries that back user-defined wave presets.
+
+    Each of WAVE_PRESET_SLOTS slots exposes four simple fields:
+      - {prefix}_{n}_name      (free-form STRING; empty hides the preset)
+      - {prefix}_{n}_diversity (STRING with dropdown options)
+      - {prefix}_{n}_mood      (STRING with dropdown options)
+      - {prefix}_{n}_language  (STRING with dropdown options)
+    Users never need to write JSON — pick a name and up to three dropdowns.
+    """
+    empty_title = "— Default —"
+    diversity_options = [
+        ConfigValueOption(title=empty_title if not v else v.title(), value=v)
+        for v in WAVE_PRESET_DIVERSITY_VALUES
+    ]
+    mood_options = [
+        ConfigValueOption(title=empty_title if not v else v.title(), value=v)
+        for v in WAVE_PRESET_MOOD_VALUES
+    ]
+    language_options = [
+        ConfigValueOption(title=empty_title if not v else v.replace("-", " ").title(), value=v)
+        for v in WAVE_PRESET_LANGUAGE_VALUES
+    ]
+    entries: list[ConfigEntry] = []
+    for n in range(1, WAVE_PRESET_SLOTS + 1):
+        entries.extend(
+            (
+                ConfigEntry(
+                    key=f"{CONF_WAVE_PRESET_PREFIX}_{n}_name",
+                    type=ConfigEntryType.STRING,
+                    label=f"My Wave preset {n}: name",
+                    description=(
+                        "Display name shown under Radio then My Presets. "
+                        "Leave blank to hide this preset slot."
+                    ),
+                    default_value=None,
+                    required=False,
+                    advanced=True,
+                ),
+                ConfigEntry(
+                    key=f"{CONF_WAVE_PRESET_PREFIX}_{n}_diversity",
+                    type=ConfigEntryType.STRING,
+                    label=f"My Wave preset {n}: diversity",
+                    description="How broadly the wave explores.",
+                    options=diversity_options,
+                    default_value="",
+                    required=False,
+                    advanced=True,
+                ),
+                ConfigEntry(
+                    key=f"{CONF_WAVE_PRESET_PREFIX}_{n}_mood",
+                    type=ConfigEntryType.STRING,
+                    label=f"My Wave preset {n}: mood",
+                    description="Energy and mood of the tracks.",
+                    options=mood_options,
+                    default_value="",
+                    required=False,
+                    advanced=True,
+                ),
+                ConfigEntry(
+                    key=f"{CONF_WAVE_PRESET_PREFIX}_{n}_language",
+                    type=ConfigEntryType.STRING,
+                    label=f"My Wave preset {n}: language",
+                    description="Lyrics language filter.",
+                    options=language_options,
+                    default_value="",
+                    required=False,
+                    advanced=True,
+                ),
+            )
+        )
+    return entries
+
 
 if TYPE_CHECKING:
     from music_assistant_models.config_entries import ProviderConfig
@@ -232,23 +311,8 @@ async def get_config_entries(
             required=False,
             advanced=True,
         ),
-        # User-defined wave presets (advanced JSON)
-        ConfigEntry(
-            key=CONF_WAVE_PRESETS,
-            type=ConfigEntryType.STRING,
-            label="My Wave custom presets (JSON)",
-            description=(
-                "Named combinations of diversity, moodEnergy and language, "
-                "shown in Browse under Radio then My Presets. Accepts a JSON "
-                "array of objects; each object needs a name and any of: "
-                "diversity (discover, favorite, popular), moodEnergy "
-                "(active, fun, calm, sad), language (russian, not-russian, "
-                "without-words). Leave empty to hide the folder."
-            ),
-            default_value=None,
-            required=False,
-            advanced=True,
-        ),
+        # User-defined wave presets: 3 slots x 4 plain fields each
+        *_wave_preset_config_entries(),
         # Liked Tracks maximum tracks (advanced)
         ConfigEntry(
             key=CONF_LIKED_TRACKS_MAX_TRACKS,

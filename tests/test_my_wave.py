@@ -342,62 +342,82 @@ async def test_library_add_track_without_station_skips_rotor_feedback() -> None:
 # -- user wave presets (P8) ---------------------------------------------------
 
 
-def test_get_user_wave_presets_parses_valid_json_list() -> None:
-    """Valid JSON list is parsed into preset dicts, name is required."""
+def _preset_config(values: dict[str, str]) -> Mock:
+    """Build a config stub whose get_value looks up keys in the given dict.
+
+    Non-listed keys return None, matching MA's ``ConfigValueType | None`` contract.
+    """
+    config = Mock()
+    config.get_value = Mock(side_effect=values.get)
+    return config
+
+
+def test_get_user_wave_presets_collects_filled_slots() -> None:
+    """Filled slots (name + any dropdowns) are returned in order."""
     provider = Mock(spec=YandexMusicProvider)
-    provider.config = Mock()
-    provider.config.get_value = Mock(
-        return_value=(
-            '[{"name": "Morning", "diversity": "discover", "moodEnergy": "calm"}, '
-            '{"name": "Evening", "language": "russian"}]'
-        )
+    provider.config = _preset_config(
+        {
+            "wave_preset_1_name": "Morning",
+            "wave_preset_1_diversity": "discover",
+            "wave_preset_1_mood": "calm",
+            "wave_preset_2_name": "Evening",
+            "wave_preset_2_language": "russian",
+        }
     )
     provider.logger = Mock()
 
     result = YandexMusicProvider._get_user_wave_presets(provider)
 
     assert len(result) == 2
-    assert result[0]["name"] == "Morning"
-    assert result[0]["diversity"] == "discover"
-    assert result[0]["moodEnergy"] == "calm"
-    assert result[1]["name"] == "Evening"
-    assert result[1]["language"] == "russian"
+    assert result[0] == {"name": "Morning", "diversity": "discover", "moodEnergy": "calm"}
+    assert result[1] == {"name": "Evening", "language": "russian"}
 
 
-def test_get_user_wave_presets_returns_empty_for_empty_string() -> None:
-    """Empty config → empty list (no presets configured)."""
+def test_get_user_wave_presets_skips_slots_without_name() -> None:
+    """A slot with dropdowns but no name is treated as disabled."""
     provider = Mock(spec=YandexMusicProvider)
-    provider.config = Mock()
-    provider.config.get_value = Mock(return_value="")
-    provider.logger = Mock()
-
-    assert YandexMusicProvider._get_user_wave_presets(provider) == []
-
-
-def test_get_user_wave_presets_drops_entries_without_name() -> None:
-    """Entries lacking a name are silently skipped, not crashing."""
-    provider = Mock(spec=YandexMusicProvider)
-    provider.config = Mock()
-    provider.config.get_value = Mock(return_value='[{"diversity": "discover"}, {"name": "Valid"}]')
+    provider.config = _preset_config(
+        {
+            "wave_preset_1_name": "",  # disabled
+            "wave_preset_1_diversity": "discover",
+            "wave_preset_2_name": "Active",
+            "wave_preset_2_mood": "active",
+        }
+    )
     provider.logger = Mock()
 
     result = YandexMusicProvider._get_user_wave_presets(provider)
 
     assert len(result) == 1
-    assert result[0]["name"] == "Valid"
+    assert result[0]["name"] == "Active"
+    assert result[0]["moodEnergy"] == "active"
 
 
-def test_get_user_wave_presets_handles_invalid_json() -> None:
-    """Malformed JSON → empty list + warning logged."""
+def test_get_user_wave_presets_empty_config_returns_empty() -> None:
+    """No configured slots → empty list."""
     provider = Mock(spec=YandexMusicProvider)
-    provider.config = Mock()
-    provider.config.get_value = Mock(return_value="not json {{{")
+    provider.config = _preset_config({})
+    provider.logger = Mock()
+
+    assert YandexMusicProvider._get_user_wave_presets(provider) == []
+
+
+def test_get_user_wave_presets_drops_empty_dropdown_values() -> None:
+    """Dropdowns set to the 'default' sentinel ("") are not forwarded."""
+    provider = Mock(spec=YandexMusicProvider)
+    provider.config = _preset_config(
+        {
+            "wave_preset_1_name": "Just name",
+            "wave_preset_1_diversity": "",
+            "wave_preset_1_mood": "",
+            "wave_preset_1_language": "",
+        }
+    )
     provider.logger = Mock()
 
     result = YandexMusicProvider._get_user_wave_presets(provider)
 
-    assert result == []
-    provider.logger.warning.assert_called_once()
+    assert result == [{"name": "Just name"}]
 
 
 def test_parse_playlist_is_dynamic_flag_propagates() -> None:

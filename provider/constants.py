@@ -122,10 +122,34 @@ WAVE_MODE_SEP: Final[str] = "#"
 MY_WAVE_MODES_FOLDER_ID: Final[str] = "my_wave_modes"
 MY_WAVE_PRESETS_FOLDER_ID: Final[str] = "my_wave_presets"
 
-# Config key for user-defined wave presets (JSON string).
-# Shape: [{"name": "Morning commute", "diversity": "discover",
-#          "moodEnergy": "calm", "language": "russian"}, ...]
-CONF_WAVE_PRESETS: Final[str] = "wave_presets"
+# Number of user-editable preset slots shown in the settings UI.
+WAVE_PRESET_SLOTS: Final[int] = 3
+
+# Config key prefix for user-defined wave presets. Each slot is expanded into
+# four flat keys: `wave_preset_{n}_name/diversity/mood/language`, so users can
+# fill them in with plain dropdowns instead of hand-writing JSON.
+CONF_WAVE_PRESET_PREFIX: Final[str] = "wave_preset"
+
+# Allowed per-dimension values (plus "" to mean "use wave default").
+WAVE_PRESET_DIVERSITY_VALUES: Final[tuple[str, ...]] = (
+    "",
+    "discover",
+    "favorite",
+    "popular",
+)
+WAVE_PRESET_MOOD_VALUES: Final[tuple[str, ...]] = (
+    "",
+    "active",
+    "fun",
+    "calm",
+    "sad",
+)
+WAVE_PRESET_LANGUAGE_VALUES: Final[tuple[str, ...]] = (
+    "",
+    "russian",
+    "not-russian",
+    "without-words",
+)
 
 WAVE_MODE_PRESETS: Final[dict[str, dict[str, str]]] = {
     "discover": {"diversity": "discover"},
