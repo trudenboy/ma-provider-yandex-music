@@ -1206,9 +1206,16 @@ class YandexMusicProvider(MusicProvider):
     async def _browse_history(self) -> Sequence[MediaItemType | ItemMapping | BrowseFolder]:
         """Browse user's recent listening history (flattened across days).
 
-        Filters to ``type == "track"`` entries only — album/playlist context
-        items in the history feed are dropped. Tracks are de-duplicated by
-        id and returned in most-recent-first order.
+        Collects ``track_id`` values from each history entry's ``item_id``
+        sub-object (``full_model`` is not populated by the current API
+        response — MarshalX exposes the IDs separately), dedupes, and
+        batch-resolves them via ``get_tracks`` so the returned Track objects
+        carry full artist/album/cover metadata.
+
+        Entries without a resolvable ``track_id`` (e.g. album-only context
+        rows) are skipped silently. Order is preserved — most recent first —
+        by walking tabs in response order and relying on dict-lookup order
+        from the batch call.
 
         :return: List of recently played Track items.
         """
@@ -1218,25 +1225,47 @@ class YandexMusicProvider(MusicProvider):
             return []
 
         seen_track_ids: set[str] = set()
-        tracks: list[Track] = []
+        ordered_ids: list[str] = []
         for tab in tabs:
-            groups = getattr(tab, "items", None) or []
-            for group in groups:
-                history_items = getattr(group, "tracks", None) or []
-                for hist_item in history_items:
+            for group in getattr(tab, "items", None) or []:
+                for hist_item in getattr(group, "tracks", None) or []:
                     if getattr(hist_item, "type", None) != "track":
                         continue
-                    full = getattr(getattr(hist_item, "data", None), "full_model", None)
-                    if full is None or getattr(full, "id", None) is None:
+                    item_id_obj = getattr(getattr(hist_item, "data", None), "item_id", None)
+                    track_key: str | None = None
+                    if isinstance(item_id_obj, dict):
+                        track_key = item_id_obj.get("track_id") or item_id_obj.get("id")
+                    else:
+                        track_key = getattr(item_id_obj, "track_id", None) or getattr(
+                            item_id_obj, "id", None
+                        )
+                    if not track_key:
                         continue
-                    track_key = str(full.id)
+                    track_key = str(track_key)
                     if track_key in seen_track_ids:
                         continue
                     seen_track_ids.add(track_key)
-                    try:
-                        tracks.append(parse_track(self, full))
-                    except InvalidDataError as err:
-                        self.logger.debug("Skipping history track: %s", err)
+                    ordered_ids.append(track_key)
+
+        if not ordered_ids:
+            return []
+
+        try:
+            fetched = await self.client.get_tracks(ordered_ids)
+        except ResourceTemporarilyUnavailable as err:
+            self.logger.warning("Failed to hydrate history tracks: %s", err)
+            return []
+
+        by_id = {str(t.id): t for t in fetched if getattr(t, "id", None) is not None}
+        tracks: list[Track] = []
+        for tid in ordered_ids:
+            yt = by_id.get(tid)
+            if yt is None:
+                continue
+            try:
+                tracks.append(parse_track(self, yt))
+            except InvalidDataError as err:
+                self.logger.debug("Skipping history track %s: %s", tid, err)
         return tracks
 
     async def _browse_picks(
@@ -1773,11 +1802,15 @@ class YandexMusicProvider(MusicProvider):
     def _extract_wave_item_cover(item: dict[str, Any]) -> tuple[str | None, str | None]:
         """Extract cover URI and background color from a wave/mix item.
 
+        Accepts both camelCase (``compactImageUrl`` — what /landing-blocks/
+        actually returns) and snake_case (``compact_image_url`` — retained
+        for safety if MarshalX ever normalises the payload).
+
         :param item: Wave or mix item dict from the API.
         :return: (cover_uri, bg_color) tuple where bg_color is a hex string or None.
         """
         agent_uri = item.get("agent", {}).get("cover", {}).get("uri", "")
-        cover_uri = agent_uri or item.get("compact_image_url")
+        cover_uri = agent_uri or item.get("compactImageUrl") or item.get("compact_image_url")
         bg_color = item.get("colors", {}).get("average")
         return cover_uri, bg_color
 
@@ -1872,7 +1905,9 @@ class YandexMusicProvider(MusicProvider):
                 items = wave_category.get("items", [])
                 result: list[BrowseFolder] = []
                 for item in items:
-                    station_id = item.get("station_id", "")
+                    # API returns camelCase (`stationId`); keep snake_case as a
+                    # safety net if the payload is ever normalised upstream.
+                    station_id = item.get("stationId") or item.get("station_id") or ""
                     title = item.get("title", "")
                     if not station_id or not title:
                         continue
