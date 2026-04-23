@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- changelog entries will be added here by release workflow -->
 
+## [3.3.0] - 2026-04-23
+
+- feat(audiobook): sync playback progress to Yandex via `play_audio` from `on_played` / `on_streamed` so position is visible across Yandex clients; propagate `album.listening_finished` to `Audiobook.fully_played` (`974b675`)
+- feat(search): map `MediaType.AUDIOBOOK` to Yandex `album` search and split results via `classify_album`; dedup requested types so `ALBUM + AUDIOBOOK` issues one API call (`974b675`)
+- feat(browse): add *My Audiobooks* / *My Podcasts* folders to Collection (RU+EN) and route their subpaths through base `MusicProvider.browse` (`974b675`)
+- refactor(audiobook): extract `_extract_chapter_map_from_album` helper, clear caches on `on_streamed`/`unload`, widen error swallowing in `play_audio` / `_report_audiobook_progress` (`7c64a51`)
+- chore(changelog): reorder entries newest-first (`c87ac16`)
+
+---
+
+## [3.2.1] - 2026-04-22
+
+- fix(audiobook): wire seek through can_seek and bound chapter failures (`40bdc9b`)
+- chore: update changelog for v3.2.0 [skip ci] (`f499ea4`)
+
+---
+
 ## [3.2.0] - 2026-04-21
 
 - feat(audiobook): stream audiobooks via chapter concatenation (`d9f483c`)
