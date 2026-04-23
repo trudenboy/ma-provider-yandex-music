@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from music_assistant_models.enums import MediaType
 from music_assistant_models.media_items import ProviderMapping
 from music_assistant_models.media_items import Track as MATrack
 
@@ -12,6 +13,7 @@ from music_assistant.providers.yandex_music.constants import (
     RADIO_TRACK_ID_SEP,
     ROTOR_STATION_MY_WAVE,
 )
+from music_assistant.providers.yandex_music.parsers import parse_playlist
 from music_assistant.providers.yandex_music.provider import (
     YandexMusicProvider,
     _parse_radio_item_id,
@@ -211,6 +213,217 @@ async def test_fetch_rotor_session_batch_unknown_preset_passes_station_through()
 
 
 # -- _parse_my_wave_track with explicit station_key --------------------------
+
+
+# -- prefetch next batch (P6) -------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_prefetch_rotor_session_fills_prefetched_when_idle() -> None:
+    """With an active session and no prefetched tracks, fills wave.prefetched."""
+    provider = Mock(spec=YandexMusicProvider)
+    wave = _WaveState()
+    wave.session_id = "sess_1"
+    provider._wave_states = {ROTOR_STATION_MY_WAVE: wave}
+    provider._fetch_rotor_session_batch = AsyncMock(return_value=(["t1", "t2"], "batch_b"))
+
+    await YandexMusicProvider._prefetch_rotor_session(provider, ROTOR_STATION_MY_WAVE)
+
+    assert wave.prefetched == ["t1", "t2"]
+
+
+@pytest.mark.asyncio
+async def test_prefetch_rotor_session_noop_without_session() -> None:
+    """Prefetch does nothing when the station has no active session_id."""
+    provider = Mock(spec=YandexMusicProvider)
+    wave = _WaveState()
+    provider._wave_states = {ROTOR_STATION_MY_WAVE: wave}
+    provider._fetch_rotor_session_batch = AsyncMock()
+
+    await YandexMusicProvider._prefetch_rotor_session(provider, ROTOR_STATION_MY_WAVE)
+
+    provider._fetch_rotor_session_batch.assert_not_awaited()
+    assert wave.prefetched == []
+
+
+@pytest.mark.asyncio
+async def test_prefetch_rotor_session_noop_when_already_prefilled() -> None:
+    """Prefetch skips work when wave.prefetched already has items (avoid rate burn)."""
+    provider = Mock(spec=YandexMusicProvider)
+    wave = _WaveState()
+    wave.session_id = "sess_1"
+    wave.prefetched = ["existing_track"]
+    provider._wave_states = {ROTOR_STATION_MY_WAVE: wave}
+    provider._fetch_rotor_session_batch = AsyncMock()
+
+    await YandexMusicProvider._prefetch_rotor_session(provider, ROTOR_STATION_MY_WAVE)
+
+    provider._fetch_rotor_session_batch.assert_not_awaited()
+
+
+# -- rotor feedback on library_add (P5) ---------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_library_add_track_from_wave_also_sends_rotor_like() -> None:
+    """library_add for a track from a wave session sends both users.like and rotor.like."""
+    provider = Mock(spec=YandexMusicProvider)
+    provider.instance_id = "yandex_music_instance"
+    provider.logger = Mock()
+    provider.client = AsyncMock()
+    provider.client.like_track = AsyncMock(return_value=True)
+    composite = f"12345{RADIO_TRACK_ID_SEP}{ROTOR_STATION_MY_WAVE}"
+    provider._get_provider_item_id = Mock(return_value=composite)
+    # Share a session so like is routed to rotor_session_feedback
+    wave = _WaveState()
+    wave.session_id = "sess_1"
+    wave.batch_id = "batch_a"
+    provider._wave_states = {ROTOR_STATION_MY_WAVE: wave}
+    provider._get_wave_state = Mock(return_value=wave)
+    provider._send_wave_feedback = AsyncMock(return_value=True)
+
+    item = MATrack(
+        item_id=composite,
+        provider="yandex_music_instance",
+        name="Test",
+        provider_mappings={
+            ProviderMapping(
+                item_id=composite,
+                provider_domain="yandex_music",
+                provider_instance="yandex_music_instance",
+            )
+        },
+    )
+    item.media_type = MediaType.TRACK
+
+    result = await YandexMusicProvider.library_add(provider, item)
+
+    assert result is True
+    provider.client.like_track.assert_awaited_once_with("12345")
+    provider._send_wave_feedback.assert_awaited_once()
+    args, kwargs = provider._send_wave_feedback.await_args
+    assert args[0] is wave
+    assert args[1] == ROTOR_STATION_MY_WAVE
+    assert args[2] == "like"
+    assert kwargs == {"track_id": "12345"}
+
+
+@pytest.mark.asyncio
+async def test_library_add_track_without_station_skips_rotor_feedback() -> None:
+    """Plain track_id (no station suffix) does NOT trigger rotor feedback."""
+    provider = Mock(spec=YandexMusicProvider)
+    provider.instance_id = "yandex_music_instance"
+    provider.logger = Mock()
+    provider.client = AsyncMock()
+    provider.client.like_track = AsyncMock(return_value=True)
+    provider._get_provider_item_id = Mock(return_value="12345")
+    provider._send_wave_feedback = AsyncMock()
+
+    item = MATrack(
+        item_id="12345",
+        provider="yandex_music_instance",
+        name="Test",
+        provider_mappings={
+            ProviderMapping(
+                item_id="12345",
+                provider_domain="yandex_music",
+                provider_instance="yandex_music_instance",
+            )
+        },
+    )
+    item.media_type = MediaType.TRACK
+
+    await YandexMusicProvider.library_add(provider, item)
+
+    provider.client.like_track.assert_awaited_once_with("12345")
+    provider._send_wave_feedback.assert_not_awaited()
+
+
+# -- user wave presets (P8) ---------------------------------------------------
+
+
+def test_get_user_wave_presets_parses_valid_json_list() -> None:
+    """Valid JSON list is parsed into preset dicts, name is required."""
+    provider = Mock(spec=YandexMusicProvider)
+    provider.config = Mock()
+    provider.config.get_value = Mock(
+        return_value=(
+            '[{"name": "Morning", "diversity": "discover", "moodEnergy": "calm"}, '
+            '{"name": "Evening", "language": "russian"}]'
+        )
+    )
+    provider.logger = Mock()
+
+    result = YandexMusicProvider._get_user_wave_presets(provider)
+
+    assert len(result) == 2
+    assert result[0]["name"] == "Morning"
+    assert result[0]["diversity"] == "discover"
+    assert result[0]["moodEnergy"] == "calm"
+    assert result[1]["name"] == "Evening"
+    assert result[1]["language"] == "russian"
+
+
+def test_get_user_wave_presets_returns_empty_for_empty_string() -> None:
+    """Empty config → empty list (no presets configured)."""
+    provider = Mock(spec=YandexMusicProvider)
+    provider.config = Mock()
+    provider.config.get_value = Mock(return_value="")
+    provider.logger = Mock()
+
+    assert YandexMusicProvider._get_user_wave_presets(provider) == []
+
+
+def test_get_user_wave_presets_drops_entries_without_name() -> None:
+    """Entries lacking a name are silently skipped, not crashing."""
+    provider = Mock(spec=YandexMusicProvider)
+    provider.config = Mock()
+    provider.config.get_value = Mock(return_value='[{"diversity": "discover"}, {"name": "Valid"}]')
+    provider.logger = Mock()
+
+    result = YandexMusicProvider._get_user_wave_presets(provider)
+
+    assert len(result) == 1
+    assert result[0]["name"] == "Valid"
+
+
+def test_get_user_wave_presets_handles_invalid_json() -> None:
+    """Malformed JSON → empty list + warning logged."""
+    provider = Mock(spec=YandexMusicProvider)
+    provider.config = Mock()
+    provider.config.get_value = Mock(return_value="not json {{{")
+    provider.logger = Mock()
+
+    result = YandexMusicProvider._get_user_wave_presets(provider)
+
+    assert result == []
+    provider.logger.warning.assert_called_once()
+
+
+def test_parse_playlist_is_dynamic_flag_propagates() -> None:
+    """parse_playlist honours is_dynamic=True so feed autoplaylists skip MA cache."""
+    provider = Mock(spec=YandexMusicProvider)
+    provider.instance_id = "yandex_music_instance"
+    provider.domain = "yandex_music"
+    provider.client = Mock()
+    provider.client.user_id = 12345
+
+    playlist_obj = Mock()
+    playlist_obj.owner = Mock(uid=67890, name="Яндекс")
+    playlist_obj.kind = 42
+    playlist_obj.title = "Плейлист дня"
+    playlist_obj.description = None
+    playlist_obj.cover = None
+    playlist_obj.track_count = 50
+    playlist_obj.modified = None
+    playlist_obj.created = None
+    playlist_obj.tags = []
+
+    result_dynamic = parse_playlist(provider, playlist_obj, is_dynamic=True)
+    result_static = parse_playlist(provider, playlist_obj)
+
+    assert result_dynamic.is_dynamic is True
+    assert result_static.is_dynamic is False
 
 
 def test_parse_my_wave_track_uses_provided_station_key_for_item_id() -> None:

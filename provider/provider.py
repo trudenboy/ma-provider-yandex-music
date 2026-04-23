@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import random
 import uuid
@@ -57,6 +58,7 @@ from .constants import (
     CONF_QUALITY,
     CONF_REFRESH_TOKEN,
     CONF_TOKEN,
+    CONF_WAVE_PRESETS,
     CONF_X_TOKEN,
     DEFAULT_BASE_URL,
     DISCOVERY_INITIAL_TRACKS,
@@ -67,6 +69,7 @@ from .constants import (
     MY_WAVE_BATCH_SIZE,
     MY_WAVE_MODES_FOLDER_ID,
     MY_WAVE_PLAYLIST_ID,
+    MY_WAVE_PRESETS_FOLDER_ID,
     MY_WAVES_FOLDER_ID,
     MY_WAVES_SET_FOLDER_ID,
     PINNED_ITEMS_FOLDER_ID,
@@ -374,7 +377,7 @@ class YandexMusicProvider(MusicProvider):
             name=name,
         )
 
-    async def browse(  # noqa: PLR0911
+    async def browse(  # noqa: PLR0911, PLR0915
         self, path: str
     ) -> Sequence[MediaItemType | ItemMapping | BrowseFolder]:
         """Browse provider items with locale-based folder names and My Wave.
@@ -407,6 +410,30 @@ class YandexMusicProvider(MusicProvider):
                 async with self._get_wave_state(station_key).lock:
                     return await self._browse_my_wave_mode(path, station_key, load_more)
             return []
+
+        # User-saved wave presets. Path: my_wave_presets[/idx[/next]]
+        if subpath == MY_WAVE_PRESETS_FOLDER_ID:
+            presets = self._get_user_wave_presets()
+            if sub_subpath is None:
+                return self._browse_user_presets_list(path, presets)
+            try:
+                idx = int(sub_subpath)
+            except ValueError:
+                return []
+            if not 0 <= idx < len(presets):
+                return []
+            preset = presets[idx]
+            station_key = f"{ROTOR_STATION_MY_WAVE}{WAVE_MODE_SEP}preset_{idx}"
+            wave = self._get_wave_state(station_key)
+            # Stash user-chosen settings so _fetch_rotor_session_batch sends them
+            wave.settings = {
+                k: v
+                for k, v in preset.items()
+                if k in ("diversity", "moodEnergy", "language") and v
+            }
+            load_more = len(path_parts) > 2 and path_parts[2] == "next"
+            async with wave.lock:
+                return await self._browse_my_wave_mode(path, station_key, load_more)
 
         # For You folder (picks + mixes)
         if subpath == FOR_YOU_FOLDER_ID:
@@ -505,6 +532,17 @@ class YandexMusicProvider(MusicProvider):
                 is_playable=False,
             )
         )
+        # User-defined wave presets (P8) — shown only when any configured.
+        if self._get_user_wave_presets():
+            folders.append(
+                BrowseFolder(
+                    item_id=MY_WAVE_PRESETS_FOLDER_ID,
+                    provider=self.instance_id,
+                    path=f"{base}{MY_WAVE_PRESETS_FOLDER_ID}",
+                    name=names.get(MY_WAVE_PRESETS_FOLDER_ID, "My Presets"),
+                    is_playable=False,
+                )
+            )
         # For You folder — Picks + Mixes (Яндекс «Для вас»)
         folders.append(
             BrowseFolder(
@@ -678,6 +716,62 @@ class YandexMusicProvider(MusicProvider):
                 )
             )
         return all_tracks
+
+    def _get_user_wave_presets(self) -> list[dict[str, str]]:
+        """Parse CONF_WAVE_PRESETS (JSON) into a validated list of preset dicts.
+
+        Each preset is a dict with ``name`` plus any of ``diversity``,
+        ``moodEnergy``, ``language``. Invalid JSON or entries without a name
+        are silently dropped — the config UI already documents the format.
+
+        :return: Possibly empty list of preset dicts in config order.
+        """
+        raw = self.config.get_value(CONF_WAVE_PRESETS)
+        if not raw or not isinstance(raw, str):
+            return []
+        try:
+            parsed = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            self.logger.warning("Failed to parse %s — expected JSON list", CONF_WAVE_PRESETS)
+            return []
+        if not isinstance(parsed, list):
+            return []
+        presets: list[dict[str, str]] = []
+        for item in parsed:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("name")
+            if not isinstance(name, str) or not name.strip():
+                continue
+            presets.append({k: str(v) for k, v in item.items() if isinstance(v, str)})
+        return presets
+
+    def _browse_user_presets_list(
+        self, path: str, presets: list[dict[str, str]]
+    ) -> list[BrowseFolder]:
+        """Return one playable BrowseFolder per configured user preset.
+
+        The preset *name* is displayed; index within the config list becomes
+        the path segment (``my_wave_presets/0``) so identical names don't
+        collide. An empty list yields an empty browse.
+
+        :param path: Current browse path (base for child paths).
+        :param presets: Sanitized presets from ``_get_user_wave_presets``.
+        :return: List of playable BrowseFolder entries.
+        """
+        base = path if path.endswith("/") else f"{path}/"
+        folders: list[BrowseFolder] = []
+        for idx, preset in enumerate(presets):
+            folders.append(
+                BrowseFolder(
+                    item_id=f"{MY_WAVE_PRESETS_FOLDER_ID}_{idx}",
+                    provider=self.instance_id,
+                    path=f"{base}{idx}",
+                    name=preset.get("name", f"Preset {idx + 1}"),
+                    is_playable=True,
+                )
+            )
+        return folders
 
     def _browse_my_wave_modes_list(self, path: str) -> list[BrowseFolder]:
         """Return the 11 wave-mode entries as playable browse folders.
@@ -1306,6 +1400,28 @@ class YandexMusicProvider(MusicProvider):
             total_played_seconds=total_played_seconds,
             batch_id=wave.batch_id,
         )
+
+    async def _prefetch_rotor_session(self, station_key: str) -> None:
+        """Fire-and-forget: fetch the next batch for an active wave session.
+
+        Called from ``on_played`` while a wave track starts playing, so by the
+        time Music Assistant's DSTM asks for more via ``get_similar_tracks``,
+        we already have Yandex-curated wave tracks sitting in
+        ``wave.prefetched`` ready to serve (no extra round-trip).
+
+        No-op when the station has no active session or already has prefetched
+        tracks waiting — the latter avoids burning rate limit.
+
+        :param station_key: Station key whose state to top up.
+        """
+        wave = self._wave_states.get(station_key)
+        if wave is None or wave.session_id is None:
+            return
+        if wave.prefetched:
+            return
+        tracks, _ = await self._fetch_rotor_session_batch(wave, station_key)
+        if tracks:
+            wave.prefetched.extend(tracks)
 
     async def _fetch_rotor_session_batch(
         self, wave: _WaveState, station_id: str
@@ -2275,28 +2391,48 @@ class YandexMusicProvider(MusicProvider):
 
     @use_cache(3600 * 3)
     async def get_similar_tracks(self, prov_track_id: str, limit: int = 25) -> list[Track]:
-        """Get similar tracks via a Yandex rotor session seeded by this track.
+        """Get similar tracks, preferring pre-fetched wave tracks when available.
 
-        Creates (or reuses) a per-seed rotor session so subsequent feedback
-        from on_played/on_streamed carries the correct session_id + batch_id
-        for Yandex's wave algorithm. Each seed track has its own _WaveState
-        under "track:{id}".
+        When the seed track came from an active wave session (its item_id
+        carries a station suffix and we have pre-fetched tracks waiting), drain
+        from ``wave.prefetched`` so Music Assistant's DSTM continues the wave
+        instead of branching into a new "similar to this one track" session.
+
+        On fallback (plain track_id, no active wave, or empty prefetch buffer)
+        create a per-seed rotor session under ``track:{id}`` as before.
 
         :param prov_track_id: Provider track ID (plain or track_id@station_id).
         :param limit: Maximum number of tracks to return.
         :return: List of similar Track objects.
         """
-        track_id, _ = _parse_radio_item_id(prov_track_id)
+        track_id, station_key = _parse_radio_item_id(prov_track_id)
+
+        if station_key:
+            wave = self._wave_states.get(station_key)
+            if wave and wave.session_id and wave.prefetched:
+                async with wave.lock:
+                    if wave.prefetched:
+                        drained = wave.prefetched[:limit]
+                        wave.prefetched = wave.prefetched[limit:]
+                        tracks: list[Track] = []
+                        for yt in drained:
+                            try:
+                                tracks.append(parse_track(self, yt))
+                            except InvalidDataError as err:
+                                self.logger.debug("Error parsing prefetched wave track: %s", err)
+                        if tracks:
+                            return tracks
+
         station_id = f"track:{track_id}"
         wave = self._get_wave_state(station_id)
         yandex_tracks, _ = await self._fetch_rotor_session_batch(wave, station_id)
-        tracks = []
+        similar_tracks: list[Track] = []
         for yt in yandex_tracks[:limit]:
             try:
-                tracks.append(parse_track(self, yt))
+                similar_tracks.append(parse_track(self, yt))
             except InvalidDataError as err:
                 self.logger.debug("Error parsing similar track: %s", err)
-        return tracks
+        return similar_tracks
 
     @use_cache(3600 * 3)
     async def get_similar_artists(self, prov_artist_id: str, limit: int = 25) -> list[Artist]:
@@ -2448,7 +2584,10 @@ class YandexMusicProvider(MusicProvider):
         for gen_playlist in feed.generated_playlists:
             if gen_playlist.data and gen_playlist.ready:
                 try:
-                    items.append(parse_playlist(self, gen_playlist.data))
+                    # Mark feed-generated playlists (Playlist of the Day, DejaVu,
+                    # Premiere, Missed Likes) as dynamic — Yandex regenerates them
+                    # on a schedule so MA must not long-cache the track list.
+                    items.append(parse_playlist(self, gen_playlist.data, is_dynamic=True))
                 except InvalidDataError as err:
                     self.logger.debug("Error parsing feed playlist: %s", err)
         if not items:
@@ -2946,16 +3085,26 @@ class YandexMusicProvider(MusicProvider):
     async def library_add(self, item: MediaItemType) -> bool:
         """Add item to library.
 
+        For tracks carrying a wave station context in the item_id (e.g. when
+        the user adds a My Wave track to favourites during playback), also
+        fires a rotor ``like`` feedback on the active session so the wave
+        algorithm biases toward similar tracks immediately.
+
         :param item: The media item to add.
         :return: True if successful.
         """
         prov_item_id = self._get_provider_item_id(item)
         if not prov_item_id:
             return False
-        track_id, _ = _parse_radio_item_id(prov_item_id)
+        track_id, station_key = _parse_radio_item_id(prov_item_id)
 
         if item.media_type == MediaType.TRACK:
-            return await self.client.like_track(track_id)
+            ok = await self.client.like_track(track_id)
+            if ok and station_key:
+                wave = self._wave_states.get(station_key)
+                if wave and wave.session_id:
+                    await self._send_wave_feedback(wave, station_key, "like", track_id=track_id)
+            return ok
         if item.media_type in (MediaType.ALBUM, MediaType.PODCAST, MediaType.AUDIOBOOK):
             return await self.client.like_album(prov_item_id)
         if item.media_type == MediaType.ARTIST:
@@ -3285,6 +3434,9 @@ class YandexMusicProvider(MusicProvider):
         if is_playing:
             wave = self._wave_states.get(station_id) or self._get_wave_state(station_id)
             await self._send_wave_feedback(wave, station_id, "trackStarted", track_id=track_id)
+            # Fire-and-forget prefetch so DSTM refill finds pre-fetched wave
+            # tracks via get_similar_tracks without an extra round-trip.
+            self.mass.create_task(self._prefetch_rotor_session(station_id))
 
     def _ensure_dont_stop_the_music(self, prov_item_id: str) -> None:
         """Enable 'Don't stop the music' on queues playing this specific radio item.

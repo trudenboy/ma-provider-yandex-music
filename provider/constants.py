@@ -120,6 +120,12 @@ WAVE_MODE_SEP: Final[str] = "#"
 # Known wave-mode presets: preset key (suffix after WAVE_MODE_SEP) → rotor session
 # settings dict. Names match the LMS YandexMusic plugin and the Desktop client UI.
 MY_WAVE_MODES_FOLDER_ID: Final[str] = "my_wave_modes"
+MY_WAVE_PRESETS_FOLDER_ID: Final[str] = "my_wave_presets"
+
+# Config key for user-defined wave presets (JSON string).
+# Shape: [{"name": "Morning commute", "diversity": "discover",
+#          "moodEnergy": "calm", "language": "russian"}, ...]
+CONF_WAVE_PRESETS: Final[str] = "wave_presets"
 
 WAVE_MODE_PRESETS: Final[dict[str, dict[str, str]]] = {
     "discover": {"diversity": "discover"},
@@ -226,6 +232,7 @@ BROWSE_NAMES_RU: Final[dict[str, str]] = {
     "local": "Местное",
     # Wave-mode folder + presets (P4)
     "my_wave_modes": "Режимы волны",
+    "my_wave_presets": "Мои пресеты",
     "wave_mode_discover": "Открытия",
     "wave_mode_favorite": "Любимое",
     "wave_mode_popular": "Популярное",
@@ -314,6 +321,7 @@ BROWSE_NAMES_EN: Final[dict[str, str]] = {
     "local": "Local",
     # Wave-mode folder + presets (P4)
     "my_wave_modes": "Wave Modes",
+    "my_wave_presets": "My Presets",
     "wave_mode_discover": "Discover",
     "wave_mode_favorite": "Favorites",
     "wave_mode_popular": "Popular",

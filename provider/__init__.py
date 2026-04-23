@@ -20,6 +20,7 @@ from .constants import (
     CONF_REFRESH_TOKEN,
     CONF_REMEMBER_SESSION,
     CONF_TOKEN,
+    CONF_WAVE_PRESETS,
     CONF_X_TOKEN,
     DEFAULT_BASE_URL,
     QUALITY_BALANCED,
@@ -228,6 +229,25 @@ async def get_config_entries(
             "Lower values load faster but provide fewer tracks. Default: 150.",
             range=(10, 1000),
             default_value=150,
+            required=False,
+            advanced=True,
+        ),
+        # User-defined wave presets (advanced JSON)
+        ConfigEntry(
+            key=CONF_WAVE_PRESETS,
+            type=ConfigEntryType.STRING,
+            label="My Wave custom presets (JSON)",
+            description=(
+                "Named combinations of diversity/moodEnergy/language, shown "
+                'under Radio → My Presets. Format: [{"name": "Morning", '
+                '"diversity": "discover", "moodEnergy": "calm", "language": "russian"}]. '
+                "Any of diversity/moodEnergy/language may be omitted. "
+                "Valid diversity: default, discover, favorite, popular. "
+                "Valid moodEnergy: active, fun, calm, sad. "
+                "Valid language: any, russian, not-russian, without-words. "
+                "Leave empty to hide the folder."
+            ),
+            default_value="",
             required=False,
             advanced=True,
         ),
