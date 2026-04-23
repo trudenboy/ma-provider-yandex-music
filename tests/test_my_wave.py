@@ -167,6 +167,46 @@ async def test_fetch_rotor_session_batch_works_with_track_seed_station() -> None
     assert wave.session_id == "s"
 
 
+# -- ynison compatibility wrapper ---------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_rotor_station_tracks_wrapper_delegates_to_session_batch() -> None:
+    """Ynison-facing wrapper routes through _fetch_rotor_session_batch.
+
+    This keeps ynison on the session API (long-lived radioSessionId, shared
+    wave state, prefetch) without any code change on its side — the
+    ``(tracks, batch_id)`` shape stays the same.
+    """
+    wave = _WaveState()
+    provider = Mock(spec=YandexMusicProvider)
+    provider._get_wave_state = Mock(return_value=wave)
+    provider._fetch_rotor_session_batch = AsyncMock(return_value=(["t1", "t2"], "batch_1"))
+
+    tracks, batch_id = await YandexMusicProvider.get_rotor_station_tracks(
+        provider, "genre:rock", queue=None
+    )
+
+    provider._get_wave_state.assert_called_once_with("genre:rock")
+    provider._fetch_rotor_session_batch.assert_awaited_once_with(wave, "genre:rock")
+    assert tracks == ["t1", "t2"]
+    assert batch_id == "batch_1"
+
+
+@pytest.mark.asyncio
+async def test_get_rotor_station_tracks_wrapper_records_queue_as_cursor() -> None:
+    """Ynison's queue= arg becomes wave.last_track_id so the next call paginates."""
+    wave = _WaveState()
+    provider = Mock(spec=YandexMusicProvider)
+    provider._get_wave_state = Mock(return_value=wave)
+    provider._fetch_rotor_session_batch = AsyncMock(return_value=([], None))
+
+    await YandexMusicProvider.get_rotor_station_tracks(provider, "mood:calm", queue="42")
+
+    assert wave.last_track_id == "42"
+    provider._fetch_rotor_session_batch.assert_awaited_once_with(wave, "mood:calm")
+
+
 # -- wave-mode preset routing -------------------------------------------------
 
 

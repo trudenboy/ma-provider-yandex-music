@@ -3369,11 +3369,29 @@ class YandexMusicProvider(MusicProvider):
     async def get_rotor_station_tracks(
         self, station_id: str, queue: str | int | None = None
     ) -> tuple[list[Any], str | None]:
-        """Fetch tracks from a rotor station (My Wave, similar, etc.).
+        """Fetch tracks from a rotor station using the session API.
 
-        Wrapper around client.get_rotor_station_tracks for use by ynison plugin.
+        Public surface — pinned by the ynison plugin
+        (`YandexMusicProviderLike.get_rotor_station_tracks`). The
+        ``(tracks, batch_id)`` return contract is kept for that caller even
+        though batch_id is now a session-scoped identifier.
+
+        Routes to ``_fetch_rotor_session_batch`` so the wave session state
+        (`session_id`, seen tracks, prefetch) is shared with our own Browse /
+        on_played / on_streamed flows. ``queue`` is the most recently played
+        track ID the external caller observed — we record it as the
+        pagination cursor before calling through.
+
+        :param station_id: Rotor station ID (e.g. "user:onyourwave",
+            "genre:rock", "mood:calm", "track:1234").
+        :param queue: Last-played track ID for pagination. Ignored on the
+            very first call (no session yet) but still recorded.
+        :return: Tuple of (list of yandex tracks, batch_id or None).
         """
-        return await self.client.get_rotor_station_tracks(station_id, queue=queue)
+        wave = self._get_wave_state(station_id)
+        if queue is not None:
+            wave.last_track_id = str(queue)
+        return await self._fetch_rotor_session_batch(wave, station_id)
 
     def get_quality(self) -> str:
         """Return the configured audio quality tier (e.g. 'balanced', 'superb')."""
