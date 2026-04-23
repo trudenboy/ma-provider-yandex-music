@@ -27,6 +27,9 @@ def provider_mock() -> Mock:
     provider._resolve_audiobook_seek = YandexMusicProvider._resolve_audiobook_seek.__get__(
         provider, YandexMusicProvider
     )
+    provider._audiobook_progress_point = YandexMusicProvider._audiobook_progress_point.__get__(
+        provider, YandexMusicProvider
+    )
     provider._resolve_audiobook_chapter_map = AsyncMock()
     return provider
 
@@ -158,6 +161,103 @@ async def test_on_streamed_audiobook_evicts_cache_entry(provider_mock: Mock) -> 
     assert "abook-7" not in provider_mock._audiobook_chapter_cache
     # Other audiobooks in cache are untouched
     assert "abook-OTHER" in provider_mock._audiobook_chapter_cache
+
+
+@pytest.mark.asyncio
+async def test_on_streamed_audiobook_reports_end_of_last_chapter_at_eof(
+    provider_mock: Mock,
+) -> None:
+    """Natural EOF must report end_position_seconds = last chapter's length, not 0."""
+    sd = StreamDetails(
+        provider="yandex_music",
+        item_id="abook-eof",
+        audio_format=Mock(),
+        media_type=MediaType.AUDIOBOOK,
+        data={
+            "chapter_ids": ["c1", "c2"],
+            "chapter_durations_ms": [60_000, 120_000],
+        },
+    )
+    # Total duration = 180s. Reached exactly the end.
+    sd.seek_position = 0
+    sd.seconds_streamed = 180.0
+
+    await YandexMusicProvider._report_audiobook_final(provider_mock, sd, sd.data)
+
+    provider_mock.client.play_audio.assert_awaited_once()
+    kwargs = provider_mock.client.play_audio.await_args.kwargs
+    assert kwargs["track_id"] == "c2"
+    assert kwargs["track_length_seconds"] == 120
+    assert kwargs["end_position_seconds"] == 120
+    assert kwargs["total_played_seconds"] == 120
+
+
+@pytest.mark.asyncio
+async def test_on_streamed_audiobook_clamps_zero_duration_chapter(
+    provider_mock: Mock,
+) -> None:
+    """Missing duration_ms (coerced to 0) must never send track_length_seconds=0."""
+    sd = StreamDetails(
+        provider="yandex_music",
+        item_id="abook-bad",
+        audio_format=Mock(),
+        media_type=MediaType.AUDIOBOOK,
+        data={"chapter_ids": ["c1"], "chapter_durations_ms": [0]},
+    )
+    sd.seek_position = 0
+    sd.seconds_streamed = 0.0
+
+    await YandexMusicProvider._report_audiobook_final(provider_mock, sd, sd.data)
+
+    kwargs = provider_mock.client.play_audio.await_args.kwargs
+    assert kwargs["track_length_seconds"] >= 1
+    assert 0 <= kwargs["end_position_seconds"] <= kwargs["track_length_seconds"]
+
+
+@pytest.mark.asyncio
+async def test_on_streamed_audiobook_without_data_still_cleans_up(
+    provider_mock: Mock,
+) -> None:
+    """StreamDetails.data missing or stripped → caches still evicted, no play_audio call."""
+    sd = StreamDetails(
+        provider="yandex_music",
+        item_id="abook-x",
+        audio_format=Mock(),
+        media_type=MediaType.AUDIOBOOK,
+    )
+    provider_mock._audiobook_chapter_cache["abook-x"] = (["c"], [1000])
+    provider_mock._audiobook_play_ids["abook-x"] = "sess-id"
+
+    await YandexMusicProvider._report_audiobook_final(provider_mock, sd, {})
+
+    assert "abook-x" not in provider_mock._audiobook_chapter_cache
+    assert "abook-x" not in provider_mock._audiobook_play_ids
+    provider_mock.client.play_audio.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_on_streamed_audiobook_branch_taken_even_without_chapter_data(
+    provider_mock: Mock,
+) -> None:
+    """AUDIOBOOK stream without chapter_ids still routes to audiobook cleanup.
+
+    Previously the gate required ``"chapter_ids" in data`` and fell through
+    to the radio path when data was missing, leaving caches stale.
+    """
+    provider_mock._report_audiobook_final = AsyncMock()
+    provider_mock.client.send_rotor_station_feedback = AsyncMock()
+    sd = StreamDetails(
+        provider="yandex_music",
+        item_id="abook-y",
+        audio_format=Mock(),
+        media_type=MediaType.AUDIOBOOK,
+        # data=None (not a dict) — previously would fall through to radio
+    )
+
+    await YandexMusicProvider.on_streamed(provider_mock, sd)
+
+    provider_mock._report_audiobook_final.assert_awaited_once()
+    provider_mock.client.send_rotor_station_feedback.assert_not_awaited()
 
 
 @pytest.mark.asyncio

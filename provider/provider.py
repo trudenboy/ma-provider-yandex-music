@@ -3123,8 +3123,12 @@ class YandexMusicProvider(MusicProvider):
         so the last listening point is preserved in Yandex.
         """
         data = streamdetails.data if isinstance(streamdetails.data, dict) else None
-        if streamdetails.media_type == MediaType.AUDIOBOOK and data and "chapter_ids" in data:
-            await self._report_audiobook_final(streamdetails, data)
+        if streamdetails.media_type == MediaType.AUDIOBOOK:
+            # Always let the audiobook branch run so session state
+            # (play_id + chapter cache) is cleaned up even when ``data`` was
+            # stripped. ``_report_audiobook_final`` no-ops the play_audio call
+            # when chapter data is absent.
+            await self._report_audiobook_final(streamdetails, data or {})
             return
         # Radio feedback always enabled
         track_id, station_id = _parse_radio_item_id(streamdetails.item_id)
@@ -3148,6 +3152,41 @@ class YandexMusicProvider(MusicProvider):
             total_played_seconds=seconds,
             batch_id=batch_id,
         )
+
+    def _audiobook_progress_point(
+        self,
+        chapter_durations_ms: list[int],
+        n_chapters: int,
+        absolute_sec: int,
+    ) -> tuple[int, int, int]:
+        """Resolve an absolute book position into a play_audio-ready tuple.
+
+        Returns ``(chapter_idx, track_length_seconds, offset_seconds)``, applying
+        two invariants Yandex cares about and that ``_resolve_audiobook_seek``
+        alone doesn't guarantee:
+
+        - At/beyond end-of-book, map to end of the last chapter (not start),
+          so Yandex's resume point doesn't rewind to the start of the final
+          chapter on natural completion.
+        - ``track_length_seconds`` is clamped to at least 1 and ``offset`` to
+          ``[0, track_length_seconds]`` — a chapter with ``duration_ms=None``
+          (coerced to 0 by the chapter-map builder) would otherwise send
+          ``track_length_seconds=0`` and block progress from syncing.
+        """
+        absolute_sec = max(0, absolute_sec)
+        total_duration_sec = sum(chapter_durations_ms) // 1000
+        last_idx = max(n_chapters - 1, 0)
+        if absolute_sec >= total_duration_sec > 0:
+            idx = last_idx
+            track_length_sec = max(1, chapter_durations_ms[idx] // 1000)
+            offset = track_length_sec
+        else:
+            idx, offset_raw = self._resolve_audiobook_seek(
+                chapter_durations_ms, absolute_sec, n_chapters
+            )
+            track_length_sec = max(1, chapter_durations_ms[idx] // 1000)
+            offset = max(0, min(int(offset_raw), track_length_sec))
+        return idx, track_length_sec, offset
 
     async def _report_audiobook_progress(self, audiobook_id: str, position_sec: int) -> None:
         """Push current listening position of an audiobook to Yandex.
@@ -3176,18 +3215,17 @@ class YandexMusicProvider(MusicProvider):
                 "Audiobook %s has no chapter map; skipping progress report", audiobook_id
             )
             return
-        idx, offset = self._resolve_audiobook_seek(
-            chapter_durations_ms, int(max(position_sec, 0)), len(chapter_ids)
+        idx, track_length_sec, offset = self._audiobook_progress_point(
+            chapter_durations_ms, len(chapter_ids), int(position_sec)
         )
         play_id = self._audiobook_play_ids.setdefault(audiobook_id, uuid.uuid4().hex)
-        track_length_sec = chapter_durations_ms[idx] // 1000
         await self.client.play_audio(
             track_id=chapter_ids[idx],
             album_id=audiobook_id,
             play_id=play_id,
             track_length_seconds=track_length_sec,
-            total_played_seconds=int(offset),
-            end_position_seconds=int(offset),
+            total_played_seconds=offset,
+            end_position_seconds=offset,
         )
 
     async def _report_audiobook_final(
@@ -3209,15 +3247,14 @@ class YandexMusicProvider(MusicProvider):
         if not chapter_ids or not chapter_durations_ms:
             return
         absolute_sec = int(streamdetails.seek_position + (streamdetails.seconds_streamed or 0))
-        idx, offset = self._resolve_audiobook_seek(
-            chapter_durations_ms, max(absolute_sec, 0), len(chapter_ids)
+        idx, track_length_sec, offset = self._audiobook_progress_point(
+            chapter_durations_ms, len(chapter_ids), absolute_sec
         )
-        track_length_sec = chapter_durations_ms[idx] // 1000
         await self.client.play_audio(
             track_id=chapter_ids[idx],
             album_id=audiobook_id,
             play_id=play_id,
             track_length_seconds=track_length_sec,
-            total_played_seconds=int(offset),
-            end_position_seconds=int(offset),
+            total_played_seconds=offset,
+            end_position_seconds=offset,
         )
