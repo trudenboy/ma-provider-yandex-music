@@ -354,13 +354,16 @@ class YandexMusicClient:
         async def _do(c: ClientAsync) -> dict[str, Any] | None:
             base = getattr(c, "base_url", "https://api.music.yandex.net")
             url = f"{base}/rotor/session/{path}"
+            LOGGER.debug("Rotor session POST %s body_keys=%s", path, list(body.keys()))
             try:
                 result = await c._request.post(url, json=body)
             except (NetworkError, BadRequestError) as err:
                 LOGGER.warning("Rotor session POST %s failed: %s", path, err)
                 return None
             if isinstance(result, dict):
+                LOGGER.debug("Rotor session POST %s → result keys=%s", path, list(result.keys()))
                 return result
+            LOGGER.debug("Rotor session POST %s → non-dict result: %r", path, result)
             return None
 
         try:
@@ -469,6 +472,14 @@ class YandexMusicClient:
         body: dict[str, Any] = {"event": event}
         if batch_id:
             body["batchId"] = batch_id
+        LOGGER.debug(
+            "Rotor session feedback: session=%s event=%s track=%s secs=%s batch=%s",
+            session_id,
+            event_type,
+            track_id,
+            total_played_seconds,
+            batch_id,
+        )
         result = await self._rotor_session_request(f"{session_id}/feedback", body)
         return result is not None
 

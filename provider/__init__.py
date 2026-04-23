@@ -238,16 +238,14 @@ async def get_config_entries(
             type=ConfigEntryType.STRING,
             label="My Wave custom presets (JSON)",
             description=(
-                "Named combinations of diversity/moodEnergy/language, shown "
-                'under Radio → My Presets. Format: [{"name": "Morning", '
-                '"diversity": "discover", "moodEnergy": "calm", "language": "russian"}]. '
-                "Any of diversity/moodEnergy/language may be omitted. "
-                "Valid diversity: default, discover, favorite, popular. "
-                "Valid moodEnergy: active, fun, calm, sad. "
-                "Valid language: any, russian, not-russian, without-words. "
-                "Leave empty to hide the folder."
+                "Named combinations of diversity, moodEnergy and language, "
+                "shown in Browse under Radio then My Presets. Accepts a JSON "
+                "array of objects; each object needs a name and any of: "
+                "diversity (discover, favorite, popular), moodEnergy "
+                "(active, fun, calm, sad), language (russian, not-russian, "
+                "without-words). Leave empty to hide the folder."
             ),
-            default_value="",
+            default_value=None,
             required=False,
             advanced=True,
         ),
