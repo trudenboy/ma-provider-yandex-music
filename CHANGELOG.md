@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- changelog entries will be added here by release workflow -->
 
+## [3.3.1] - 2026-04-23
+
+- fix(search): apply `limit` per bucket after `classify_album` so audiobooks aren't dropped when the top `limit` results are music albums (and vice versa)
+
+---
+
 ## [3.3.0] - 2026-04-23
 
 - feat(audiobook): sync playback progress to Yandex via `play_audio` from `on_played` / `on_streamed` so position is visible across Yandex clients; propagate `album.listening_finished` to `Audiobook.fully_played` (`974b675`)
