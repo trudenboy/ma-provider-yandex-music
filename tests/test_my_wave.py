@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import json
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from music_assistant_models.enums import MediaType
+from music_assistant_models.errors import InvalidDataError
 from music_assistant_models.media_items import ProviderMapping
 from music_assistant_models.media_items import Track as MATrack
 
+from music_assistant.providers.yandex_music import (
+    _delete_wave_preset_action,
+    _save_wave_preset_action,
+)
 from music_assistant.providers.yandex_music.constants import (
     RADIO_TRACK_ID_SEP,
     ROTOR_STATION_MY_WAVE,
@@ -19,6 +26,9 @@ from music_assistant.providers.yandex_music.provider import (
     _parse_radio_item_id,
     _WaveState,
 )
+
+if TYPE_CHECKING:
+    from music_assistant_models.config_entries import ConfigValueType
 
 
 def test_parse_radio_item_id_plain_track_id() -> None:
@@ -352,72 +362,153 @@ def _preset_config(values: dict[str, str]) -> Mock:
     return config
 
 
-def test_get_user_wave_presets_collects_filled_slots() -> None:
-    """Filled slots (name + any dropdowns) are returned in order."""
+def test_get_user_wave_presets_decodes_stored_json() -> None:
+    """A valid JSON list in CONF_WAVE_PRESETS_DATA yields the same presets out."""
     provider = Mock(spec=YandexMusicProvider)
     provider.config = _preset_config(
         {
-            "wave_preset_1_name": "Morning",
-            "wave_preset_1_diversity": "discover",
-            "wave_preset_1_mood": "calm",
-            "wave_preset_2_name": "Evening",
-            "wave_preset_2_language": "russian",
+            "wave_presets_data": (
+                '[{"name": "Morning", "diversity": "discover", "moodEnergy": "calm"},'
+                ' {"name": "Evening", "language": "russian"}]'
+            ),
         }
     )
     provider.logger = Mock()
 
     result = YandexMusicProvider._get_user_wave_presets(provider)
 
-    assert len(result) == 2
-    assert result[0] == {"name": "Morning", "diversity": "discover", "moodEnergy": "calm"}
-    assert result[1] == {"name": "Evening", "language": "russian"}
+    assert result == [
+        {"name": "Morning", "diversity": "discover", "moodEnergy": "calm"},
+        {"name": "Evening", "language": "russian"},
+    ]
 
 
-def test_get_user_wave_presets_skips_slots_without_name() -> None:
-    """A slot with dropdowns but no name is treated as disabled."""
+def test_get_user_wave_presets_empty_store_returns_empty() -> None:
+    """No stored data / empty string / None → empty list."""
     provider = Mock(spec=YandexMusicProvider)
-    provider.config = _preset_config(
-        {
-            "wave_preset_1_name": "",  # disabled
-            "wave_preset_1_diversity": "discover",
-            "wave_preset_2_name": "Active",
-            "wave_preset_2_mood": "active",
-        }
-    )
-    provider.logger = Mock()
-
-    result = YandexMusicProvider._get_user_wave_presets(provider)
-
-    assert len(result) == 1
-    assert result[0]["name"] == "Active"
-    assert result[0]["moodEnergy"] == "active"
-
-
-def test_get_user_wave_presets_empty_config_returns_empty() -> None:
-    """No configured slots → empty list."""
-    provider = Mock(spec=YandexMusicProvider)
-    provider.config = _preset_config({})
+    provider.config = _preset_config({"wave_presets_data": ""})
     provider.logger = Mock()
 
     assert YandexMusicProvider._get_user_wave_presets(provider) == []
 
 
-def test_get_user_wave_presets_drops_empty_dropdown_values() -> None:
-    """Dropdowns set to the 'default' sentinel ("") are not forwarded."""
+def test_get_user_wave_presets_invalid_json_logs_warning() -> None:
+    """Malformed JSON → empty list + warning logged (no crash)."""
+    provider = Mock(spec=YandexMusicProvider)
+    provider.config = _preset_config({"wave_presets_data": "not-json {{{"})
+    provider.logger = Mock()
+
+    assert YandexMusicProvider._get_user_wave_presets(provider) == []
+    provider.logger.warning.assert_called_once()
+
+
+def test_get_user_wave_presets_skips_items_without_name() -> None:
+    """Entries missing a name or with non-string values are silently skipped."""
     provider = Mock(spec=YandexMusicProvider)
     provider.config = _preset_config(
         {
-            "wave_preset_1_name": "Just name",
-            "wave_preset_1_diversity": "",
-            "wave_preset_1_mood": "",
-            "wave_preset_1_language": "",
+            "wave_presets_data": (
+                '[{"diversity": "discover"}, {"name": ""}, '
+                '{"name": "Good", "moodEnergy": "active"}]'
+            ),
         }
     )
     provider.logger = Mock()
 
-    result = YandexMusicProvider._get_user_wave_presets(provider)
+    assert YandexMusicProvider._get_user_wave_presets(provider) == [
+        {"name": "Good", "moodEnergy": "active"},
+    ]
 
-    assert result == [{"name": "Just name"}]
+
+# -- save / delete preset actions --------------------------------------------
+
+
+def test_save_wave_preset_action_appends_and_clears_draft() -> None:
+    """Save action writes the draft into JSON storage and clears draft fields."""
+    values: dict[str, ConfigValueType] = {
+        "wave_preset_draft_name": "Morning",
+        "wave_preset_draft_diversity": "discover",
+        "wave_preset_draft_mood": "calm",
+        "wave_preset_draft_language": "",  # "default" dropdown → skipped
+        "wave_presets_data": "",
+    }
+
+    _save_wave_preset_action(values)
+
+    stored_raw = values["wave_presets_data"]
+    assert isinstance(stored_raw, str)
+    assert json.loads(stored_raw) == [
+        {"name": "Morning", "diversity": "discover", "moodEnergy": "calm"},
+    ]
+    assert values["wave_preset_draft_name"] is None
+    assert values["wave_preset_draft_diversity"] == ""
+    assert values["wave_preset_draft_mood"] == ""
+    assert values["wave_preset_draft_language"] == ""
+
+
+def test_save_wave_preset_action_overwrites_same_name() -> None:
+    """Saving with an existing name replaces the prior entry — no duplicates."""
+    values: dict[str, ConfigValueType] = {
+        "wave_preset_draft_name": "Morning",
+        "wave_preset_draft_diversity": "favorite",
+        "wave_preset_draft_mood": "",
+        "wave_preset_draft_language": "",
+        "wave_presets_data": (
+            '[{"name": "Morning", "diversity": "discover"},'
+            ' {"name": "Evening", "language": "russian"}]'
+        ),
+    }
+
+    _save_wave_preset_action(values)
+
+    stored_raw = values["wave_presets_data"]
+    assert isinstance(stored_raw, str)
+    stored = json.loads(stored_raw)
+    assert {p["name"] for p in stored} == {"Morning", "Evening"}
+    morning = next(p for p in stored if p["name"] == "Morning")
+    assert morning == {"name": "Morning", "diversity": "favorite"}
+
+
+def test_save_wave_preset_action_rejects_blank_name() -> None:
+    """Save without a preset name raises InvalidDataError and changes nothing."""
+    values: dict[str, ConfigValueType] = {
+        "wave_preset_draft_name": "   ",
+        "wave_presets_data": "",
+    }
+
+    with pytest.raises(InvalidDataError):
+        _save_wave_preset_action(values)
+    assert values["wave_presets_data"] == ""
+
+
+def test_delete_wave_preset_action_removes_by_name() -> None:
+    """Delete action drops the selected preset and clears the selector."""
+    values: dict[str, ConfigValueType] = {
+        "wave_preset_to_delete": "Morning",
+        "wave_presets_data": (
+            '[{"name": "Morning", "diversity": "discover"},'
+            ' {"name": "Evening", "language": "russian"}]'
+        ),
+    }
+
+    _delete_wave_preset_action(values)
+
+    stored_raw = values["wave_presets_data"]
+    assert isinstance(stored_raw, str)
+    assert json.loads(stored_raw) == [{"name": "Evening", "language": "russian"}]
+    assert values["wave_preset_to_delete"] == ""
+
+
+def test_delete_wave_preset_action_requires_selection() -> None:
+    """No selection → InvalidDataError; storage untouched."""
+    values: dict[str, ConfigValueType] = {
+        "wave_preset_to_delete": "",
+        "wave_presets_data": '[{"name": "Keep"}]',
+    }
+
+    with pytest.raises(InvalidDataError):
+        _delete_wave_preset_action(values)
+    assert values["wave_presets_data"] == '[{"name": "Keep"}]'
 
 
 def test_parse_playlist_is_dynamic_flag_propagates() -> None:

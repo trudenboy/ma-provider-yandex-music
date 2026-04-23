@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import random
 import uuid
@@ -57,7 +58,7 @@ from .constants import (
     CONF_QUALITY,
     CONF_REFRESH_TOKEN,
     CONF_TOKEN,
-    CONF_WAVE_PRESET_PREFIX,
+    CONF_WAVE_PRESETS_DATA,
     CONF_X_TOKEN,
     DEFAULT_BASE_URL,
     DISCOVERY_INITIAL_TRACKS,
@@ -91,7 +92,6 @@ from .constants import (
     WAVE_MODE_ORDER,
     WAVE_MODE_PRESETS,
     WAVE_MODE_SEP,
-    WAVE_PRESET_SLOTS,
     WAVES_FOLDER_ID,
     WAVES_LANDING_FOLDER_ID,
 )
@@ -718,29 +718,38 @@ class YandexMusicProvider(MusicProvider):
         return all_tracks
 
     def _get_user_wave_presets(self) -> list[dict[str, str]]:
-        """Collect user-defined wave presets from flat config slots.
+        """Decode user-defined wave presets from the hidden JSON config key.
 
-        Each slot is four config keys: ``{prefix}_{n}_{name,diversity,mood,language}``.
-        A slot is active when its ``name`` is a non-empty string. Empty
-        dropdown values ("") are treated as "use wave default" and skipped.
+        The settings UI maintains CONF_WAVE_PRESETS_DATA as a JSON-encoded
+        list of ``{name, diversity?, moodEnergy?, language?}`` entries via the
+        save/delete action buttons. Invalid / missing data yields an empty
+        list — no exception propagates to browse.
 
-        :return: Presets in slot order, each a dict with ``name`` and any of
+        :return: Presets in save order, each a dict with ``name`` and any of
             ``diversity`` / ``moodEnergy`` / ``language``.
         """
+        raw = self.config.get_value(CONF_WAVE_PRESETS_DATA)
+        if not isinstance(raw, str) or not raw.strip():
+            return []
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            self.logger.warning("Failed to parse %s as JSON", CONF_WAVE_PRESETS_DATA)
+            return []
+        if not isinstance(parsed, list):
+            return []
         presets: list[dict[str, str]] = []
-        for n in range(1, WAVE_PRESET_SLOTS + 1):
-            name_val = self.config.get_value(f"{CONF_WAVE_PRESET_PREFIX}_{n}_name")
-            if not isinstance(name_val, str) or not name_val.strip():
+        for item in parsed:
+            if not isinstance(item, dict):
                 continue
-            preset: dict[str, str] = {"name": name_val.strip()}
-            for field, cfg_suffix in (
-                ("diversity", "diversity"),
-                ("moodEnergy", "mood"),
-                ("language", "language"),
-            ):
-                val = self.config.get_value(f"{CONF_WAVE_PRESET_PREFIX}_{n}_{cfg_suffix}")
+            name = item.get("name")
+            if not isinstance(name, str) or not name.strip():
+                continue
+            preset: dict[str, str] = {"name": name.strip()}
+            for key in ("diversity", "moodEnergy", "language"):
+                val = item.get(key)
                 if isinstance(val, str) and val:
-                    preset[field] = val
+                    preset[key] = val
             presets.append(preset)
         return presets
 

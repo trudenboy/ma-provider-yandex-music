@@ -122,13 +122,28 @@ WAVE_MODE_SEP: Final[str] = "#"
 MY_WAVE_MODES_FOLDER_ID: Final[str] = "my_wave_modes"
 MY_WAVE_PRESETS_FOLDER_ID: Final[str] = "my_wave_presets"
 
-# Number of user-editable preset slots shown in the settings UI.
-WAVE_PRESET_SLOTS: Final[int] = 3
+# User-defined wave presets are now stored in a single hidden JSON config key.
+# The UI shows a small "builder" (name + three dropdowns) + Save / Delete
+# action buttons, so the user never has to edit JSON by hand but has no fixed
+# upper bound on preset count either.
 
-# Config key prefix for user-defined wave presets. Each slot is expanded into
-# four flat keys: `wave_preset_{n}_name/diversity/mood/language`, so users can
-# fill them in with plain dropdowns instead of hand-writing JSON.
-CONF_WAVE_PRESET_PREFIX: Final[str] = "wave_preset"
+# Hidden JSON store. Shape: [{"name": str, "diversity"?: str,
+#                             "moodEnergy"?: str, "language"?: str}, ...]
+CONF_WAVE_PRESETS_DATA: Final[str] = "wave_presets_data"
+
+# Visible "working preset" fields — filled in, then copied into the JSON list
+# by the save action and cleared afterwards.
+CONF_WAVE_PRESET_DRAFT_NAME: Final[str] = "wave_preset_draft_name"
+CONF_WAVE_PRESET_DRAFT_DIVERSITY: Final[str] = "wave_preset_draft_diversity"
+CONF_WAVE_PRESET_DRAFT_MOOD: Final[str] = "wave_preset_draft_mood"
+CONF_WAVE_PRESET_DRAFT_LANGUAGE: Final[str] = "wave_preset_draft_language"
+
+# Dropdown of saved preset names for the delete flow.
+CONF_WAVE_PRESET_TO_DELETE: Final[str] = "wave_preset_to_delete"
+
+# Action button ids.
+CONF_ACTION_SAVE_WAVE_PRESET: Final[str] = "save_wave_preset"
+CONF_ACTION_DELETE_WAVE_PRESET: Final[str] = "delete_wave_preset"
 
 # Allowed per-dimension values (plus "" to mean "use wave default").
 WAVE_PRESET_DIVERSITY_VALUES: Final[tuple[str, ...]] = (
