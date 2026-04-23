@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -141,6 +142,33 @@ async def test_on_played_audiobook_swallows_upstream_unavailable(
     await YandexMusicProvider._report_audiobook_progress(provider_mock, "abook-42", 30)
 
     provider_mock.client.play_audio.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_on_played_audiobook_swallows_unexpected_exception(
+    provider_mock: Mock,
+) -> None:
+    """Any non-cancellation exception while resolving the chapter map is swallowed."""
+
+    class SomeAuthError(Exception):
+        pass
+
+    provider_mock._resolve_audiobook_chapter_map.side_effect = SomeAuthError("token expired")
+
+    await YandexMusicProvider._report_audiobook_progress(provider_mock, "abook-42", 30)
+
+    provider_mock.client.play_audio.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_on_played_audiobook_propagates_cancellation(
+    provider_mock: Mock,
+) -> None:
+    """asyncio.CancelledError must propagate — never suppressed."""
+    provider_mock._resolve_audiobook_chapter_map.side_effect = asyncio.CancelledError()
+
+    with pytest.raises(asyncio.CancelledError):
+        await YandexMusicProvider._report_audiobook_progress(provider_mock, "abook-42", 30)
 
 
 @pytest.mark.asyncio

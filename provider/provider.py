@@ -3194,18 +3194,21 @@ class YandexMusicProvider(MusicProvider):
         Resolves the playing chapter + offset from the cached chapter map, then
         calls play_audio so Yandex persists the position for cross-client resume.
 
-        Best-effort: a transient upstream failure (rate-limit, network blip)
-        must never break pause/stop, so ResourceTemporarilyUnavailable is
-        swallowed here in addition to the errors already absorbed inside
+        Best-effort: any non-cancellation failure while resolving the chapter
+        map (rate-limit, network blip, auth edge case bubbling out of
+        ``_call_with_retry``) must never break pause/stop, so it is swallowed
+        here in addition to the errors already absorbed inside
         ``api_client.play_audio``.
         """
         try:
             chapter_ids, chapter_durations_ms = await self._resolve_audiobook_chapter_map(
                 audiobook_id
             )
-        except ResourceTemporarilyUnavailable as err:
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
             self.logger.debug(
-                "Skipping audiobook progress report for %s (upstream unavailable): %s",
+                "Skipping audiobook progress report for %s (chapter map resolution failed): %s",
                 audiobook_id,
                 err,
             )
