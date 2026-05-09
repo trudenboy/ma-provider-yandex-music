@@ -74,8 +74,9 @@ All non-trivial changes go through a pull request — never push directly to
    justification, and resolve the thread.
 3. **Version + changelog.** *After* review feedback is addressed, bump the
    `VERSION` file (PEP 440 — `1.2.0` stable, `1.2.0b1` beta) and add a
-   `CHANGELOG.md` entry — in the same PR. The release pipeline tags and
-   publishes automatically when the new `VERSION` lands on `dev`.
+   `CHANGELOG.md` entry following the rules in **Changelog Discipline**
+   below — in the same PR. The release pipeline tags and publishes
+   automatically when the new `VERSION` lands on `dev`.
 4. **Ask before merging.** Always request explicit maintainer approval to
    merge. Do not self-merge or enable auto-merge without it. (Auto-merge is
    reserved for `distribute.yml`-generated wrapper-sync PRs from
@@ -111,6 +112,67 @@ distribute workflow propagates the change here.
 Provider-specific carve-outs that do *not* drift: `python_version`,
 `packages = ["tests", "provider"]`, the `[[tool.mypy.overrides]]`
 block, and `codespell.ignore-words-list`.
+
+## Test-Driven Development
+
+Use **red / green / refactor** TDD for all new features and bug fixes:
+
+1. **Red.** Write the test first. Confirm it **fails** before writing
+   implementation.
+2. **Green.** Write the **minimal** code to make the test pass.
+3. **Refactor.** Clean up the implementation while keeping tests green.
+
+### Rules for AI agents
+
+- **Never modify existing tests to make them pass.** If a test fails, fix
+  the implementation. If a test is genuinely wrong, explain why in the
+  commit message before changing it.
+- **Never write tautological tests** — tests that reimplement the logic
+  under test locally and assert on that local copy. Always call the real
+  function / method.
+- **Test real behaviour, not mocks.** Avoid over-mocking: if a test only
+  verifies that mocks return what they were configured to return, it
+  tests nothing. For Music Assistant providers this means: prefer real
+  fixtures (`tests/fixtures/*.json`) and `syrupy` snapshots over hand-
+  rolled mock graphs whenever the parser / mapper under test is pure.
+- **Every test must be able to fail.** If removing the implementation
+  doesn't break the test, the test is useless.
+- **Bug fix flow.** First write a test that **reproduces** the bug
+  (red), then fix it (green). The reproducer becomes the regression
+  guard.
+
+## Changelog Discipline
+
+`CHANGELOG.md` follows
+[Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and is the
+input the release pipeline reads when it composes GitHub Release notes.
+Treat the rules below as falsifiable invariants — fix the entry, do not
+relax the rule.
+
+- **Bare canonical headings only.** Use `### Added`, `### Changed`,
+  `### Deprecated`, `### Removed`, `### Fixed`, `### Security` —
+  nothing else. No `### Improved`, `### Refactored`, `### Tests`, no
+  trailing prose like `### Fixed — long sentence`.
+- **Canonical order.** Inside each version block, categories appear in
+  this order: Added → Changed → Deprecated → Removed → Fixed → Security.
+  Skip categories that are empty; never reorder.
+- **No private symbols, no internal paths in bullets.** Forbidden:
+  `_underscore_func`, `provider/foo.py`, `ClassName.method`. Allowed:
+  uppercase config keys (e.g. `CONF_QUALITY`), backticked user-facing
+  filenames (`` `pyproject.toml` ``, `` `manifest.json` ``), markdown
+  links. Internal paths rot through refactors — describe what the
+  **user** observes instead.
+- **No process-noise headings or bullets.** Things like `Code-review
+  polish`, `Round 2 fixes`, `Copilot review on PR #N`, `Tests`,
+  `Internal` belong in `git log`, not the changelog. If a review
+  surfaced a real bug, file it under `### Fixed`.
+- **No prose between `## [version]` and the first `### Category`.**
+  Release-note tooling collects bullets that appear *after* the first
+  category heading; intro paragraphs are silently dropped.
+- **One entry per version.** When the PR bumps `VERSION` from `X.Y.Z`
+  to `X.Y.(Z+1)`, add a single `## [X.Y.(Z+1)] - YYYY-MM-DD` block
+  above the existing top-most version, populated with the categories
+  the PR touches. Do not retroactively edit older version blocks.
 
 ## Debugging
 
