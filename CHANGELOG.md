@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.2] - 2026-05-09
+
+- fix(parsers): widen `Audiobook.authors` type annotation to `UniqueList[str | Artist]` to match upstream `music_assistant_models` and unblock mypy under upstream-synced typing rules.
+- fix(tests/snapshots): refresh `test_parsers.ambr` for the upstream `music_assistant_models` evolution — `Artist.artist_type` (new field, default `singer`) and the new `MediaItemMetadata` fields (`review`, `mood`, `style`, `lyrics`, `lrc_lyrics`, `performers`, `preview`, `popularity`, `release_date`).
+- chore: sync workflow wrappers from ma-provider-tools (CLAUDE.md, ruff/mypy/codespell from upstream music-assistant/server, config-sync CI guard).
+
 ## [3.3.0] - 2026-04-23
 
 - feat(audiobook): sync progress to Yandex, surface in search and browse (#115) (`0e9cda6`)
