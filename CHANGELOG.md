@@ -41,6 +41,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.4.2] - 2026-05-09
+
+- chore: sync workflow wrappers from ma-provider-tools (#130) (`a0938ab`)
+- chore: sync workflow wrappers from ma-provider-tools (#127) (`5917238`)
+- chore: sync workflow wrappers from ma-provider-tools (#125) (`bd264b8`)
+- chore: sync workflow wrappers from ma-provider-tools (#123) (`9ec09c5`)
+- chore: update changelog for v3.4.1 [skip ci] (`9357d95`)
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
 
 ## [3.2.1] - 2026-04-22
