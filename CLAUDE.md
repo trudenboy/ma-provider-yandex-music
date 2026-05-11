@@ -113,6 +113,45 @@ Provider-specific carve-outs that do *not* drift: `python_version`,
 `packages = ["tests", "provider"]`, the `[[tool.mypy.overrides]]`
 block, and `codespell.ignore-words-list`.
 
+## Feature Specification Discipline
+
+Non-trivial features go through a written spec before code. The template
+lives at `specs/feature-spec.md` (auto-synced from
+`ma-provider-tools/wrappers/feature-spec.md.j2` — do not edit it in
+place; changes go through `ma-provider-tools`).
+
+- **When required.** Every PR whose Conventional-Commit type is `feat:`
+  MUST add a new file `specs/<state>/<NNNN>-<kebab-slug>.md` derived
+  from the template. Types `fix:`, `chore:`, `docs:`, `test:`,
+  `refactor:`, `perf:`, `build:`, `ci:` are exempt. When a borderline
+  `feat:` legitimately needs no spec (e.g. a pure wire-up, a one-line
+  enum addition), state *"no spec required because <reason>"* in the
+  PR body so reviewers can confirm.
+- **Enforcement.** P0 (now): this is a documented rule that AI agents
+  and reviewers uphold. P1 (next release cycle): the rule is promoted
+  to a hard CI gate after observing false-positive patterns.
+- **T-shirt sizing** — the `size:` frontmatter declares the required
+  artifacts:
+  - **S** (≤ 10 min effort): Problem Statement + Acceptance Criteria
+    (≥ 5 bullets) + Test Plan.
+  - **M** (10–20 min): S + Sequence Diagram.
+  - **L** (> 20 min): M + Data Model.
+- **WIP = 1.** At most one spec lives in `specs/inprogress/` at any
+  time. Move it to `specs/done/` (or revert to `specs/todo/`) before
+  starting the next.
+- **Numbering.** Zero-padded 4-digit (`0001`, `0002`, …), monotonic
+  per repo. Gaps are fine.
+- **Optional `feature_id:`** in the frontmatter links the spec to a
+  `ProviderFeature` enum member. When set, the `Check feature
+  consistency` workflow cross-validates against `SUPPORTED_FEATURES`
+  in this repo and against the corresponding `providers.yml`
+  `features[].feature_id` entry in `ma-provider-tools`. A mismatch
+  fails CI.
+- **Idempotency.** All changes flow through the spec — no
+  "I'll patch it in copilot mode and update the spec later". If the
+  implementation diverges from the spec, update the spec **in the
+  same PR**.
+
 ## Test-Driven Development
 
 Use **red / green / refactor** TDD for all new features and bug fixes:
