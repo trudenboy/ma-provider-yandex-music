@@ -1,0 +1,16 @@
+name: Check feature consistency
+
+on:
+  pull_request:
+    paths:
+      - "provider/**"
+      - ".github/workflows/check-feature-consistency.yml"
+  push:
+    branches:
+      - dev
+
+jobs:
+  check:
+    uses: trudenboy/ma-provider-tools/.github/workflows/reusable-check-feature-consistency.yml@main
+    with:
+      domain: yandex_music
