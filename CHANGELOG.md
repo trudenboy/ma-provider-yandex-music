@@ -53,6 +53,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- changelog entries will be added here by release workflow -->
 
+## [3.5.0] - 2026-05-12
+
+- feat(rate-limit): captcha-aware retry, per-kind throttling, file-info cache (#140) (`d821cb3`)
+- chore: sync workflow wrappers from ma-provider-tools (#139) (`bf8b6be`)
+- chore: sync workflow wrappers from ma-provider-tools (#138) (`6af7612`)
+- chore: sync workflow wrappers from ma-provider-tools (#137) (`b1cacca`)
+- chore: sync workflow wrappers from ma-provider-tools (#136) (`67d7bc6`)
+- chore: sync workflow wrappers from ma-provider-tools (#135) (`c3e17a0`)
+- chore: sync workflow wrappers from ma-provider-tools (#134) (`fdc4b91`)
+- chore: sync workflow wrappers from ma-provider-tools (#132) (`bf27ce9`)
+- chore: update changelog for v3.4.2 [skip ci] (`974c6c7`)
+
+---
+
 ## [3.2.1] - 2026-04-22
 
 - fix(audiobook): wire seek through can_seek and bound chapter failures (`40bdc9b`)
