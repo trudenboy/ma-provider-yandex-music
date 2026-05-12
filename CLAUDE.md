@@ -113,6 +113,14 @@ Provider-specific carve-outs that do *not* drift: `python_version`,
 `packages = ["tests", "provider"]`, the `[[tool.mypy.overrides]]`
 block, and `codespell.ignore-words-list`.
 
+Repo-level metadata also flows through `ma-provider-tools` (fields
+`github_description`, `github_topics`, `github_homepage`,
+`related_providers` in `providers.yml`). They drive the GitHub "About"
+block, the auto-synced README badge / quick-links / cross-links header
+(between `<!-- >>> ma-provider-tools sync (readme header) >>> -->`
+markers), and the docs-site landing hero. Do not edit GitHub repo
+settings directly — open a PR in `ma-provider-tools` instead.
+
 ## Feature Specification Discipline
 
 Non-trivial features go through a written spec before code. The template
