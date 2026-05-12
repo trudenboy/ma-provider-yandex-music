@@ -10,7 +10,7 @@
 
 **📖 [Documentation / Документация](https://trudenboy.github.io/ma-provider-yandex-music/)** · **🔄 [Changelog / Журнал](CHANGELOG.md)** · **🐛 [Issues / Проблемы](https://github.com/trudenboy/ma-provider-yandex-music/issues)** · **💬 [Discussions / Обсуждения](https://github.com/trudenboy/ma-provider-yandex-music/discussions)**
 
-**Related providers:** [Yandex Music Connect (Ynison)](https://github.com/trudenboy/ma-provider-yandex-ynison)
+**Related providers:** [Yandex Music Connect (Ynison)](https://github.com/trudenboy/ma-provider-yandex-ynison) · [Yandex Station](https://github.com/trudenboy/ma-provider-yandex-station) · [Yandex Smart Home](https://github.com/trudenboy/ma-provider-yandex-smarthome) · [Yandex Alice](https://github.com/trudenboy/ma-provider-yandex-alice)
 <!-- <<< ma-provider-tools sync (readme header) <<< -->
 
 [English](README.en.md) | Русский
