@@ -1079,6 +1079,27 @@ async def test_file_info_cache_hit_skips_network() -> None:
     underlying._request.get.assert_awaited_once()
 
 
+async def test_file_info_cache_separates_entries_by_codecs() -> None:
+    """Different codec preference lists must NOT share a cache slot.
+
+    Yandex picks the codec (and download URL) based on the codec order, so a
+    cached response for codecs="flac-mp4,flac" must not be reused when the
+    caller requests codecs="mp3".
+    """
+    client, underlying = _make_client()
+    underlying._request = mock.MagicMock()
+    underlying._request.get = mock.AsyncMock(return_value=_make_file_info_response())
+    underlying.base_url = "https://api.music.yandex.net"
+
+    await client.get_track_file_info("42", codecs="flac-mp4,flac")
+    await client.get_track_file_info("42", codecs="mp3")
+
+    # Two different codec lists → two distinct cache entries and two network hits.
+    assert underlying._request.get.await_count == 2
+    assert ("42", "lossless", "flac-mp4,flac", "raw") in client._file_info_cache
+    assert ("42", "lossless", "mp3", "raw") in client._file_info_cache
+
+
 async def test_file_info_cache_expiry_hits_network_again(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1112,10 +1133,12 @@ async def test_file_info_cache_invalidated_on_bad_request() -> None:
     underlying._request = mock.MagicMock()
     underlying.base_url = "https://api.music.yandex.net"
 
+    cache_key = ("42", "lossless", GET_FILE_INFO_CODECS, "raw")
+
     # First call: populate cache.
     underlying._request.get = mock.AsyncMock(return_value=_make_file_info_response())
     await client.get_track_file_info("42")
-    assert ("42", "lossless", "raw") in client._file_info_cache
+    assert cache_key in client._file_info_cache
 
     # Trigger the BadRequest code path. A second call WITHOUT bypass would
     # short-circuit on the cache hit and never reach the network — so we use
@@ -1129,7 +1152,7 @@ async def test_file_info_cache_invalidated_on_bad_request() -> None:
         BYPASS_THROTTLER.reset(token)
     assert result is None
     # Cache invalidated by the BadRequest handler.
-    assert ("42", "lossless", "raw") not in client._file_info_cache
+    assert cache_key not in client._file_info_cache
 
 
 async def test_file_info_cache_bypassed_when_bypass_throttler_set() -> None:
@@ -1175,6 +1198,6 @@ async def test_file_info_cache_lru_eviction(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert len(client._file_info_cache) == 2
     # Oldest ("1") must have been evicted.
-    assert ("1", "lossless", "raw") not in client._file_info_cache
-    assert ("2", "lossless", "raw") in client._file_info_cache
-    assert ("3", "lossless", "raw") in client._file_info_cache
+    assert ("1", "lossless", GET_FILE_INFO_CODECS, "raw") not in client._file_info_cache
+    assert ("2", "lossless", GET_FILE_INFO_CODECS, "raw") in client._file_info_cache
+    assert ("3", "lossless", GET_FILE_INFO_CODECS, "raw") in client._file_info_cache
