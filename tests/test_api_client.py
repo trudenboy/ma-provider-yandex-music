@@ -6,6 +6,7 @@ import base64
 import hashlib
 import hmac
 import re
+import time
 from collections.abc import Mapping
 from typing import Any
 from unittest import mock
@@ -13,11 +14,12 @@ from unittest import mock
 import pytest
 from music_assistant_models.errors import LoginFailed, ResourceTemporarilyUnavailable
 from ya_passport_auth import SecretStr
-from yandex_music.exceptions import NetworkError, UnauthorizedError
+from yandex_music.exceptions import BadRequestError, NetworkError, UnauthorizedError
 from yandex_music.rotor.dashboard import Dashboard
 from yandex_music.rotor.station_result import StationResult
 from yandex_music.utils.sign_request import DEFAULT_SIGN_KEY
 
+from music_assistant.helpers.throttle_retry import BYPASS_THROTTLER
 from music_assistant.providers.yandex_music.api_client import (
     GET_FILE_INFO_CODECS,
     YandexMusicClient,
@@ -36,7 +38,9 @@ def _make_client() -> tuple[YandexMusicClient, mock.AsyncMock]:
     mock_underlying = mock.AsyncMock()
     client._client = mock_underlying
     client._user_id = 12345
-    client._throttler = mock.AsyncMock()  # disable throttling in unit tests
+    # Disable throttling in unit tests — replace every kind with an AsyncMock.
+    for kind in client._throttlers:
+        client._throttlers[kind] = mock.AsyncMock()
 
     async def _fake_connect() -> bool:
         client._client = mock_underlying
@@ -815,3 +819,307 @@ async def test_get_dashboard_stations_skips_user_type() -> None:
     stations = await client.get_dashboard_stations()
 
     assert stations == []
+
+
+# -- _classify_429 + _truncate_err_msg ----------------------------------------
+
+
+_CAPTCHA_HTML_SNIPPET = (
+    'HTTPError (429): <html><body class="smart-captcha">'
+    '<script src="/captcha_smart_qrcode.min.js"></script>'
+    "See https://yandex.ru/support/smart-captcha/about-429.html"
+)
+
+
+def test_classify_429_captcha_detects_smart_captcha_html() -> None:
+    """_classify_429 returns 'captcha' when the body contains smart-captcha markers."""
+    client, _ = _make_client()
+    err = NetworkError(_CAPTCHA_HTML_SNIPPET)
+    assert client._classify_429(err) == "captcha"
+
+
+def test_classify_429_plain_429_returns_rate_limit() -> None:
+    """_classify_429 returns 'rate_limit' for a bare 429 without captcha markers."""
+    client, _ = _make_client()
+    err = NetworkError("Bad Request (429): Too Many Requests")
+    assert client._classify_429(err) == "rate_limit"
+
+
+def test_classify_429_non_network_error_returns_other() -> None:
+    """_classify_429 returns 'other' for non-NetworkError exceptions even with '429' in msg."""
+    client, _ = _make_client()
+    err = ValueError("HTTP 429 from some other source")
+    assert client._classify_429(err) == "other"
+
+
+def test_truncate_err_msg_caps_long_html() -> None:
+    """_truncate_err_msg never leaks more than `limit` characters of the payload."""
+    big = NetworkError("X" * 5000)
+    truncated = YandexMusicClient._truncate_err_msg(big, limit=200)
+    assert len(truncated) <= 200 + len("...[truncated]")
+    assert truncated.endswith("...[truncated]")
+
+
+# -- captcha vs plain 429 in _call_with_retry ---------------------------------
+
+
+async def test_call_with_retry_captcha_raises_with_600s_backoff() -> None:
+    """Captcha response triggers a 600s cooldown and the HTML body is truncated out."""
+    client, underlying = _make_client()
+    underlying.tracks = mock.AsyncMock(side_effect=NetworkError(_CAPTCHA_HTML_SNIPPET))
+
+    with pytest.raises(ResourceTemporarilyUnavailable) as exc_info:
+        await client.get_tracks(["42"])
+
+    assert exc_info.value.backoff_time == 600
+    # The "default" kind owns c.tracks() — block deadline must be set.
+    assert client._block_until["default"] > 0
+    # The other kinds must remain untouched.
+    assert client._block_until["file_info"] == 0.0
+    assert client._block_until["rotor"] == 0.0
+    # The exception chain must NOT carry the 6 KB HTML body verbatim.
+    cause = exc_info.value.__cause__
+    assert cause is not None
+    assert "captcha_smart_qrcode" not in str(cause) or "[truncated]" in str(cause)
+
+
+async def test_call_with_retry_plain_429_keeps_60s_backoff_and_no_block() -> None:
+    """Plain 429 (no captcha markers) raises with 60s backoff but does NOT engage a block."""
+    client, underlying = _make_client()
+    underlying.tracks = mock.AsyncMock(
+        side_effect=NetworkError("Bad Request (429): Too Many Requests")
+    )
+
+    with pytest.raises(ResourceTemporarilyUnavailable) as exc_info:
+        await client.get_tracks(["42"])
+
+    assert exc_info.value.backoff_time == 60
+    # No kind should be quarantined for a plain 429.
+    assert all(v == 0.0 for v in client._block_until.values())
+
+
+# -- per-kind circuit breaker --------------------------------------------------
+
+
+async def test_circuit_breaker_blocks_only_affected_kind() -> None:
+    """A captcha on 'default' must NOT block 'file_info' or 'rotor' calls."""
+    client, underlying = _make_client()
+    client._block_until["default"] = time.monotonic() + 600
+
+    # 'default' kind: c.tracks() must fail fast without ever being awaited.
+    underlying.tracks = mock.AsyncMock(return_value=[])
+    with pytest.raises(ResourceTemporarilyUnavailable) as exc_info:
+        await client.get_tracks(["1"])
+    assert "default" in str(exc_info.value) or "cooldown" in str(exc_info.value)
+    underlying.tracks.assert_not_awaited()
+
+    # 'rotor' kind: rotor_stations_dashboard must still reach the network.
+    dashboard = mock.MagicMock(spec=Dashboard)
+    dashboard.stations = []
+    underlying.rotor_stations_dashboard = mock.AsyncMock(return_value=dashboard)
+    _ = await client.get_dashboard_stations()
+    underlying.rotor_stations_dashboard.assert_awaited()
+
+
+async def test_circuit_breaker_captcha_on_file_info_doesnt_block_default() -> None:
+    """A captcha-driven file_info block must not affect default-kind calls."""
+    client, underlying = _make_client()
+    client._block_until["file_info"] = time.monotonic() + 600
+    underlying.tracks = mock.AsyncMock(return_value=[])
+
+    # default kind call should pass through.
+    await client.get_tracks(["1"])
+    underlying.tracks.assert_awaited()
+
+
+async def test_circuit_breaker_clears_after_deadline() -> None:
+    """Once monotonic time passes _block_until, the call proceeds normally."""
+    client, underlying = _make_client()
+    client._block_until["default"] = time.monotonic() - 1.0  # past
+    underlying.tracks = mock.AsyncMock(return_value=[])
+
+    await client.get_tracks(["1"])
+    underlying.tracks.assert_awaited()
+
+
+async def test_bypass_throttler_bypasses_block() -> None:
+    """BYPASS_THROTTLER must allow refresh paths through even while a kind is blocked."""
+    client, underlying = _make_client()
+    client._block_until["file_info"] = time.monotonic() + 600
+
+    raw_response = {
+        "downloadInfo": {
+            "url": "https://example.com/x",
+            "codec": "flac-mp4",
+        }
+    }
+    underlying._request = mock.MagicMock()
+    underlying._request.get = mock.AsyncMock(return_value=raw_response)
+    underlying.base_url = "https://api.music.yandex.net"
+
+    token = BYPASS_THROTTLER.set(True)
+    try:
+        result = await client.get_track_file_info("42")
+    finally:
+        BYPASS_THROTTLER.reset(token)
+
+    assert result is not None
+    assert result["url"] == "https://example.com/x"
+
+
+# -- per-kind throttler routing ------------------------------------------------
+
+
+async def test_file_info_kind_routes_to_file_info_throttler() -> None:
+    """get_track_file_info must acquire the file_info throttler, not default."""
+    client, underlying = _make_client()
+
+    raw_response = {
+        "downloadInfo": {
+            "url": "https://example.com/x",
+            "codec": "flac-mp4",
+        }
+    }
+    underlying._request = mock.MagicMock()
+    underlying._request.get = mock.AsyncMock(return_value=raw_response)
+    underlying.base_url = "https://api.music.yandex.net"
+
+    await client.get_track_file_info("42")
+
+    client._throttlers["file_info"].acquire.assert_awaited()
+    client._throttlers["default"].acquire.assert_not_awaited()
+
+
+async def test_rotor_kind_routes_to_rotor_throttler() -> None:
+    """get_dashboard_stations must acquire the rotor throttler, not default."""
+    client, underlying = _make_client()
+
+    dashboard = mock.MagicMock(spec=Dashboard)
+    dashboard.stations = []
+    underlying.rotor_stations_dashboard = mock.AsyncMock(return_value=dashboard)
+
+    await client.get_dashboard_stations()
+
+    client._throttlers["rotor"].acquire.assert_awaited()
+    client._throttlers["default"].acquire.assert_not_awaited()
+
+
+# -- get_track_file_info short-TTL cache --------------------------------------
+
+
+def _make_file_info_response(url: str = "https://example.com/x") -> dict[str, Any]:
+    return {
+        "downloadInfo": {
+            "url": url,
+            "codec": "flac-mp4",
+            "quality": "lossless",
+            "transport": "raw",
+        }
+    }
+
+
+async def test_file_info_cache_hit_skips_network() -> None:
+    """Second call within TTL returns the cached entry and doesn't hit the network."""
+    client, underlying = _make_client()
+    underlying._request = mock.MagicMock()
+    underlying._request.get = mock.AsyncMock(return_value=_make_file_info_response())
+    underlying.base_url = "https://api.music.yandex.net"
+
+    first = await client.get_track_file_info("42")
+    second = await client.get_track_file_info("42")
+
+    assert first == second
+    underlying._request.get.assert_awaited_once()
+
+
+async def test_file_info_cache_expiry_hits_network_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the cached entry's TTL has elapsed, the next call goes back to network."""
+    client, underlying = _make_client()
+    underlying._request = mock.MagicMock()
+    underlying._request.get = mock.AsyncMock(return_value=_make_file_info_response())
+    underlying.base_url = "https://api.music.yandex.net"
+
+    base = time.monotonic()
+    current = {"t": base}
+
+    def _fake_monotonic() -> float:
+        return current["t"]
+
+    monkeypatch.setattr(
+        "music_assistant.providers.yandex_music.api_client.time.monotonic",
+        _fake_monotonic,
+    )
+
+    await client.get_track_file_info("42")
+    current["t"] = base + 9999.0  # well past the TTL
+    await client.get_track_file_info("42")
+
+    assert underlying._request.get.await_count == 2
+
+
+async def test_file_info_cache_invalidated_on_bad_request() -> None:
+    """A BadRequestError on the underlying call invalidates the cache for that track."""
+    client, underlying = _make_client()
+    underlying._request = mock.MagicMock()
+    underlying.base_url = "https://api.music.yandex.net"
+
+    # First call: populate cache.
+    underlying._request.get = mock.AsyncMock(return_value=_make_file_info_response())
+    await client.get_track_file_info("42")
+    assert ("42", "lossless", "raw") in client._file_info_cache
+
+    # Second call: server returns BadRequest → cache must be cleared.
+    underlying._request.get = mock.AsyncMock(side_effect=BadRequestError("nope"))
+    result = await client.get_track_file_info("42")
+    assert result is None
+    assert ("42", "lossless", "raw") not in client._file_info_cache
+
+
+async def test_file_info_cache_bypassed_when_bypass_throttler_set() -> None:
+    """Under BYPASS_THROTTLER, refresh must hit the network even with cached entry."""
+    client, underlying = _make_client()
+    underlying._request = mock.MagicMock()
+    underlying._request.get = mock.AsyncMock(return_value=_make_file_info_response())
+    underlying.base_url = "https://api.music.yandex.net"
+
+    await client.get_track_file_info("42")  # populate cache
+
+    token = BYPASS_THROTTLER.set(True)
+    try:
+        await client.get_track_file_info("42")
+    finally:
+        BYPASS_THROTTLER.reset(token)
+
+    assert underlying._request.get.await_count == 2
+
+
+async def test_file_info_cache_lru_eviction(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When the cache exceeds FILE_INFO_CACHE_MAX, the oldest entry is evicted."""
+    monkeypatch.setattr(
+        "music_assistant.providers.yandex_music.api_client.FILE_INFO_CACHE_MAX",
+        2,
+    )
+
+    client, underlying = _make_client()
+    underlying._request = mock.MagicMock()
+    underlying.base_url = "https://api.music.yandex.net"
+
+    counter = {"n": 0}
+
+    async def _vary_response(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        # Return distinct URLs so the cache entries are distinguishable.
+        return _make_file_info_response(url=f"https://example.com/{counter['n']}")
+
+    underlying._request.get = mock.AsyncMock(side_effect=_vary_response)
+
+    for tid in ("1", "2", "3"):
+        counter["n"] += 1
+        await client.get_track_file_info(tid)
+
+    assert len(client._file_info_cache) == 2
+    # Oldest ("1") must have been evicted.
+    assert ("1", "lossless", "raw") not in client._file_info_cache
+    assert ("2", "lossless", "raw") in client._file_info_cache
+    assert ("3", "lossless", "raw") in client._file_info_cache
