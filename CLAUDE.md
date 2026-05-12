@@ -11,6 +11,44 @@ Provider-specific architecture, key flows, and gotchas live in
 [`CLAUDE.local.md`](./CLAUDE.local.md). Claude Code automatically picks up both
 files when working in this repository.
 
+## AI Policy Alignment
+
+This provider follows two layered AI policies:
+
+- The Open Home Foundation **upstream policy** —
+  [`music-assistant/.github/AI_POLICY.md`](https://github.com/music-assistant/.github/blob/main/AI_POLICY.md)
+  — governs everything that lands in `music-assistant/server`.
+- The **ecosystem policy** —
+  [`trudenboy/ma-provider-tools/AI_POLICY.md`](https://github.com/trudenboy/ma-provider-tools/blob/main/AI_POLICY.md)
+  — governs work inside `trudenboy/ma-provider-*` and the upstream boundary
+  mechanics.
+
+A per-provider summary lives in [`AI_POLICY.md`](./AI_POLICY.md) (rendered
+from `wrappers/AI_POLICY.md.j2`).
+
+Operational rules for AI assistants working in this repo:
+
+1. **A human owns every PR.** The contributor must be able to explain every
+   change in their own words; PRs that look like unreviewed AI output are
+   closed.
+2. **Never open, push to, comment on, or close anything in `music-assistant/*`
+   directly.** The only path is the `upstream-pr.yml` workflow, which opens
+   the PR as a draft with a human-attestation checklist.
+3. **Replies to human reviewers are written by humans.** AI may polish
+   grammar and clarity; AI may not draft the substance. This applies in
+   upstream PRs **and** in our own provider-repo PRs.
+4. **Replies to AI review comments may be AI-drafted.** GitHub Copilot,
+   code-scanning bots, and similar tools post AI output; replying with
+   AI-drafted text is allowed because the conversation is AI ↔ AI. The
+   contributor must still read the AI's reply and apply judgement before
+   posting. **If a human reviewer joins the same thread, rule 3 takes over
+   from that point on** — every reply after that human comment must be
+   human-written.
+5. **AI co-author trailers** (`Co-Authored-By: Claude ...`) are encouraged
+   in this repo's commits as honest disclosure. They are stripped at the
+   upstream boundary by `upstream-pr.yml.j2` so they don't appear in
+   `music-assistant/server` history.
+
 ## Development Commands
 
 - `./scripts/setup.sh` — initial setup (venv via `uv`, dependencies, pre-commit hooks). Re-run after pulling latest code.
@@ -71,7 +109,10 @@ All non-trivial changes go through a pull request — never push directly to
    review.
 2. **Copilot triage.** Check the PR for GitHub Copilot review comments. For
    each comment: analyze it, apply a fix when warranted, reply with a short
-   justification, and resolve the thread.
+   justification, and resolve the thread. Copilot is an AI reviewer, so
+   AI-drafted replies are allowed here (see *AI Policy Alignment*, rule 4).
+   Replies to a **human** reviewer chiming into the same thread must be
+   human-written from that point on.
 3. **Version + changelog.** *After* review feedback is addressed, bump the
    `VERSION` file (PEP 440 — `1.2.0` stable, `1.2.0b1` beta) and add a
    `CHANGELOG.md` entry following the rules in **Changelog Discipline**
