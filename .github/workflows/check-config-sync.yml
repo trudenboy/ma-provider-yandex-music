@@ -1,0 +1,17 @@
+name: Check config sync
+
+on:
+  pull_request:
+    paths:
+      - "ruff.toml"
+      - "pyproject.toml"
+      - ".github/workflows/check-config-sync.yml"
+  push:
+    branches:
+      - dev
+
+jobs:
+  check:
+    uses: trudenboy/ma-provider-tools/.github/workflows/reusable-check-config-sync.yml@main
+    with:
+      domain: yandex_music

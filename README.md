@@ -1,5 +1,18 @@
 # Провайдер Яндекс Музыки для Music Assistant
 
+
+<!-- >>> ma-provider-tools sync (readme header) — DO NOT EDIT >>> -->
+[![CI](https://github.com/trudenboy/ma-provider-yandex-music/actions/workflows/test.yml/badge.svg)](https://github.com/trudenboy/ma-provider-yandex-music/actions/workflows/test.yml)
+[![Release](https://img.shields.io/github/v/release/trudenboy/ma-provider-yandex-music?display_name=tag)](https://github.com/trudenboy/ma-provider-yandex-music/releases/latest)
+[![License](https://img.shields.io/github/license/trudenboy/ma-provider-yandex-music)](LICENSE)
+[![Music Assistant](https://img.shields.io/badge/Music%20Assistant-9070B8?logo=python&logoColor=white)](https://www.music-assistant.io/)[![stable](https://img.shields.io/endpoint?url=https%3A%2F%2Ftrudenboy.github.io%2Fma-provider-tools%2Fbadges%2Fyandex_music-stable.json)](https://github.com/music-assistant/server/releases/latest)[![beta](https://img.shields.io/endpoint?url=https%3A%2F%2Ftrudenboy.github.io%2Fma-provider-tools%2Fbadges%2Fyandex_music-beta.json)](https://github.com/music-assistant/server/releases?q=prerelease)
+[![Stars](https://img.shields.io/github/stars/trudenboy/ma-provider-yandex-music?style=flat&logo=github)](https://github.com/trudenboy/ma-provider-yandex-music/stargazers)
+
+**📖 [Documentation / Документация](https://trudenboy.github.io/ma-provider-yandex-music/)** · **🔄 [Changelog / Журнал](CHANGELOG.md)** · **🐛 [Issues / Проблемы](https://github.com/trudenboy/ma-provider-yandex-music/issues)** · **💬 [Discussions / Обсуждения](https://github.com/trudenboy/ma-provider-yandex-music/discussions)**
+
+**Related providers:** [Yandex Music Connect (Ynison)](https://github.com/trudenboy/ma-provider-yandex-ynison) · [Yandex Station](https://github.com/trudenboy/ma-provider-yandex-station) · [Yandex Smart Home](https://github.com/trudenboy/ma-provider-yandex-smarthome) · [Yandex Alice](https://github.com/trudenboy/ma-provider-yandex-alice)
+<!-- <<< ma-provider-tools sync (readme header) <<< -->
+
 [English](README.en.md) | Русский
 
 📖 <a href="https://trudenboy.github.io/ma-provider-yandex-music/">Документация пользователя</a>

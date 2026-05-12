@@ -1,3 +1,6 @@
+# Auto-synced from music-assistant/server/pyproject.toml [tool.ruff].
+# Do not edit — `scripts/sync_upstream_config.py` regenerates this file weekly.
+
 fix = true
 show-fixes = true
 line-length = 100
@@ -33,6 +36,11 @@ ignore = [
   "ASYNC109",
   "ASYNC110",
   "N818",
+  "E501",
+  "ASYNC240",
+  "UP047",
+  "PLW0108",
+  "FURB110",
   "BLE001",
   "FBT001",
   "FBT002",
@@ -72,8 +80,6 @@ ignore = [
   "ERA001",
   "PTH206",
   "C901",
-  "PTH119",
-  "PTH116",
   "RUF012",
   "S304",
   "RUF006",

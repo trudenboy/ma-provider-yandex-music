@@ -35,11 +35,14 @@ PYEOF
 )
 if [ -n "$DEPS" ]; then
     echo "==> Installing provider dependencies: $DEPS"
-    if [ -x /app/venv/bin/pip ]; then
-        /app/venv/bin/pip install --quiet $DEPS
+    # The official ghcr.io/music-assistant/server image ships uv but no pip
+    # in the venv, so the bare `pip install` path crashes on
+    # `/app/venv/bin/pip: not found`. Prefer uv when available; fall back
+    # to pip for any image that still has it.
+    if [ -x /app/venv/bin/uv ]; then
+        /app/venv/bin/uv pip install --quiet --python /app/venv/bin/python $DEPS
     else
-        # newer MA images (beta/nightly) ship uv instead of pip
-        /app/venv/bin/uv pip install --python /app/venv/bin/python3 --quiet $DEPS
+        /app/venv/bin/pip install --quiet $DEPS
     fi
 fi
 
