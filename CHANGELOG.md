@@ -51,6 +51,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.5.1] - 2026-05-12
+
+- chore: bump VERSION to 3.5.1 (`dbbc460`)
+- chore: update changelog for v3.5.0 [skip ci] (`e447034`)
+- style: auto-fix ruff (`2ea0a1b`)
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
 
 ## [3.5.0] - 2026-05-12
