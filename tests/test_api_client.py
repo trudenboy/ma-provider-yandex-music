@@ -8,7 +8,7 @@ import hmac
 import re
 import time
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 from unittest import mock
 
 import pytest
@@ -825,10 +825,16 @@ async def test_get_dashboard_stations_skips_user_type() -> None:
 
 
 _CAPTCHA_HTML_SNIPPET = (
-    'HTTPError (429): <html><body class="smart-captcha">'
+    'HTTPError (429): <!DOCTYPE html><html><head><title>429</title></head>'
+    '<body class="smart-captcha">'
     '<script src="/captcha_smart_qrcode.min.js"></script>'
-    "See https://yandex.ru/support/smart-captcha/about-429.html"
+    'See <a href="https://yandex.ru/support/smart-captcha/about-429.html">'
+    "service support form</a>. Доступ к сервису временно запрещён — Yandex "
+    "anti-bot edge protection. Try again in a few minutes."
 )
+# Padding for the captcha truncation test — we need >200 chars to trigger
+# the _truncate_err_msg cap and verify production behaviour.
+assert len(_CAPTCHA_HTML_SNIPPET) > 200, "captcha snippet must exceed truncate limit"
 
 
 def test_classify_429_captcha_detects_smart_captcha_html() -> None:
@@ -877,10 +883,13 @@ async def test_call_with_retry_captcha_raises_with_600s_backoff() -> None:
     # The other kinds must remain untouched.
     assert client._block_until["file_info"] == 0.0
     assert client._block_until["rotor"] == 0.0
-    # The exception chain must NOT carry the 6 KB HTML body verbatim.
+    # The exception chain must carry a truncated message, not the full HTML.
     cause = exc_info.value.__cause__
     assert cause is not None
-    assert "captcha_smart_qrcode" not in str(cause) or "[truncated]" in str(cause)
+    cause_str = str(cause)
+    assert cause_str.endswith("...[truncated]")
+    # Truncated length is bounded — limit=200 + the truncation suffix.
+    assert len(cause_str) <= 200 + len("...[truncated]")
 
 
 async def test_call_with_retry_plain_429_keeps_60s_backoff_and_no_block() -> None:
@@ -1020,8 +1029,10 @@ async def test_file_info_kind_routes_to_file_info_throttler() -> None:
 
     await client.get_track_file_info("42")
 
-    client._throttlers["file_info"].acquire.assert_awaited()
-    client._throttlers["default"].acquire.assert_not_awaited()
+    file_info_acquire = cast("mock.AsyncMock", client._throttlers["file_info"].acquire)
+    default_acquire = cast("mock.AsyncMock", client._throttlers["default"].acquire)
+    file_info_acquire.assert_awaited()
+    default_acquire.assert_not_awaited()
 
 
 async def test_rotor_kind_routes_to_rotor_throttler() -> None:
@@ -1034,8 +1045,10 @@ async def test_rotor_kind_routes_to_rotor_throttler() -> None:
 
     await client.get_dashboard_stations()
 
-    client._throttlers["rotor"].acquire.assert_awaited()
-    client._throttlers["default"].acquire.assert_not_awaited()
+    rotor_acquire = cast("mock.AsyncMock", client._throttlers["rotor"].acquire)
+    default_acquire = cast("mock.AsyncMock", client._throttlers["default"].acquire)
+    rotor_acquire.assert_awaited()
+    default_acquire.assert_not_awaited()
 
 
 # -- get_track_file_info short-TTL cache --------------------------------------
@@ -1104,10 +1117,18 @@ async def test_file_info_cache_invalidated_on_bad_request() -> None:
     await client.get_track_file_info("42")
     assert ("42", "lossless", "raw") in client._file_info_cache
 
-    # Second call: server returns BadRequest → cache must be cleared.
+    # Trigger the BadRequest code path. A second call WITHOUT bypass would
+    # short-circuit on the cache hit and never reach the network — so we use
+    # BYPASS_THROTTLER (the same context that stream URL refresh uses) to skip
+    # the cache lookup. The 4xx-invalidation runs regardless of bypass.
     underlying._request.get = mock.AsyncMock(side_effect=BadRequestError("nope"))
-    result = await client.get_track_file_info("42")
+    token = BYPASS_THROTTLER.set(True)
+    try:
+        result = await client.get_track_file_info("42")
+    finally:
+        BYPASS_THROTTLER.reset(token)
     assert result is None
+    # Cache invalidated by the BadRequest handler.
     assert ("42", "lossless", "raw") not in client._file_info_cache
 
 
