@@ -967,6 +967,40 @@ async def test_bypass_throttler_bypasses_block() -> None:
     assert result["url"] == "https://example.com/x"
 
 
+async def test_captcha_during_bypass_still_engages_block() -> None:
+    """Captcha received during a BYPASS_THROTTLER call must still quarantine the kind.
+
+    Stream URL refresh runs under BYPASS_THROTTLER to keep an in-flight track
+    alive — but if Yandex returns smart-captcha on that very refresh, we DO
+    want the file_info kind quarantined so that subsequent NEW-track plays
+    fail fast instead of hitting Yandex and prolonging the edge ban.
+    The bypass itself still works for the next refresh of the same track.
+    """
+    client, underlying = _make_client()
+    underlying._request = mock.MagicMock()
+    underlying._request.get = mock.AsyncMock(
+        side_effect=NetworkError(_CAPTCHA_HTML_SNIPPET)
+    )
+    underlying.base_url = "https://api.music.yandex.net"
+
+    # Pre-condition: file_info kind is NOT blocked.
+    assert client._block_until["file_info"] == 0.0
+
+    token = BYPASS_THROTTLER.set(True)
+    try:
+        # get_track_file_info swallows ResourceTemporarilyUnavailable and returns None.
+        result = await client.get_track_file_info("42")
+    finally:
+        BYPASS_THROTTLER.reset(token)
+
+    assert result is None
+    # The block must have been engaged despite the bypass.
+    assert client._block_until["file_info"] > time.monotonic() + 500
+    # Other kinds remain free.
+    assert client._block_until["default"] == 0.0
+    assert client._block_until["rotor"] == 0.0
+
+
 # -- per-kind throttler routing ------------------------------------------------
 
 
