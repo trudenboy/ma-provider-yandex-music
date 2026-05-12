@@ -11,6 +11,7 @@ description: Как настроить визуальную презентаци
 
 - **`About`-блок** (`description`, `homepage`, `topics`) — задаются в `providers.yml` (поля `github_description`, `github_topics`, `github_homepage`) и применяются скриптом `scripts/sync_repo_settings.py` + workflow `sync-repo-settings.yml`.
 - **README-шапка** — блок между маркерами `<!-- >>> ma-provider-tools sync (readme header) >>> -->` и `<!-- <<< ma-provider-tools sync (readme header) <<< -->`. Содержит badges (CI / Release / License / Music Assistant / Stars), быстрые ссылки и cross-link на родственные провайдеры.
+- **Badge "Music Assistant"** — динамический shields.io endpoint badge: `https://trudenboy.github.io/ma-provider-tools/badges/yandex_music.json`. Cron `update-ma-version-badges.yml` обновляет JSON каждые 4 часа и показывает, в какие каналы MA (stable / beta / dev) включена текущая версия провайдера.
 - **Стартовая страница docs-site** (этот сайт) — hero-блок берёт `github_description`, под ним ряд тегов из `github_topics` и тот же ряд badges, что в README.
 
 Локальные правки этих блоков **не сохраняются**: следующий запуск `distribute.yml` перезапишет их. Чтобы изменить описание или topics — открывайте PR в `ma-provider-tools`.

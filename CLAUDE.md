@@ -121,6 +121,16 @@ block, the auto-synced README badge / quick-links / cross-links header
 markers), and the docs-site landing hero. Do not edit GitHub repo
 settings directly — open a PR in `ma-provider-tools` instead.
 
+The **Music Assistant** badge in the README is a dynamic shields.io
+endpoint hosted at
+`https://trudenboy.github.io/ma-provider-tools/badges/<domain>.json`. A
+4-hour cron in `ma-provider-tools` (`update-ma-version-badges.yml`)
+refreshes the JSON to show which MA channel (stable / beta / dev) ships
+the provider and at what MA version. The provider's own version pin is
+included once a `VERSION` file has been synced alongside `manifest.json`
+in each channel via the existing `sync-to-fork` / `upstream-pr`
+workflows. Do not edit the badge URL or the JSON manually.
+
 ## Feature Specification Discipline
 
 Non-trivial features go through a written spec before code. The template
