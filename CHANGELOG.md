@@ -59,6 +59,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.5.4] - 2026-05-13
+
+- fix(rate-limit): cooldown re-check on retry + cache awareness during cooldown (`759791c`)
+- style: auto-fix ruff (`a198cb9`)
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
 
 ## [3.5.0] - 2026-05-12
