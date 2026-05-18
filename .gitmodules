@@ -1,0 +1,3 @@
+[submodule "ma-server"]
+	path = ma-server
+	url = https://github.com/music-assistant/server.git
