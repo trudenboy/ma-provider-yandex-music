@@ -10,7 +10,7 @@ import logging
 import random
 import re
 import time
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict, deque
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Final, Literal, TypeVar, cast
@@ -41,7 +41,8 @@ if TYPE_CHECKING:
     from yandex_music.rotor.station_result import StationResult
 
 from .constants import (
-    CAPTCHA_COOLDOWN_S,
+    CAPTCHA_COOLDOWN_LADDER_S,
+    CAPTCHA_STRIKE_RETENTION_S,
     DEFAULT_LIMIT,
     FILE_INFO_CACHE_MAX,
     FILE_INFO_CACHE_TTL_S,
@@ -50,6 +51,7 @@ from .constants import (
     RATE_LIMIT_COOLDOWN_S,
     THROTTLE_DEFAULT_RPS,
     THROTTLE_FILE_INFO_RPS,
+    THROTTLE_METADATA_RPS,
     THROTTLE_ROTOR_RPS,
 )
 
@@ -81,15 +83,23 @@ class YandexMusicClient:
         self._reconnect_lock = asyncio.Lock()
         # Per-kind throttlers. Yandex's smart-captcha quota is per-endpoint-family,
         # so we keep a separate token bucket per logical class and let one kind
-        # back off independently of the others.
+        # back off independently of the others. `metadata` covers the artist/album
+        # refresh burst MA fires during initial sync (see #146).
         self._throttlers: dict[str, Throttler] = {
             "default": Throttler(rate_limit=THROTTLE_DEFAULT_RPS, period=1.0),
+            "metadata": Throttler(rate_limit=THROTTLE_METADATA_RPS, period=1.0),
             "file_info": Throttler(rate_limit=THROTTLE_FILE_INFO_RPS, period=1.0),
             "rotor": Throttler(rate_limit=THROTTLE_ROTOR_RPS, period=1.0),
         }
         # Per-kind captcha quarantine deadlines (monotonic). Only the explicit
         # smart-captcha page sets a deadline; plain 429 leaves these at 0.
         self._block_until: dict[str, float] = dict.fromkeys(self._throttlers, 0.0)
+        # Per-kind captcha strike timestamps (monotonic), trimmed to the
+        # CAPTCHA_STRIKE_RETENTION_S window on every push. Drives the
+        # CAPTCHA_COOLDOWN_LADDER_S escalation.
+        self._captcha_strikes: dict[str, deque[float]] = defaultdict(deque)
+        # Set when connect() succeeds. Drives the initial-sync jitter window.
+        self._connected_at: float | None = None
         # Short-TTL cache for /get-file-info results, keyed by
         # (track_id, quality, codecs, transport). Bounded by FILE_INFO_CACHE_MAX (LRU).
         self._file_info_cache: OrderedDict[
@@ -119,6 +129,7 @@ class YandexMusicClient:
             if self._client.me is None or self._client.me.account is None:
                 raise LoginFailed("Failed to get account info")
             self._user_id = self._client.me.account.uid
+            self._connected_at = time.monotonic()
             LOGGER.debug("Connected to Yandex Music as user %s", self._user_id)
             return True
         except UnauthorizedError as err:
@@ -131,6 +142,7 @@ class YandexMusicClient:
         """Disconnect the client."""
         self._client = None
         self._user_id = None
+        self._connected_at = None
 
     async def _ensure_connected(self) -> ClientAsync:
         """Ensure the client is connected, attempting reconnect if needed."""
@@ -210,15 +222,33 @@ class YandexMusicClient:
             )
 
     def _trigger_captcha_block(self, kind: str) -> int:
-        """Quarantine the given throttler kind for CAPTCHA_COOLDOWN_S.
+        """Quarantine the given throttler kind using the captcha-cooldown ladder.
 
         Only called when _classify_429 == "captcha". Plain rate-limit responses
         do NOT trigger this, since Yandex's smart-captcha bucket is per
         endpoint family and we don't want to gate unrelated traffic.
+
+        :param kind: Throttler bucket name (e.g. "default", "metadata").
+        :return: The cooldown duration in seconds (rounded down to int).
         """
-        cooldown = CAPTCHA_COOLDOWN_S
-        self._block_until[kind] = max(self._block_until.get(kind, 0.0), time.monotonic() + cooldown)
-        LOGGER.warning("Yandex Music %s captcha cooldown engaged: %.0fs", kind, cooldown)
+        now = time.monotonic()
+        strikes = self._captcha_strikes[kind]
+        cutoff = now - CAPTCHA_STRIKE_RETENTION_S
+        while strikes and strikes[0] < cutoff:
+            strikes.popleft()
+        strikes.append(now)
+        ladder = CAPTCHA_COOLDOWN_LADDER_S
+        idx = min(len(strikes), len(ladder)) - 1
+        cooldown = ladder[idx]
+        self._block_until[kind] = max(self._block_until.get(kind, 0.0), now + cooldown)
+        LOGGER.warning(
+            "Yandex Music %s captcha cooldown engaged: %.0fs (strike %d/%d in last %.0fs)",
+            kind,
+            cooldown,
+            len(strikes),
+            len(ladder),
+            CAPTCHA_STRIKE_RETENTION_S,
+        )
         return int(cooldown)
 
     def _maybe_handle_429(self, err: Exception, kind: str) -> ResourceTemporarilyUnavailable | None:

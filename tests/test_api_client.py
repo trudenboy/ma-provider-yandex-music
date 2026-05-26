@@ -869,15 +869,15 @@ def test_truncate_err_msg_caps_long_html() -> None:
 # -- captcha vs plain 429 in _call_with_retry ---------------------------------
 
 
-async def test_call_with_retry_captcha_raises_with_600s_backoff() -> None:
-    """Captcha response triggers a 600s cooldown and the HTML body is truncated out."""
+async def test_call_with_retry_captcha_raises_with_first_strike_backoff() -> None:
+    """Captcha response triggers a 60s cooldown on first strike and the HTML body is truncated out."""
     client, underlying = _make_client()
     underlying.tracks = mock.AsyncMock(side_effect=NetworkError(_CAPTCHA_HTML_SNIPPET))
 
     with pytest.raises(ResourceTemporarilyUnavailable) as exc_info:
         await client.get_tracks(["42"])
 
-    assert exc_info.value.backoff_time == 600
+    assert exc_info.value.backoff_time == 60
     # The "default" kind owns c.tracks() — block deadline must be set.
     assert client._block_until["default"] > 0
     # The other kinds must remain untouched.
@@ -1002,7 +1002,7 @@ async def test_captcha_during_bypass_still_engages_block() -> None:
 
     assert result is None
     # The block must have been engaged despite the bypass.
-    assert client._block_until["file_info"] > time.monotonic() + 500
+    assert client._block_until["file_info"] > time.monotonic() + 30
     # Other kinds remain free.
     assert client._block_until["default"] == 0.0
     assert client._block_until["rotor"] == 0.0
