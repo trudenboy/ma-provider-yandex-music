@@ -1522,4 +1522,81 @@ async def test_captcha_strikes_per_kind_isolated() -> None:
 
     assert len(client._captcha_strikes["file_info"]) == 1
     assert len(client._captcha_strikes["default"]) == 0
+
+
+# -- metadata throttler kind (#146) -------------------------------------------
+
+
+def test_metadata_kind_uses_separate_throttler() -> None:
+    """`metadata` resolves to a different Throttler than `default`."""
+    client = YandexMusicClient(token=SecretStr("fake_token"))
+    assert client._get_throttler("metadata") is not client._get_throttler("default")
+    assert client._get_throttler("metadata") is not client._get_throttler("file_info")
+    assert client._get_throttler("metadata") is not client._get_throttler("rotor")
+
+
+async def test_metadata_captcha_does_not_block_default() -> None:
+    """A captcha-driven `metadata` block must not stop `default` calls."""
+    client, underlying = _make_client()
+    client._block_until["metadata"] = time.monotonic() + 600
+
+    underlying.tracks = mock.AsyncMock(return_value=[])
+    await client.get_tracks(["1"])
+    underlying.tracks.assert_awaited()
+
+
+async def test_default_captcha_does_not_block_metadata() -> None:
+    """A captcha-driven `default` block must not stop `metadata` calls."""
+    client, underlying = _make_client()
+    client._block_until["default"] = time.monotonic() + 600
+
+    underlying.artists = mock.AsyncMock(return_value=[mock.MagicMock()])
+    result = await client.get_artist("42")
+    assert result is not None
+    underlying.artists.assert_awaited()
+
+
+@pytest.mark.parametrize(
+    ("method_name", "underlying_attr", "underlying_return", "call_args"),
+    [
+        ("get_album", "albums", [mock.MagicMock()], ("42",)),
+        (
+            "get_album_with_tracks",
+            "albums_with_tracks",
+            mock.MagicMock(),
+            ("42",),
+        ),
+        ("get_artist", "artists", [mock.MagicMock()], ("42",)),
+        (
+            "get_artist_albums",
+            "artists_direct_albums",
+            mock.MagicMock(albums=[mock.MagicMock()]),
+            ("42",),
+        ),
+        ("get_artist_about", "artists_about", mock.MagicMock(), ("42",)),
+        (
+            "get_artist_tracks",
+            "artists_tracks",
+            mock.MagicMock(tracks=[mock.MagicMock()]),
+            ("42",),
+        ),
+    ],
+)
+async def test_metadata_methods_use_metadata_throttler(
+    method_name: str,
+    underlying_attr: str,
+    underlying_return: Any,
+    call_args: tuple[str, ...],
+) -> None:
+    """Each metadata-refresh method must acquire the metadata throttler."""
+    client, underlying = _make_client()
+    setattr(underlying, underlying_attr, mock.AsyncMock(return_value=underlying_return))
+
+    method = getattr(client, method_name)
+    await method(*call_args)
+
+    metadata_throttler = cast("mock.AsyncMock", client._throttlers["metadata"])
+    default_throttler = cast("mock.AsyncMock", client._throttlers["default"])
+    metadata_throttler.acquire.assert_awaited()
+    default_throttler.acquire.assert_not_awaited()
     assert len(client._captcha_strikes["metadata"]) == 0
