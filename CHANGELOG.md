@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Isolate artist and album metadata refresh from the rest of the API so a hot metadata burst no longer blocks search, playlists, or playback.
 - Add a small jitter to API calls during the first minute after connect to smooth out the parallel metadata-refresh burst Music Assistant triggers immediately after a fresh install.
 - Lower the default per-second request budget so initial library sync is less likely to trip Yandex's smart-captcha edge in the first place.
+- Refresh parser test snapshots for new upstream `music_assistant_models` fields (`description_language`, `proxy_id` on images) so CI passes without behavioral changes.
 
 ## [3.4.2] - 2026-05-09
 
