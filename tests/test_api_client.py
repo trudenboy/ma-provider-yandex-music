@@ -1771,3 +1771,136 @@ def test_classify_429_behavior_unchanged_non_network() -> None:
     client, _ = _make_client()
     err = ValueError("HTTP 429 from some other source")
     assert client._classify_429(err) == "other"
+
+
+# -- RTU propagation regression (#146): metadata methods must NOT swallow ----
+# the captcha cooldown. ResourceTemporarilyUnavailable is a sibling of
+# ProviderUnavailableError under MusicAssistantError, not a descendant, so
+# the (BadRequestError, NetworkError, ProviderUnavailableError) catch tuple
+# correctly lets RTU propagate. These tests pin that contract — a future
+# refactor widening the catch to MusicAssistantError would silently defeat
+# the entire #146 cooldown mechanism.
+
+
+async def test_get_album_propagates_captcha_rtu() -> None:
+    """A captcha trip in get_album must raise RTU, not return None."""
+    client, underlying = _make_client()
+    underlying.albums = mock.AsyncMock(side_effect=NetworkError(_CAPTCHA_HTML_SNIPPET))
+    with pytest.raises(ResourceTemporarilyUnavailable) as exc_info:
+        await client.get_album("42")
+    assert exc_info.value.backoff_time == 60
+
+
+async def test_get_album_with_tracks_propagates_captcha_rtu() -> None:
+    """A captcha trip in get_album_with_tracks must raise RTU, not return None."""
+    client, underlying = _make_client()
+    underlying.albums_with_tracks = mock.AsyncMock(side_effect=NetworkError(_CAPTCHA_HTML_SNIPPET))
+    with pytest.raises(ResourceTemporarilyUnavailable) as exc_info:
+        await client.get_album_with_tracks("42")
+    assert exc_info.value.backoff_time == 60
+
+
+async def test_get_artist_propagates_captcha_rtu() -> None:
+    """A captcha trip in get_artist must raise RTU, not return None."""
+    client, underlying = _make_client()
+    underlying.artists = mock.AsyncMock(side_effect=NetworkError(_CAPTCHA_HTML_SNIPPET))
+    with pytest.raises(ResourceTemporarilyUnavailable) as exc_info:
+        await client.get_artist("42")
+    assert exc_info.value.backoff_time == 60
+
+
+async def test_get_artist_albums_propagates_captcha_rtu() -> None:
+    """A captcha trip in get_artist_albums must raise RTU, not return []."""
+    client, underlying = _make_client()
+    underlying.artists_direct_albums = mock.AsyncMock(
+        side_effect=NetworkError(_CAPTCHA_HTML_SNIPPET)
+    )
+    with pytest.raises(ResourceTemporarilyUnavailable) as exc_info:
+        await client.get_artist_albums("42")
+    assert exc_info.value.backoff_time == 60
+
+
+async def test_get_artist_about_propagates_captcha_rtu() -> None:
+    """A captcha trip in get_artist_about must raise RTU, not return None."""
+    client, underlying = _make_client()
+    underlying.artists_about = mock.AsyncMock(side_effect=NetworkError(_CAPTCHA_HTML_SNIPPET))
+    with pytest.raises(ResourceTemporarilyUnavailable) as exc_info:
+        await client.get_artist_about("42")
+    assert exc_info.value.backoff_time == 60
+
+
+async def test_get_artist_tracks_propagates_captcha_rtu() -> None:
+    """A captcha trip in get_artist_tracks must raise RTU, not return []."""
+    client, underlying = _make_client()
+    underlying.artists_tracks = mock.AsyncMock(side_effect=NetworkError(_CAPTCHA_HTML_SNIPPET))
+    with pytest.raises(ResourceTemporarilyUnavailable) as exc_info:
+        await client.get_artist_tracks("42")
+    assert exc_info.value.backoff_time == 60
+
+
+# -- jitter respects BYPASS_THROTTLER (#146) ---------------------------------
+
+
+async def test_jitter_skipped_under_bypass_throttler() -> None:
+    """Stream URL refresh paths run under BYPASS_THROTTLER — jitter must not fire.
+
+    The helper sits inside the ``if not BYPASS_THROTTLER.get():`` block in
+    both _call_with_retry and _call_no_retry. If a future refactor lifts
+    the jitter call out of that block, stream URL refresh would eat up to
+    INITIAL_SYNC_JITTER_S of avoidable latency during the first
+    INITIAL_SYNC_WINDOW_S after every connect — exactly when reconnect
+    storms make latency hurt the most.
+    """
+    client, underlying = _make_client()
+    client._connected_at = time.monotonic()  # window is active
+
+    raw_response = {
+        "downloadInfo": {
+            "url": "https://example.com/x",
+            "codec": "flac-mp4",
+        }
+    }
+    underlying._request = mock.MagicMock()
+    underlying._request.get = mock.AsyncMock(return_value=raw_response)
+    underlying.base_url = "https://api.music.yandex.net"
+
+    with mock.patch(
+        "music_assistant.providers.yandex_music.api_client.asyncio.sleep",
+        new_callable=mock.AsyncMock,
+    ) as sleep_mock:
+        token = BYPASS_THROTTLER.set(True)
+        try:
+            await client.get_track_file_info("42")
+        finally:
+            BYPASS_THROTTLER.reset(token)
+
+    sleep_mock.assert_not_awaited()
+
+
+async def test_jitter_skipped_when_kind_already_blocked() -> None:
+    """A blocked kind must fast-fail BEFORE the jitter sleep.
+
+    Order contract in _call_with_retry: _check_block -> jitter -> acquire ->
+    _check_block. The pre-check raises RTU immediately when the kind is
+    quarantined, so the jitter sleep never runs. A refactor that reorders
+    these calls would turn a fast-fail circuit breaker into a slow-fail
+    one during the first INITIAL_SYNC_WINDOW_S after connect — exactly
+    when MA's library walker is hammering the provider hardest.
+    """
+    client, underlying = _make_client()
+    client._connected_at = time.monotonic()  # window is active
+    client._block_until["default"] = time.monotonic() + 600  # kind quarantined
+    underlying.tracks = mock.AsyncMock(return_value=[])
+
+    with (
+        mock.patch(
+            "music_assistant.providers.yandex_music.api_client.asyncio.sleep",
+            new_callable=mock.AsyncMock,
+        ) as sleep_mock,
+        pytest.raises(ResourceTemporarilyUnavailable),
+    ):
+        await client.get_tracks(["1"])
+
+    sleep_mock.assert_not_awaited()
+    # Fast-fail: underlying API was never called.
+    underlying.tracks.assert_not_awaited()

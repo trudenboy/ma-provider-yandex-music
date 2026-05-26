@@ -337,7 +337,9 @@ class YandexMusicClient:
         """Execute an async API call with throttling and one reconnect attempt on connection error.
 
         :param func: Async callable that takes a ClientAsync and returns a result.
-        :param kind: Throttler bucket — "default", "file_info" or "rotor".
+        :param kind: Throttler bucket — one of the keys registered in
+            ``self._throttlers`` ("default", "metadata", "file_info",
+            "rotor"). Falls back to "default" if unknown.
         :return: The result of the API call.
         """
         if not BYPASS_THROTTLER.get():
@@ -395,7 +397,9 @@ class YandexMusicClient:
         path is skipped.
 
         :param func: Async callable that takes a ClientAsync and returns a result.
-        :param kind: Throttler bucket — "default", "file_info" or "rotor".
+        :param kind: Throttler bucket — one of the keys registered in
+            ``self._throttlers`` ("default", "metadata", "file_info",
+            "rotor"). Falls back to "default" if unknown.
         :return: The result of the API call.
         """
         if not BYPASS_THROTTLER.get():
