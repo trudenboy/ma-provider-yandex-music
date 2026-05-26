@@ -490,8 +490,89 @@ def test_parse_podcast_episode_inherits_podcast_image(provider_stub: ProviderStu
             None,
             id="english-with-stray-cyrillic",
         ),
+        # Boundary tests for the floor (>= 8 Cyrillic chars).
+        pytest.param("абвгдеёж", "ru", id="floor-exactly-8-cyrillic"),
+        pytest.param("абвгдеё!", None, id="floor-just-below-7-cyrillic"),
+        # Boundary tests for the share (>= 50% Cyrillic).
+        pytest.param("абвгдеёж01234567", "ru", id="share-exactly-50pct"),  # noqa: RUF001
+        pytest.param("абвгдеёж012345678", None, id="share-just-below-50pct"),  # noqa: RUF001
+        # Latin-heavy bio with embedded Cyrillic name must NOT flip to ru.
+        pytest.param(
+            "Bio of Pyotr Tchaikovsky (Пётр Ильич Чайковский), composer.",
+            None,
+            id="english-bio-with-russian-name",
+        ),
+        # Non-Russian Cyrillic languages must not be tagged ru.
+        pytest.param("Український співак з Києва.", None, id="ukrainian-bio"),
+        pytest.param(
+            "Спявае ў Менску і пакідае след.",  # noqa: RUF001
+            None,
+            id="belarusian-bio",
+        ),
+        pytest.param(
+            "Российский певец, родом из Київа.",
+            None,
+            id="russian-with-ukrainian-spelling",
+        ),
     ],
 )
 def test_detect_description_language(text: str | None, expected: str | None) -> None:
-    """Cyrillic-dominant text is classified as ru; everything else is None."""
+    """Cyrillic-dominant Russian text is classified as ru; everything else is None."""
     assert detect_description_language(text) == expected
+
+
+# -- Wire-up tests for description_language across parsers ---------------------
+# Snapshots use English-only fixtures so they would not catch a regression that
+# silently drops the description_language assignment in non-artist parsers.
+# These tests mutate a fixture's description to a Cyrillic string and pin the
+# wire-up at each call site.
+
+
+_RU_BIO = "Российский исполнитель, песни на родном языке."
+
+
+def test_parse_playlist_russian_description_sets_language(provider_stub: ProviderStub) -> None:
+    """parse_playlist tags a Cyrillic description as ru."""
+    playlist_obj = _playlist_from_fixture(FIXTURES_DIR / "playlists" / "other_user.json")
+    assert playlist_obj is not None
+    playlist_obj.description = _RU_BIO
+    result = parse_playlist(cast("YandexMusicProvider", provider_stub), playlist_obj)
+    assert result.metadata.description == _RU_BIO
+    assert result.metadata.description_language == "ru"
+
+
+def test_parse_podcast_russian_description_sets_language(provider_stub: ProviderStub) -> None:
+    """parse_podcast tags a Cyrillic description as ru."""
+    podcast_obj = _album_from_fixture(FIXTURES_DIR / "podcasts" / "basic.json")
+    assert podcast_obj is not None
+    podcast_obj.description = _RU_BIO
+    result = parse_podcast(cast("YandexMusicProvider", provider_stub), podcast_obj)
+    assert result.metadata.description == _RU_BIO
+    assert result.metadata.description_language == "ru"
+
+
+def test_parse_podcast_episode_russian_description_sets_language(
+    provider_stub: ProviderStub,
+) -> None:
+    """parse_podcast_episode tags a Cyrillic short_description as ru."""
+    podcast_obj = _album_from_fixture(FIXTURES_DIR / "podcasts" / "basic.json")
+    assert podcast_obj is not None
+    podcast = parse_podcast(cast("YandexMusicProvider", provider_stub), podcast_obj)
+    track_obj = _track_from_fixture(FIXTURES_DIR / "podcast_episodes" / "basic.json")
+    assert track_obj is not None
+    track_obj.short_description = _RU_BIO
+    episode = parse_podcast_episode(
+        cast("YandexMusicProvider", provider_stub), track_obj, podcast, position=1
+    )
+    assert episode.metadata.description == _RU_BIO
+    assert episode.metadata.description_language == "ru"
+
+
+def test_parse_audiobook_russian_description_sets_language(provider_stub: ProviderStub) -> None:
+    """parse_audiobook tags a Cyrillic description as ru."""
+    audiobook_obj = _album_from_fixture(FIXTURES_DIR / "audiobooks" / "basic.json")
+    assert audiobook_obj is not None
+    audiobook_obj.description = _RU_BIO
+    result = parse_audiobook(cast("YandexMusicProvider", provider_stub), audiobook_obj)
+    assert result.metadata.description == _RU_BIO
+    assert result.metadata.description_language == "ru"

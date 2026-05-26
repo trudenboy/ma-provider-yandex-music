@@ -98,23 +98,32 @@ def _get_image_url(cover_uri: str | None, size: str = IMAGE_SIZE_LARGE) -> str |
     return f"https://{cover_uri.replace('%%', size)}"
 
 
-def detect_description_language(text: str | None) -> str | None:
-    """Return a 2-letter language code when *text* is confidently in one language.
+_NON_RUSSIAN_CYRILLIC_MARKERS = frozenset("їєґіўЇЄҐІЎ")
 
-    Yandex Music API does not expose the language of artist/playlist/podcast
-    descriptions, so we infer it from script. Today only Cyrillic-dominant
-    text is classified (``"ru"``); everything else returns ``None`` so MA
-    can fall back to metadata providers for a user-localized bio.
+
+def detect_description_language(text: str | None) -> Literal["ru"] | None:
+    """Return ``"ru"`` for Russian-language text, ``None`` otherwise.
+
+    Yandex Music's API does not expose the language of artist / playlist /
+    podcast descriptions, so we infer it from script. A string classifies as
+    Russian when it (a) contains at least 8 Cyrillic characters that
+    (b) make up at least 50% of its length and (c) contains none of the
+    letters that mark another Slavic Cyrillic language (see
+    ``_NON_RUSSIAN_CYRILLIC_MARKERS`` — currently Ukrainian and Belarusian
+    discriminators). Everything else returns ``None`` so MA can fall back
+    to metadata providers for a user-localized bio.
 
     :param text: The description string to classify.
-    :return: 2-letter ISO 639-1 code or ``None`` when the language is uncertain.
+    :return: ``"ru"`` when the heuristic is confident, ``None`` otherwise.
     """
     if not text:
         return None
+    if not _NON_RUSSIAN_CYRILLIC_MARKERS.isdisjoint(text):
+        return None
     cyrillic = sum(1 for c in text if "Ѐ" <= c <= "ӿ")
-    # Need both an absolute floor (>= 8 chars) and a 25% share so a stray
-    # transliterated word in an English bio doesn't trip the heuristic.
-    if cyrillic >= 8 and cyrillic * 4 >= len(text):
+    # Floor + 50% share: a stray transliterated word in an English bio (e.g.
+    # an artist's Cyrillic name) must not flip the result to "ru".
+    if cyrillic >= 8 and cyrillic * 2 >= len(text):
         return "ru"
     return None
 
