@@ -1254,8 +1254,8 @@ async def test_rotor_feedback_no_retry_propagates_429_to_engage_block() -> None:
 
     # Feedback is fire-and-forget — caller gets False, no raise.
     assert result is False
-    # But the rotor cooldown MUST have been engaged.
-    assert client._block_until["rotor"] > time.monotonic() + 500
+    # But the rotor cooldown MUST have been engaged (first-strike: 60s).
+    assert client._block_until["rotor"] > time.monotonic() + 30
     # Other kinds untouched.
     assert client._block_until["default"] == 0.0
     assert client._block_until["file_info"] == 0.0
@@ -1280,10 +1280,10 @@ async def test_retry_path_classifies_captcha_after_reconnect() -> None:
     with pytest.raises(ResourceTemporarilyUnavailable) as exc_info:
         await client.get_tracks(["42"])
 
-    # Should have backed off for the captcha cooldown duration, not 60s.
-    assert exc_info.value.backoff_time == 600
+    # Should have backed off for the first-strike captcha cooldown.
+    assert exc_info.value.backoff_time == 60
     # Block engaged on default kind.
-    assert client._block_until["default"] > time.monotonic() + 500
+    assert client._block_until["default"] > time.monotonic() + 30
     # Both attempts ran (connection error + retry).
     assert underlying.tracks.await_count == 2
     # The HTML body must be truncated in the chain, not propagated raw.
