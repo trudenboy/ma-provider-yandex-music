@@ -24,6 +24,13 @@ from music_assistant.providers.yandex_music.api_client import (
     GET_FILE_INFO_CODECS,
     YandexMusicClient,
 )
+from music_assistant.providers.yandex_music.constants import (
+    CAPTCHA_COOLDOWN_LADDER_S,
+    INITIAL_SYNC_JITTER_S,
+    INITIAL_SYNC_WINDOW_S,
+    THROTTLE_DEFAULT_RPS,
+    THROTTLE_METADATA_RPS,
+)
 
 
 def _make_client() -> tuple[YandexMusicClient, mock.AsyncMock]:
@@ -1719,3 +1726,48 @@ async def test_jitter_skipped_for_rotor_kind() -> None:
 
     sleep_mock.assert_not_awaited()
     assert len(client._captcha_strikes["metadata"]) == 0
+
+
+# -- regression pins (#146) ---------------------------------------------------
+
+
+def test_throttle_default_rps_lowered_to_3() -> None:
+    """Pin the lowered default RPS so accidental reverts fail loudly."""
+    assert THROTTLE_DEFAULT_RPS == 3
+
+
+def test_throttle_metadata_rps_is_2() -> None:
+    """Pin the new metadata RPS."""
+    assert THROTTLE_METADATA_RPS == 2
+
+
+def test_captcha_cooldown_ladder_is_60_300_600() -> None:
+    """Pin the ladder so future tuning is an explicit, reviewed change."""
+    assert CAPTCHA_COOLDOWN_LADDER_S == (60.0, 300.0, 600.0)
+
+
+def test_initial_sync_window_constants() -> None:
+    """Pin the jitter window defaults."""
+    assert INITIAL_SYNC_JITTER_S == 0.5
+    assert INITIAL_SYNC_WINDOW_S == 60.0
+
+
+def test_classify_429_behavior_unchanged_smart_captcha() -> None:
+    """Existing captcha classification still detects smart-captcha markers."""
+    client, _ = _make_client()
+    err = NetworkError(_CAPTCHA_HTML_SNIPPET)
+    assert client._classify_429(err) == "captcha"
+
+
+def test_classify_429_behavior_unchanged_plain_429() -> None:
+    """Existing classification still returns 'rate_limit' for bare 429."""
+    client, _ = _make_client()
+    err = NetworkError("Bad Request (429): Too Many Requests")
+    assert client._classify_429(err) == "rate_limit"
+
+
+def test_classify_429_behavior_unchanged_non_network() -> None:
+    """Existing classification still returns 'other' for non-NetworkError."""
+    client, _ = _make_client()
+    err = ValueError("HTTP 429 from some other source")
+    assert client._classify_429(err) == "other"
