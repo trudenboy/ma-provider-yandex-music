@@ -50,8 +50,9 @@ Four coordinated changes, all driven by constants in `provider/constants.py`.
 `rotor`. The following read-only calls are routed through `kind="metadata"`:
 
 - `get_artist`
-- `get_artist_info`
+- `get_artist_about`
 - `get_album`
+- `get_album_with_tracks`
 - `get_artist_albums`
 - `get_artist_tracks`
 
@@ -142,7 +143,7 @@ verified to fail before the implementation lands.
 
 - `test_metadata_kind_uses_separate_throttler` — `_get_throttler("metadata") is not _get_throttler("default")`.
 - `test_metadata_captcha_does_not_block_default` — captcha on `metadata` → next `default` call still passes `_check_block`.
-- `test_<method>_uses_metadata_kind` (parametrized over `get_artist`, `get_artist_info`, `get_album`, `get_artist_albums`, `get_artist_tracks`).
+- `test_<method>_uses_metadata_kind` (parametrized over `get_artist`, `get_artist_about`, `get_album`, `get_album_with_tracks`, `get_artist_albums`, `get_artist_tracks`).
 
 ### Initial-sync jitter (Section 3.3)
 
