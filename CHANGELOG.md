@@ -88,6 +88,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.5.8] - 2026-05-26
+
+- chore: update changelog for v3.5.7 [skip ci] (`69f4cdf`)
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
 
 ## [3.5.0] - 2026-05-12
