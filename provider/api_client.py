@@ -46,6 +46,8 @@ from .constants import (
     DEFAULT_LIMIT,
     FILE_INFO_CACHE_MAX,
     FILE_INFO_CACHE_TTL_S,
+    INITIAL_SYNC_JITTER_S,
+    INITIAL_SYNC_WINDOW_S,
     LIKED_BATCH_JITTER_MIN_S,
     LIKED_BATCH_JITTER_SPAN_S,
     RATE_LIMIT_COOLDOWN_S,
@@ -301,6 +303,31 @@ class YandexMusicClient:
         for k in [k for k in self._file_info_cache if k[0] == track_id]:
             self._file_info_cache.pop(k, None)
 
+    async def _initial_sync_jitter(self, kind: str) -> None:
+        """Sleep a small random delay during the first-sync window.
+
+        Smooths out the parallel metadata-refresh burst MA fires immediately
+        after a fresh install + auth, which is what triggers smart-captcha
+        in #146. After INITIAL_SYNC_WINDOW_S the helper is a no-op — no
+        steady-state overhead.
+
+        Only active for the `default` and `metadata` kinds. `file_info` is
+        on the streaming hot path (latency matters), and `rotor` has its
+        own bucket already tuned for its cadence.
+
+        :param kind: Throttler bucket name.
+        """
+        if kind not in ("default", "metadata"):
+            return
+        connected_at = self._connected_at
+        if connected_at is None:
+            return
+        if time.monotonic() - connected_at >= INITIAL_SYNC_WINDOW_S:
+            return
+        delay = random.uniform(0.0, INITIAL_SYNC_JITTER_S)
+        if delay > 0:
+            await asyncio.sleep(delay)
+
     async def _call_with_retry(
         self,
         func: Callable[[ClientAsync], Awaitable[_T]],
@@ -318,6 +345,7 @@ class YandexMusicClient:
             # blocked. Re-check after acquire() — another concurrent request
             # may have engaged the cooldown while we were queued.
             self._check_block(kind)
+            await self._initial_sync_jitter(kind)
             await self._get_throttler(kind).acquire()
             self._check_block(kind)
         client = await self._ensure_connected()
@@ -373,6 +401,7 @@ class YandexMusicClient:
         if not BYPASS_THROTTLER.get():
             # Same dual check as _call_with_retry — see comment there.
             self._check_block(kind)
+            await self._initial_sync_jitter(kind)
             await self._get_throttler(kind).acquire()
             self._check_block(kind)
         client = await self._ensure_connected()
