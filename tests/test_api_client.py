@@ -1409,3 +1409,117 @@ async def test_file_info_cache_invalidated_on_unauthorized() -> None:
         BYPASS_THROTTLER.reset(token)
     assert result is None
     assert cache_key not in client._file_info_cache
+
+
+# -- captcha cooldown ladder + decay (#146) -----------------------------------
+
+
+async def test_captcha_first_strike_uses_short_cooldown() -> None:
+    """First captcha strike in the retention window picks 60s, not 600s."""
+    client, underlying = _make_client()
+    underlying.tracks = mock.AsyncMock(side_effect=NetworkError(_CAPTCHA_HTML_SNIPPET))
+
+    with pytest.raises(ResourceTemporarilyUnavailable) as exc_info:
+        await client.get_tracks(["42"])
+
+    assert exc_info.value.backoff_time == 60
+    assert len(client._captcha_strikes["default"]) == 1
+
+
+async def test_captcha_second_strike_uses_medium_cooldown() -> None:
+    """Second strike in the retention window escalates to 300s."""
+    client, underlying = _make_client()
+    underlying.tracks = mock.AsyncMock(side_effect=NetworkError(_CAPTCHA_HTML_SNIPPET))
+
+    # First strike
+    with pytest.raises(ResourceTemporarilyUnavailable):
+        await client.get_tracks(["42"])
+    # Clear the block so the second call is allowed to reach the API and trip again.
+    client._block_until["default"] = 0.0
+
+    with pytest.raises(ResourceTemporarilyUnavailable) as exc_info:
+        await client.get_tracks(["42"])
+
+    assert exc_info.value.backoff_time == 300
+    assert len(client._captcha_strikes["default"]) == 2
+
+
+async def test_captcha_third_strike_uses_max_cooldown() -> None:
+    """Third and later strikes cap at 600s."""
+    client, underlying = _make_client()
+    underlying.tracks = mock.AsyncMock(side_effect=NetworkError(_CAPTCHA_HTML_SNIPPET))
+
+    for _ in range(2):
+        with pytest.raises(ResourceTemporarilyUnavailable):
+            await client.get_tracks(["42"])
+        client._block_until["default"] = 0.0
+
+    with pytest.raises(ResourceTemporarilyUnavailable) as exc_info:
+        await client.get_tracks(["42"])
+
+    assert exc_info.value.backoff_time == 600
+    assert len(client._captcha_strikes["default"]) == 3
+
+
+async def test_captcha_fourth_strike_stays_at_max_cooldown() -> None:
+    """Strikes beyond the ladder length stay capped at the last rung (600s)."""
+    client, underlying = _make_client()
+    underlying.tracks = mock.AsyncMock(side_effect=NetworkError(_CAPTCHA_HTML_SNIPPET))
+
+    for _ in range(3):
+        with pytest.raises(ResourceTemporarilyUnavailable):
+            await client.get_tracks(["42"])
+        client._block_until["default"] = 0.0
+
+    with pytest.raises(ResourceTemporarilyUnavailable) as exc_info:
+        await client.get_tracks(["42"])
+
+    assert exc_info.value.backoff_time == 600
+
+
+async def test_captcha_strikes_decay_after_retention_window() -> None:
+    """Strikes outside CAPTCHA_STRIKE_RETENTION_S are forgotten — ladder resets."""
+    client, underlying = _make_client()
+    underlying.tracks = mock.AsyncMock(side_effect=NetworkError(_CAPTCHA_HTML_SNIPPET))
+
+    # Two strikes in quick succession.
+    with pytest.raises(ResourceTemporarilyUnavailable):
+        await client.get_tracks(["42"])
+    client._block_until["default"] = 0.0
+    with pytest.raises(ResourceTemporarilyUnavailable):
+        await client.get_tracks(["42"])
+    client._block_until["default"] = 0.0
+    assert len(client._captcha_strikes["default"]) == 2
+
+    # Age both strikes past the retention window.
+    aged = time.monotonic() - 3700.0  # > CAPTCHA_STRIKE_RETENTION_S (3600s)
+    client._captcha_strikes["default"].clear()
+    client._captcha_strikes["default"].extend([aged, aged])
+
+    with pytest.raises(ResourceTemporarilyUnavailable) as exc_info:
+        await client.get_tracks(["42"])
+
+    # Aged strikes were trimmed; this is a "fresh" first strike again.
+    assert exc_info.value.backoff_time == 60
+    assert len(client._captcha_strikes["default"]) == 1
+
+
+async def test_captcha_strikes_per_kind_isolated() -> None:
+    """A captcha on file_info must not bump the default strike counter."""
+    client, underlying = _make_client()
+    underlying._request = mock.MagicMock()
+    underlying._request.get = mock.AsyncMock(side_effect=NetworkError(_CAPTCHA_HTML_SNIPPET))
+    underlying.base_url = "https://api.music.yandex.net"
+
+    # Trip captcha on file_info via the BYPASS_THROTTLER + get_track_file_info path
+    # (which swallows the exception and returns None).
+    token = BYPASS_THROTTLER.set(True)
+    try:
+        result = await client.get_track_file_info("42")
+    finally:
+        BYPASS_THROTTLER.reset(token)
+    assert result is None
+
+    assert len(client._captcha_strikes["file_info"]) == 1
+    assert len(client._captcha_strikes["default"]) == 0
+    assert len(client._captcha_strikes["metadata"]) == 0
