@@ -98,6 +98,27 @@ def _get_image_url(cover_uri: str | None, size: str = IMAGE_SIZE_LARGE) -> str |
     return f"https://{cover_uri.replace('%%', size)}"
 
 
+def detect_description_language(text: str | None) -> str | None:
+    """Return a 2-letter language code when *text* is confidently in one language.
+
+    Yandex Music API does not expose the language of artist/playlist/podcast
+    descriptions, so we infer it from script. Today only Cyrillic-dominant
+    text is classified (``"ru"``); everything else returns ``None`` so MA
+    can fall back to metadata providers for a user-localized bio.
+
+    :param text: The description string to classify.
+    :return: 2-letter ISO 639-1 code or ``None`` when the language is uncertain.
+    """
+    if not text:
+        return None
+    cyrillic = sum(1 for c in text if "Ѐ" <= c <= "ӿ")
+    # Need both an absolute floor (>= 8 chars) and a 25% share so a stray
+    # transliterated word in an English bio doesn't trip the heuristic.
+    if cyrillic >= 8 and cyrillic * 4 >= len(text):
+        return "ru"
+    return None
+
+
 def parse_artist(
     provider: YandexMusicProvider,
     artist_obj: YandexArtist,
@@ -160,6 +181,7 @@ def parse_artist(
         description = getattr(about, "description", None)
         if description:
             artist.metadata.description = description
+            artist.metadata.description_language = detect_description_language(description)
         stats = getattr(about, "stats", None)
         monthly = getattr(stats, "last_month_listeners", None) if stats else None
         if monthly is not None:
@@ -419,6 +441,9 @@ def parse_playlist(
     # Metadata
     if playlist_obj.description:
         playlist.metadata.description = playlist_obj.description
+        playlist.metadata.description_language = detect_description_language(
+            playlist_obj.description
+        )
 
     # Add cover image
     if playlist_obj.cover:
@@ -504,6 +529,7 @@ def parse_podcast(provider: YandexMusicProvider, album_obj: YandexAlbum) -> Podc
     description = album_obj.description or album_obj.short_description
     if description:
         podcast.metadata.description = description
+        podcast.metadata.description_language = detect_description_language(description)
     if album_obj.content_warning:
         podcast.metadata.explicit = album_obj.content_warning == "explicit"
 
@@ -565,6 +591,9 @@ def parse_podcast_episode(
 
     if track_obj.short_description:
         episode.metadata.description = track_obj.short_description
+        episode.metadata.description_language = detect_description_language(
+            track_obj.short_description
+        )
     if track_obj.content_warning:
         episode.metadata.explicit = track_obj.content_warning == "explicit"
 
@@ -656,6 +685,7 @@ def parse_audiobook(provider: YandexMusicProvider, album_obj: YandexAlbum) -> Au
     description = album_obj.description or album_obj.short_description
     if description:
         audiobook.metadata.description = description
+        audiobook.metadata.description_language = detect_description_language(description)
     if album_obj.content_warning:
         audiobook.metadata.explicit = album_obj.content_warning == "explicit"
 

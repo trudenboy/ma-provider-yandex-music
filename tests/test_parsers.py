@@ -14,6 +14,7 @@ from yandex_music import Track as YandexTrack
 
 from music_assistant.providers.yandex_music.parsers import (
     classify_album,
+    detect_description_language,
     parse_album,
     parse_artist,
     parse_audiobook,
@@ -117,8 +118,29 @@ def test_parse_artist_with_about(provider_stub: ProviderStub) -> None:
 
     result = parse_artist(cast("YandexMusicProvider", provider_stub), artist_obj, about=about)
     assert result.metadata.description == "Singer-songwriter from somewhere."
+    # English bio: detector can't be confident — leave language unset.
+    assert result.metadata.description_language is None
     # 250000 // 10000 == 25
     assert result.metadata.popularity == 25
+
+
+def test_parse_artist_with_russian_about_sets_language(provider_stub: ProviderStub) -> None:
+    """A Cyrillic-dominant artist bio is tagged as ``ru``."""
+    artist_obj = _artist_from_fixture(FIXTURES_DIR / "artists" / "with_cover.json")
+    assert artist_obj is not None
+
+    about = type(
+        "ArtistAbout",
+        (),
+        {
+            "description": "Российский исполнитель из Санкт-Петербурга.",
+            "stats": None,
+        },
+    )()
+
+    result = parse_artist(cast("YandexMusicProvider", provider_stub), artist_obj, about=about)
+    assert result.metadata.description == "Российский исполнитель из Санкт-Петербурга."
+    assert result.metadata.description_language == "ru"
 
 
 def test_parse_artist_about_missing_fields(provider_stub: ProviderStub) -> None:
@@ -444,3 +466,32 @@ def test_parse_podcast_episode_inherits_podcast_image(provider_stub: ProviderStu
     assert episode.metadata.images == podcast.metadata.images
     # Must be a separate list — mutating one shouldn't affect the other.
     assert episode.metadata.images is not podcast.metadata.images
+
+
+# -- detect_description_language helper --------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        pytest.param(None, None, id="none"),
+        pytest.param("", None, id="empty"),
+        pytest.param("   ", None, id="whitespace"),
+        pytest.param("Singer-songwriter from somewhere.", None, id="english-bio"),
+        pytest.param("Российский исполнитель из Санкт-Петербурга.", "ru", id="ru-bio"),
+        pytest.param(
+            'Группа "Кино" появилась в 1982 году в Ленинграде.',
+            "ru",
+            id="ru-bio-with-punct",
+        ),
+        pytest.param("Привет!", None, id="too-short-ru-only-6-cyrillic"),
+        pytest.param(
+            "An English bio that mentions Москва once in passing.",
+            None,
+            id="english-with-stray-cyrillic",
+        ),
+    ],
+)
+def test_detect_description_language(text: str | None, expected: str | None) -> None:
+    """Cyrillic-dominant text is classified as ru; everything else is None."""
+    assert detect_description_language(text) == expected
