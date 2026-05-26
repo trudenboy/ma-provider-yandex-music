@@ -1599,4 +1599,123 @@ async def test_metadata_methods_use_metadata_throttler(
     default_throttler = cast("mock.AsyncMock", client._throttlers["default"])
     metadata_throttler.acquire.assert_awaited()
     default_throttler.acquire.assert_not_awaited()
+
+
+# -- initial-sync jitter window (#146) ----------------------------------------
+
+
+async def test_jitter_applied_for_default_within_initial_sync_window() -> None:
+    """`default` calls within INITIAL_SYNC_WINDOW_S get a positive jitter delay."""
+    client, underlying = _make_client()
+    client._connected_at = time.monotonic()  # window is currently active
+    underlying.tracks = mock.AsyncMock(return_value=[])
+
+    with (
+        mock.patch(
+            "music_assistant.providers.yandex_music.api_client.random.uniform",
+            return_value=0.25,
+        ),
+        mock.patch(
+            "music_assistant.providers.yandex_music.api_client.asyncio.sleep",
+            new_callable=mock.AsyncMock,
+        ) as sleep_mock,
+    ):
+        await client.get_tracks(["1"])
+
+    sleep_mock.assert_awaited()
+    assert sleep_mock.await_args is not None
+    delay = sleep_mock.await_args.args[0]
+    assert 0.0 <= delay <= 0.5  # INITIAL_SYNC_JITTER_S = 0.5
+
+
+async def test_jitter_applied_for_metadata_within_initial_sync_window() -> None:
+    """`metadata` calls within INITIAL_SYNC_WINDOW_S get a positive jitter delay."""
+    client, underlying = _make_client()
+    client._connected_at = time.monotonic()
+    underlying.artists = mock.AsyncMock(return_value=[mock.MagicMock()])
+
+    with (
+        mock.patch(
+            "music_assistant.providers.yandex_music.api_client.random.uniform",
+            return_value=0.25,
+        ),
+        mock.patch(
+            "music_assistant.providers.yandex_music.api_client.asyncio.sleep",
+            new_callable=mock.AsyncMock,
+        ) as sleep_mock,
+    ):
+        await client.get_artist("1")
+
+    sleep_mock.assert_awaited()
+
+
+async def test_jitter_skipped_after_initial_sync_window() -> None:
+    """Outside INITIAL_SYNC_WINDOW_S the helper is a no-op."""
+    client, underlying = _make_client()
+    # Connected 120s ago — well past the 60s window.
+    client._connected_at = time.monotonic() - 120.0
+    underlying.tracks = mock.AsyncMock(return_value=[])
+
+    with mock.patch(
+        "music_assistant.providers.yandex_music.api_client.asyncio.sleep",
+        new_callable=mock.AsyncMock,
+    ) as sleep_mock:
+        await client.get_tracks(["1"])
+
+    sleep_mock.assert_not_awaited()
+
+
+async def test_jitter_skipped_when_never_connected() -> None:
+    """If _connected_at is None (no successful connect yet), jitter is skipped."""
+    client, underlying = _make_client()
+    client._connected_at = None
+    underlying.tracks = mock.AsyncMock(return_value=[])
+
+    with mock.patch(
+        "music_assistant.providers.yandex_music.api_client.asyncio.sleep",
+        new_callable=mock.AsyncMock,
+    ) as sleep_mock:
+        await client.get_tracks(["1"])
+
+    sleep_mock.assert_not_awaited()
+
+
+async def test_jitter_skipped_for_file_info_kind() -> None:
+    """file_info is on the streaming hot path — jitter must never apply."""
+    client, underlying = _make_client()
+    client._connected_at = time.monotonic()  # window active
+    raw_response = {
+        "downloadInfo": {
+            "url": "https://example.com/x",
+            "codec": "flac-mp4",
+        }
+    }
+    underlying._request = mock.MagicMock()
+    underlying._request.get = mock.AsyncMock(return_value=raw_response)
+    underlying.base_url = "https://api.music.yandex.net"
+
+    with mock.patch(
+        "music_assistant.providers.yandex_music.api_client.asyncio.sleep",
+        new_callable=mock.AsyncMock,
+    ) as sleep_mock:
+        await client.get_track_file_info("42")
+
+    sleep_mock.assert_not_awaited()
+
+
+async def test_jitter_skipped_for_rotor_kind() -> None:
+    """Rotor has its own bucket — jitter must never apply."""
+    client, underlying = _make_client()
+    client._connected_at = time.monotonic()
+    dashboard = mock.MagicMock(spec=Dashboard)
+    dashboard.stations = []
+    underlying.rotor_stations_dashboard = mock.AsyncMock(return_value=dashboard)
+
+    with mock.patch(
+        "music_assistant.providers.yandex_music.api_client.asyncio.sleep",
+        new_callable=mock.AsyncMock,
+    ) as sleep_mock:
+        await client.get_dashboard_stations()
+
+    sleep_mock.assert_not_awaited()
     assert len(client._captcha_strikes["metadata"]) == 0
