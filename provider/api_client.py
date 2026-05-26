@@ -1053,7 +1053,7 @@ class YandexMusicClient:
         :return: Album object or None if not found.
         """
         try:
-            albums = await self._call_with_retry(lambda c: c.albums([album_id]))
+            albums = await self._call_with_retry(lambda c: c.albums([album_id]), kind="metadata")
             return albums[0] if albums else None
         except (BadRequestError, NetworkError, ProviderUnavailableError) as err:
             LOGGER.error("Error fetching album %s: %s", album_id, err)
@@ -1077,7 +1077,8 @@ class YandexMusicClient:
                         "richTracks": "true",
                         "withListeningFinished": "true",
                     },
-                )
+                ),
+                kind="metadata",
             )
         except (BadRequestError, NetworkError, ProviderUnavailableError) as err:
             LOGGER.error("Error fetching album with tracks %s: %s", album_id, err)
@@ -1090,7 +1091,7 @@ class YandexMusicClient:
         :return: Artist object or None if not found.
         """
         try:
-            artists = await self._call_with_retry(lambda c: c.artists([artist_id]))
+            artists = await self._call_with_retry(lambda c: c.artists([artist_id]), kind="metadata")
             return artists[0] if artists else None
         except (BadRequestError, NetworkError, ProviderUnavailableError) as err:
             LOGGER.error("Error fetching artist %s: %s", artist_id, err)
@@ -1107,7 +1108,8 @@ class YandexMusicClient:
         """
         try:
             result = await self._call_with_retry(
-                lambda c: c.artists_direct_albums(artist_id, page=0, page_size=limit)
+                lambda c: c.artists_direct_albums(artist_id, page=0, page_size=limit),
+                kind="metadata",
             )
             if result is None:
                 return []
@@ -1145,7 +1147,9 @@ class YandexMusicClient:
         :return: ArtistAbout object or None on error/missing.
         """
         try:
-            return await self._call_with_retry(lambda c: c.artists_about(artist_id))
+            return await self._call_with_retry(
+                lambda c: c.artists_about(artist_id), kind="metadata"
+            )
         except (BadRequestError, NetworkError, ProviderUnavailableError) as err:
             LOGGER.error("Error fetching artist about %s: %s", artist_id, err)
             return None
@@ -1180,7 +1184,8 @@ class YandexMusicClient:
         """
         try:
             result = await self._call_with_retry(
-                lambda c: c.artists_tracks(artist_id, page=0, page_size=limit)
+                lambda c: c.artists_tracks(artist_id, page=0, page_size=limit),
+                kind="metadata",
             )
             if result is None:
                 return []
