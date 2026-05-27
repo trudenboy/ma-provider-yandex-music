@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.13] - 2026-05-27
+
+### Fixed
+
+- Detect Russian-language bios correctly when the text has leading or trailing whitespace — padding no longer dilutes the Cyrillic-share check below threshold.
+- Rank unknown-bitrate audio variants unambiguously when "efficient" quality is selected — lossless streams (reported as bitrate 0) and unknown-bitrate streams now both rank last so they never out-rank a real low-bitrate AAC.
+
+### Changed
+
+- Drop the unused `limit` argument from the internal Yandex search API call. Callers slice each result bucket to their requested size after classification; the lower-level call never honoured a per-type cap.
+- Tighten the return-type annotation of the internal "URL refresh on 4xx" helper to reflect actual behaviour: it always returns `bytes` (empty for raw streams) or raises `MediaNotFoundError`.
+- Use a defensive `getattr` for the Yandex client `base_url` attribute in the landing-blocks endpoint, mirroring the rotor-session helper. A library rename will degrade gracefully instead of raising `AttributeError`.
+- Introduce `CONF_SESSION_ID` constant for the session-id config key used by both auth flows, replacing two bare string literals.
+- Apply `Final` annotations uniformly to module-level constants for stricter type-checking.
+
+### Removed
+
+- Unused legacy auth-flow constants (`CONF_ACTION_AUTH`, `LABEL_TOKEN`, `LABEL_AUTH_INSTRUCTIONS`) and the unused `IMAGE_SIZE_SMALL` image-size constant.
+
 ## [3.5.12] - 2026-05-27
 
 ### Changed
