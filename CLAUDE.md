@@ -152,8 +152,9 @@ skeleton, in this order:
 3. `## Types of changes` — tick ≥ 1 box; multi-tick is supported
    (e.g. `bugfix` + `enhancement` + `dependencies` for cross-cutting
    releases).
-4. `## Checklist`.
-5. Optional `### Human review attestation` below upstream's sections.
+4. `## Checklist`. The `I have read and complied with the project's
+   AI Policy` checkbox is the human-attestation checkpoint; do not
+   append a separate attestation block.
 
 Upstream's `pr-labels.yaml` reads the ticked `## Types of changes`
 checkboxes to apply labels; the release-notes generator slots by
