@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.10] - 2026-05-27
+
+### Fixed
+
+- Stop including upstream library exception detail in user-facing authentication errors. Yandex Passport failures (login, token refresh, credential refresh) now surface only the error class name, so token fragments or response bodies that the library may embed in its exception messages can no longer reach Music Assistant logs or the frontend.
+- Stop embedding the signed CDN URL in stream-fetch error messages. When a Yandex audio request fails with an HTTP error, the resulting `MediaNotFoundError` now reports only the HTTP status — the URL's expiring signature no longer leaks into logs.
+
 ## [3.5.9] - 2026-05-27
 
 ### Changed
