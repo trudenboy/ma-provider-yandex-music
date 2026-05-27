@@ -159,6 +159,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.5.13] - 2026-05-27
+
+- chore(modules): hygiene pass — Final annotations, dead constants, idioms (#162) (`a8905ed`)
+- chore: update changelog for v3.5.12 [skip ci] (`0615505`)
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
 
 ## [3.5.0] - 2026-05-12
