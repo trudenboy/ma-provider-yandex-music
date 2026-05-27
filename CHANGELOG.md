@@ -120,6 +120,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.5.11] - 2026-05-27
+
+- fix(resilience): distinguish transient from terminal errors across the stack (#158) (`1901fbf`)
+- style: auto-fix ruff (`fd1ad0b`)
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
 
 ## [3.5.0] - 2026-05-12
