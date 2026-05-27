@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.11] - 2026-05-27
+
+### Fixed
+
+- Reduce search-result staleness from 14 days to 1 day so newly released albums appear within a day of being added to Yandex's catalogue.
+- Stop discarding already-fetched playlist tracks when a single batch mid-load returns empty. The playlist now loads partially and a warning is logged; the existing all-batches-empty guard still raises terminal failures.
+- Surface 4xx responses from search, liked-tracks, and liked-albums correctly. Previously these were wrapped as transient errors and Music Assistant retried in a loop reproducing the same failure; now they resolve to empty results.
+- Distinguish transient network failures from invalid credentials in token validation. Good tokens are no longer dropped on a network hiccup; only Passport's terminal rejection clears them.
+- Sort liked tracks safely when the upstream library returns timezone-naive timestamps for some entries and timezone-aware for others — the whole liked-tracks collection could previously fail to load with a `TypeError`.
+- Apply rate-limit throttling consistently on the reconnect-retry path. Skipping the throttler acquire on the retry attempt doubled the effective request rate during connection flap, increasing Yandex smart-captcha trip risk.
+- Skip the unnecessary reconnect cycle on 4xx errors. `BadRequestError` is a terminal client error from Yandex; it no longer triggers a connection reset and retry.
+- Clear all per-session caches (My Wave state, wave background colors, liked-albums cache) on provider reload so stale `asyncio.Lock` objects bound to the previous event loop cannot survive a settings change.
+
 ## [3.5.10] - 2026-05-27
 
 ### Fixed
