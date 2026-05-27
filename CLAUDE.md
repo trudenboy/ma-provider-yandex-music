@@ -140,6 +140,29 @@ This provider is intended to be inlined into
 target shape, not a possibility. Any code that lints / type-checks here
 must lint / type-check identically upstream.
 
+## Upstream PR Body Format
+
+When drafting or refining text for an upstream PR body in
+`music-assistant/server`, the body MUST follow upstream's
+[`PULL_REQUEST_TEMPLATE.md`](https://github.com/music-assistant/.github/blob/main/.github/PULL_REQUEST_TEMPLATE.md)
+skeleton, in this order:
+
+1. `# What does this implement/fix?` — narrative goes under this heading.
+2. `**Related issue (if applicable):**`.
+3. `## Types of changes` — tick ≥ 1 box; multi-tick is supported
+   (e.g. `bugfix` + `enhancement` + `dependencies` for cross-cutting
+   releases).
+4. `## Checklist`.
+5. Optional `### Human review attestation` below upstream's sections.
+
+Upstream's `pr-labels.yaml` reads the ticked `## Types of changes`
+checkboxes to apply labels; the release-notes generator slots by
+label. A body without these sections silently breaks both.
+
+Per *AI Policy Alignment* rule 2, do not edit the upstream PR
+directly — produce the corrected body and the human applies it
+(via `gh api repos/music-assistant/server/pulls/<N> -X PATCH -F body=@file.md`).
+
 ## Auto-Synced Lint & Typing Config
 
 `ruff.toml`, `[tool.mypy]`, and `[tool.codespell].skip` mirror upstream
