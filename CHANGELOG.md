@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.9] - 2026-05-27
+
+### Changed
+
+- Limit `description_language` tagging to artist biographies only. The previous release also tagged playlist / podcast / podcast-episode / audiobook descriptions, but Music Assistant currently has no metadata-provider competition for those text fields, so the language hint never affected what users see. The artist case — where multiple sources (Yandex, TheAudioDB, fanart, lastfm) compete and the user's preferred-language setting actually drives the merge — is preserved.
+
 ## [3.5.6] - 2026-05-26
 
 ### Added
