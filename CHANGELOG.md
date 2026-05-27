@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.12] - 2026-05-27
+
+### Changed
+
+- Improve test coverage for stream-details resolution, podcast / audiobook / episode parsers, and the recommendations orchestrator. Closes coverage gaps flagged by the codebase review: `get_stream_details` now has happy-path, download-info-fallback, and both-fail tests; the `description_language is None` invariant is regression-guarded on podcast / audiobook / episode parsers; and the My Wave recommendations folder is end-to-end tested against the real `parse_track` path so a parser/orchestrator integration regression cannot slip through.
+
 ## [3.5.11] - 2026-05-27
 
 ### Fixed
