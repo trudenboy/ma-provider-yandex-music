@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.15] - 2026-05-28
+
+### Fixed
+
+- Stop tripping Yandex smart-captcha on the first browse after a fresh sync. Tag-validation in browse and recommendations used to fire 5–8 parallel `get_tag_playlists` calls per category via `asyncio.gather`, which Yandex's edge layer treats as a scraper signature (per-endpoint concurrency limit ≈ 1) — captcha within ~460 ms of the burst, blocking the provider for 60 s+ on every cold home-screen visit. The validation pass was paranoid filtering of evergreen hardcoded categories and Yandex's own landing-discovered tags (already pre-filtered server-side); removing it eliminates the burst entirely. If a tag turns out empty at click time, browse already renders an empty folder.
+
+### Changed
+
+- Reshape the seasonal-mix recommendation fallback: try the current season's tag, fall back to `autumn` only if the first call returns zero playlists. Previously a separate runtime validation call was made first; the new path makes at most one extra request when needed.
+- Forensic logging of every 429-classified response (`markers_matched` + first 2000 chars of body) and per-request `caller=`/`kind=` diagnostic remain in the code at DEBUG level so a single captcha trip in production can be reconstructed by flipping the provider log level — no impact on steady-state logs.
+
 ## [3.5.14] - 2026-05-27
 
 ### Changed

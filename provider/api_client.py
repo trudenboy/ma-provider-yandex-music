@@ -204,8 +204,20 @@ class YandexMusicClient:
         if not isinstance(err, NetworkError):
             return "other"
         low = str(err).lower()
-        if not ("429" in low or "too many requests" in low or "rate limit" in low):
+        is_429 = "429" in low or "too many requests" in low or "rate limit" in low
+        if not is_429:
             return "other"
+        # 429 payload dump for forensics: which markers actually matched and
+        # the first 2000 chars of the body. Captured at DEBUG so a single
+        # captcha trip in production can be reconstructed by flipping the
+        # provider log level — without flooding steady-state logs.
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            matched_markers = [m for m in _CAPTCHA_MARKERS if m in low]
+            LOGGER.debug(
+                "429 classify forensics: markers_matched=%s body[:2000]=%r",
+                matched_markers,
+                str(err)[:2000],
+            )
         return "captcha" if any(m in low for m in _CAPTCHA_MARKERS) else "rate_limit"
 
     def _is_rate_limit_error(self, err: Exception) -> bool:
@@ -366,6 +378,19 @@ class YandexMusicClient:
             "rotor"). Falls back to "default" if unknown.
         :return: The result of the API call.
         """
+        # Per-request diagnostic — emits caller + kind so a DEBUG-level capture
+        # can reconstruct request density before any captcha trip. Stays at
+        # DEBUG so steady-state logs are clean.
+        if LOGGER.isEnabledFor(logging.DEBUG):
+            caller = getattr(func, "__qualname__", "?")
+            if ".<locals>." in caller:
+                caller = caller.split(".<locals>.")[0]
+            LOGGER.debug(
+                "req: kind=%s caller=%s bypass=%s",
+                kind,
+                caller,
+                BYPASS_THROTTLER.get(),
+            )
         if not BYPASS_THROTTLER.get():
             # Fast path: short-circuit before queueing if the kind is already
             # blocked. Re-check after acquire() — another concurrent request
