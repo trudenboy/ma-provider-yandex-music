@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -1998,3 +1999,81 @@ async def test_jitter_skipped_when_kind_already_blocked() -> None:
     sleep_mock.assert_not_awaited()
     # Fast-fail: underlying API was never called.
     underlying.tracks.assert_not_awaited()
+
+
+# -- Per-endpoint concurrency lock (defense-in-depth vs Yandex captcha) -------
+
+
+async def test_parallel_same_endpoint_calls_serialize() -> None:
+    """Parallel calls to the same endpoint must run one-at-a-time.
+
+    Yandex's edge treats concurrent requests to the same URL family as a
+    scraper signature and trips captcha within ~460 ms. The per-endpoint
+    lock in ``_call_with_retry`` is the defense-in-depth that prevents a
+    future ``asyncio.gather`` from re-introducing the same burst pattern.
+    """
+    client, underlying = _make_client()
+
+    concurrent_peak = 0
+    in_flight = 0
+    lock = asyncio.Lock()
+
+    async def _slow_tracks(_track_ids: list[str]) -> list[Any]:
+        nonlocal concurrent_peak, in_flight
+        async with lock:
+            in_flight += 1
+            concurrent_peak = max(concurrent_peak, in_flight)
+        try:
+            await asyncio.sleep(0.05)
+            return []
+        finally:
+            async with lock:
+                in_flight -= 1
+
+    underlying.tracks = _slow_tracks
+
+    # Fire 5 parallel calls to the SAME method; per-endpoint lock should
+    # serialise them despite ``asyncio.gather`` queueing them simultaneously.
+    await asyncio.gather(*(client.get_tracks([str(i)]) for i in range(5)))
+
+    assert concurrent_peak == 1, (
+        f"per-endpoint lock failed to serialise; saw {concurrent_peak} concurrent calls"
+    )
+
+
+async def test_parallel_different_endpoints_run_concurrently() -> None:
+    """Calls to different endpoint methods must NOT block each other.
+
+    The per-endpoint lock is keyed on the calling method's qualname, so
+    parallel calls to distinct YandexMusicClient methods proceed in
+    parallel (subject to throttler/RPS).
+    """
+    client, underlying = _make_client()
+
+    concurrent_peak = 0
+    in_flight = 0
+    lock = asyncio.Lock()
+
+    async def _slow(*_args: Any, **_kwargs: Any) -> Any:
+        nonlocal concurrent_peak, in_flight
+        async with lock:
+            in_flight += 1
+            concurrent_peak = max(concurrent_peak, in_flight)
+        try:
+            await asyncio.sleep(0.05)
+            return []
+        finally:
+            async with lock:
+                in_flight -= 1
+
+    underlying.tracks = _slow
+    underlying.users_likes_albums = _slow
+
+    await asyncio.gather(
+        client.get_tracks(["1"]),
+        client.get_liked_albums(),
+    )
+
+    assert concurrent_peak == 2, (
+        f"different endpoints should run in parallel; saw peak={concurrent_peak}"
+    )

@@ -123,9 +123,45 @@ class YandexMusicClient:
         self._file_info_cache: OrderedDict[
             tuple[str, str, str, str], tuple[float, dict[str, Any]]
         ] = OrderedDict()
+        # Per-endpoint concurrency locks. Yandex's edge layer reacts to
+        # concurrent requests to the same URL family (per-endpoint scraper
+        # signature), not steady-state RPS. Defense-in-depth on top of the
+        # per-kind throttler: even if a caller fans out via
+        # ``asyncio.gather`` over the same method, the lock serialises the
+        # actual HTTP requests to ≤1 concurrent per endpoint. Created lazily
+        # on first use to keep the dict small. Lifetime tied to the client
+        # instance (rebuilt on reconnect / token rotation).
+        self._endpoint_locks: dict[str, asyncio.Lock] = {}
 
     def _get_throttler(self, kind: str) -> Throttler:
         return self._throttlers.get(kind, self._throttlers["default"])
+
+    def _get_endpoint_lock(self, endpoint: str) -> asyncio.Lock:
+        """Return (creating on demand) the per-endpoint serialization lock."""
+        lock = self._endpoint_locks.get(endpoint)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._endpoint_locks[endpoint] = lock
+        return lock
+
+    @staticmethod
+    def _derive_endpoint(func: Callable[..., Any]) -> str | None:
+        """Extract a stable endpoint key from a lambda's enclosing method.
+
+        Most ``_call_with_retry`` callers pass a lambda defined inside a
+        ``YandexMusicClient.<method>``; the lambda's ``__qualname__`` reads as
+        ``YandexMusicClient.<method>.<locals>.<lambda>``. We trim the
+        ``<locals>...`` suffix to get a per-method endpoint key, which
+        mirrors Yandex's per-URL-family edge limit. Returns ``None`` when
+        the qualname is missing or not in lambda form — in that case the
+        per-endpoint lock is skipped (no behaviour change for that call).
+        """
+        qn = getattr(func, "__qualname__", "")
+        if not qn:
+            return None
+        if ".<locals>." in qn:
+            return qn.split(".<locals>.", 1)[0]
+        return qn
 
     @property
     def user_id(self) -> int:
@@ -372,6 +408,17 @@ class YandexMusicClient:
     ) -> _T:
         """Execute an async API call with throttling and one reconnect attempt on connection error.
 
+        Two layers of rate-control apply:
+
+        * **Per-kind throttler** — a token bucket shared by all calls of a
+          given logical class (``default``, ``metadata``, ``file_info``,
+          ``rotor``). Caps sustained RPS per kind.
+        * **Per-endpoint lock** — derived from ``func.__qualname__`` so each
+          ``YandexMusicClient`` method gets its own ``asyncio.Lock``. Caps
+          concurrency to 1 per endpoint family. Mirrors Yandex's edge
+          behaviour, which treats simultaneous requests to the same URL
+          family as a scraper signature regardless of overall RPS.
+
         :param func: Async callable that takes a ClientAsync and returns a result.
         :param kind: Throttler bucket — one of the keys registered in
             ``self._throttlers`` ("default", "metadata", "file_info",
@@ -400,8 +447,9 @@ class YandexMusicClient:
             await self._get_throttler(kind).acquire()
             self._check_block(kind)
         client = await self._ensure_connected()
+        endpoint = self._derive_endpoint(func)
         try:
-            return await func(client)
+            return await self._invoke_under_endpoint_lock(func, client, endpoint)
         except Exception as err:
             rate_limit_exc = self._maybe_handle_429(err, kind)
             if rate_limit_exc is not None:
@@ -428,12 +476,24 @@ class YandexMusicClient:
             # otherwise a captcha on the retry attempt bypasses the cooldown
             # logic and propagates the raw HTML body.
             try:
-                return await func(client)
+                return await self._invoke_under_endpoint_lock(func, client, endpoint)
             except Exception as retry_err:
                 retry_exc = self._maybe_handle_429(retry_err, kind)
                 if retry_exc is not None:
                     raise retry_exc from NetworkError(self._truncate_err_msg(retry_err))
                 raise
+
+    async def _invoke_under_endpoint_lock(
+        self,
+        func: Callable[[ClientAsync], Awaitable[_T]],
+        client: ClientAsync,
+        endpoint: str | None,
+    ) -> _T:
+        """Run ``func(client)`` serialised by the per-endpoint lock when set."""
+        if endpoint is None:
+            return await func(client)
+        async with self._get_endpoint_lock(endpoint):
+            return await func(client)
 
     async def _call_no_retry(
         self,
