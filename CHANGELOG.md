@@ -14,9 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Defense-in-depth: per-endpoint concurrency lock in the API client. Every call through `_call_with_retry` is now also serialised by a lock keyed on the calling `YandexMusicClient` method, so a future `asyncio.gather` over the same method cannot re-introduce the burst pattern. Per-kind throttler continues to cap sustained RPS; the lock caps in-flight requests to ≤1 per endpoint family. Distinct methods still run concurrently subject only to the throttler. Cost is zero in steady-state — only matters when something fans out.
+- New advanced provider setting **"Restrictive rate limits"** (off by default). Enables a token-wide global concurrency cap (≤5 in-flight requests across all kinds and endpoints) for users running Music Assistant on a VPS, NAS-behind-VPN, or any datacenter IP. Synthetic probing against the live Yandex backend measured the edge-layer concurrency limit at 6 simultaneous requests on a Swedish hosting IP (vs ≥10 on residential RU); the cap is sized one below that ceiling. Residential users do not need this — Yandex tolerates much higher concurrency from regular ISPs.
 
 ### Changed
 
+- Tighten the captcha cooldown ladder from `(60s, 300s, 600s)` to `(15s, 60s, 120s)`. Synthetic probing showed Yandex releases a tripped token in ~15 seconds; the previous ladder kept the provider blocked for ~4× longer than Yandex's actual edge memory required.
+- Raise the per-kind throttler budgets: `THROTTLE_DEFAULT_RPS` 3 → 5 and `THROTTLE_METADATA_RPS` 2 → 3. Probing confirmed Yandex tolerates sustained sequential ≥10 RPS on both residential and datacenter IPs; the previous caps were over-conservative.
 - Reshape the seasonal-mix recommendation fallback: try the current season's tag, fall back to `autumn` only if the first call returns zero playlists. Previously a separate runtime validation call was made first; the new path makes at most one extra request when actually needed.
 - Forensic logging of every 429-classified response (`markers_matched` + first 2000 chars of body) and per-request `caller=`/`kind=` diagnostic remain in the code at DEBUG level so a single captcha trip can be reconstructed by flipping the provider log level — no impact on steady-state logs.
 

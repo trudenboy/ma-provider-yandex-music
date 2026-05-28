@@ -51,6 +51,7 @@ from .constants import (
     LIKED_BATCH_JITTER_MIN_S,
     LIKED_BATCH_JITTER_SPAN_S,
     RATE_LIMIT_COOLDOWN_S,
+    RESTRICTIVE_GLOBAL_CONCURRENCY,
     THROTTLE_DEFAULT_RPS,
     THROTTLE_FILE_INFO_RPS,
     THROTTLE_METADATA_RPS,
@@ -87,11 +88,22 @@ def _liked_track_sort_key(track: Any) -> datetime:
 class YandexMusicClient:
     """Wrapper around yandex-music-api ClientAsync."""
 
-    def __init__(self, token: SecretStr, base_url: str | None = None) -> None:
+    def __init__(
+        self,
+        token: SecretStr,
+        base_url: str | None = None,
+        *,
+        restrictive_rate_limits: bool = False,
+    ) -> None:
         """Initialize the Yandex Music client.
 
         :param token: Yandex Music OAuth token (wrapped in SecretStr).
         :param base_url: Optional API base URL (defaults to Yandex Music API).
+        :param restrictive_rate_limits: When True, applies a token-wide
+            concurrency cap (``RESTRICTIVE_GLOBAL_CONCURRENCY``) on top of
+            the per-kind throttler and per-endpoint lock — for users on
+            VPS / datacenter / VPN IPs where Yandex's edge enforces a
+            tighter anti-scraper concurrency limit.
         """
         self._token = token
         self._base_url = base_url
@@ -132,6 +144,15 @@ class YandexMusicClient:
         # on first use to keep the dict small. Lifetime tied to the client
         # instance (rebuilt on reconnect / token rotation).
         self._endpoint_locks: dict[str, asyncio.Lock] = {}
+        # Restrictive mode: optional global token-wide concurrency cap.
+        # When set, every call through ``_call_with_retry`` must acquire
+        # this semaphore before firing — so the total in-flight count
+        # across all kinds and endpoints can never exceed
+        # ``RESTRICTIVE_GLOBAL_CONCURRENCY``. Lives at the client level
+        # because Yandex's edge enforces the cap per-token, not per-kind.
+        self._global_concurrency: asyncio.Semaphore | None = (
+            asyncio.Semaphore(RESTRICTIVE_GLOBAL_CONCURRENCY) if restrictive_rate_limits else None
+        )
 
     def _get_throttler(self, kind: str) -> Throttler:
         return self._throttlers.get(kind, self._throttlers["default"])
@@ -408,16 +429,20 @@ class YandexMusicClient:
     ) -> _T:
         """Execute an async API call with throttling and one reconnect attempt on connection error.
 
-        Two layers of rate-control apply:
+        Three layers of rate-control apply, outermost first:
 
+        * **Global concurrency cap** (restrictive mode only) — a
+          token-wide ``asyncio.Semaphore`` sized to ``RESTRICTIVE_GLOBAL_
+          CONCURRENCY``. Keeps total in-flight requests under Yandex's
+          per-token edge limit observed on datacenter / VPN IPs (~6).
         * **Per-kind throttler** — a token bucket shared by all calls of a
           given logical class (``default``, ``metadata``, ``file_info``,
           ``rotor``). Caps sustained RPS per kind.
         * **Per-endpoint lock** — derived from ``func.__qualname__`` so each
           ``YandexMusicClient`` method gets its own ``asyncio.Lock``. Caps
-          concurrency to 1 per endpoint family. Mirrors Yandex's edge
-          behaviour, which treats simultaneous requests to the same URL
-          family as a scraper signature regardless of overall RPS.
+          concurrency to 1 per endpoint family — cheap defense-in-depth
+          against future ``asyncio.gather`` regressions; near-zero cost
+          when there's no contention.
 
         :param func: Async callable that takes a ClientAsync and returns a result.
         :param kind: Throttler bucket — one of the keys registered in
@@ -425,6 +450,18 @@ class YandexMusicClient:
             "rotor"). Falls back to "default" if unknown.
         :return: The result of the API call.
         """
+        if self._global_concurrency is not None and not BYPASS_THROTTLER.get():
+            async with self._global_concurrency:
+                return await self._call_with_retry_inner(func, kind=kind)
+        return await self._call_with_retry_inner(func, kind=kind)
+
+    async def _call_with_retry_inner(
+        self,
+        func: Callable[[ClientAsync], Awaitable[_T]],
+        *,
+        kind: str,
+    ) -> _T:
+        """Per-kind throttler + per-endpoint lock layer of ``_call_with_retry``."""
         # Per-request diagnostic — emits caller + kind so a DEBUG-level capture
         # can reconstruct request density before any captcha trip. Stays at
         # DEBUG so steady-state logs are clean.

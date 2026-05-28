@@ -56,6 +56,7 @@ from .constants import (
     CONF_MY_WAVE_MAX_TRACKS,
     CONF_QUALITY,
     CONF_REFRESH_TOKEN,
+    CONF_RESTRICTIVE_RATE_LIMITS,
     CONF_TOKEN,
     CONF_WAVE_PRESETS_DATA,
     CONF_X_TOKEN,
@@ -282,7 +283,10 @@ class YandexMusicProvider(MusicProvider):
         self._update_config_value(
             CONF_REFRESH_TOKEN, new_refresh_token.get_secret(), encrypted=True
         )
-        self._client = YandexMusicClient(new_music_token, base_url=base_url)
+        restrictive = bool(self.config.get_value(CONF_RESTRICTIVE_RATE_LIMITS, False))
+        self._client = YandexMusicClient(
+            new_music_token, base_url=base_url, restrictive_rate_limits=restrictive
+        )
         await self._client.connect()
         self.logger.info("Re-issued credentials silently from refresh token")
 
@@ -292,6 +296,7 @@ class YandexMusicProvider(MusicProvider):
         x_token = self.config.get_value(CONF_X_TOKEN)
         refresh_token = self.config.get_value(CONF_REFRESH_TOKEN)
         base_url = self.config.get_value(CONF_BASE_URL, DEFAULT_BASE_URL)
+        restrictive = bool(self.config.get_value(CONF_RESTRICTIVE_RATE_LIMITS, False))
 
         if not token and not x_token:
             raise LoginFailed("No Yandex Music token provided. Please authenticate.")
@@ -299,7 +304,11 @@ class YandexMusicProvider(MusicProvider):
         # Try existing music token first (fast path)
         if token:
             try:
-                self._client = YandexMusicClient(SecretStr(str(token)), base_url=str(base_url))
+                self._client = YandexMusicClient(
+                    SecretStr(str(token)),
+                    base_url=str(base_url),
+                    restrictive_rate_limits=restrictive,
+                )
                 await self._client.connect()
             except LoginFailed:
                 self.logger.warning("Music token is invalid or expired")
@@ -317,7 +326,11 @@ class YandexMusicProvider(MusicProvider):
             try:
                 new_music_token = await refresh_music_token(SecretStr(str(x_token)))
                 self._update_config_value(CONF_TOKEN, new_music_token.get_secret(), encrypted=True)
-                self._client = YandexMusicClient(new_music_token, base_url=str(base_url))
+                self._client = YandexMusicClient(
+                    new_music_token,
+                    base_url=str(base_url),
+                    restrictive_rate_limits=restrictive,
+                )
                 await self._client.connect()
                 self.logger.info("Refreshed music token from session token")
             except LoginFailed as err:
