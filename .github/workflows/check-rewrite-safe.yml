@@ -1,0 +1,15 @@
+name: Check rewrite-safe tests
+
+on:
+  pull_request:
+    paths:
+      - "provider/**/*.py"
+      - "tests/**/*.py"
+      - ".github/workflows/check-rewrite-safe.yml"
+  push:
+    branches:
+      - dev
+
+jobs:
+  check:
+    uses: trudenboy/ma-provider-tools/.github/workflows/reusable-check-rewrite-safe.yml@main
