@@ -42,6 +42,15 @@ PR description should include:
 - How to test it (manual steps or test names)
 - Any gotchas or follow-up work
 
+**This repo is the source of truth.** This provider is also inlined into
+[`music-assistant/server`](https://github.com/music-assistant/server) under
+`music_assistant/providers/yandex_music/`. If you discover it there and open a
+PR against that copy, your change is **not lost** — a reverse-sync bot detects
+merged upstream PRs touching this provider and automatically opens a draft PR
+porting them back here, crediting you via `Co-authored-by`. Still, the smoothest
+path is to contribute **here** (against `dev`), where it lands
+without the cross-repo round-trip.
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under the Apache 2.0 License.

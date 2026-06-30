@@ -45,3 +45,11 @@
 - name: "copilot"
   color: "6366f1"
   description: "Route to GitHub Copilot agent"
+
+- name: "reverse-sync"
+  color: "0e8a16"
+  description: "PR auto-opened by the reverse-sync radar from an upstream contribution"
+
+- name: "needs-human"
+  color: "d93f0b"
+  description: "Reverse-sync applied with conflicts/.rej — needs manual resolution"
