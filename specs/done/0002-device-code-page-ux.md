@@ -2,7 +2,7 @@
 id: "0002"
 title: "Device-code login page UX overhaul"
 size: L
-status: inprogress
+status: done
 priority: P1
 effort_minutes: 90
 feature_id:
