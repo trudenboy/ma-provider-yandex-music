@@ -10,6 +10,10 @@ on:
         description: "Version tag (e.g. v2.0.0) — leave empty to use latest release tag"
         default: ""
         type: string
+      ack_upstream_ahead:
+        description: "Override the preflight guard and sync even if upstream is ahead"
+        type: boolean
+        default: false
 
 permissions:
   issues: write  # Required by report-failure job in reusable workflow
@@ -23,5 +27,6 @@ jobs:
 
       target_branch: ${{ inputs.target_branch }}
       version: ${{ inputs.version }}
+      ack_upstream_ahead: ${{ inputs.ack_upstream_ahead }}
 
     secrets: inherit

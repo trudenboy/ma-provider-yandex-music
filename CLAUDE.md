@@ -30,13 +30,12 @@ Operational rules for AI assistants working in this repo:
 
 1. **A human owns every PR.** The contributor must be able to explain every
    change in their own words; PRs that look like unreviewed AI output are
-   closed.
+   closed. AI may be change title or description of pr.
 2. **Never open, push to, comment on, or close anything in `music-assistant/*`
    directly.** The only path is the `upstream-pr.yml` workflow, which opens
    the PR as a draft with a human-attestation checklist.
-3. **Replies to human reviewers are written by humans.** AI may polish
-   grammar and clarity; AI may not draft the substance. This applies in
-   upstream PRs **and** in our own provider-repo PRs.
+3. **Replies to human reviewers are written by humans.** AI may prepare drafts, polish
+   grammar and clarity; This applies only in upstream PRs **not** in our own provider-repo PRs.
 4. **Replies to AI review comments may be AI-drafted.** GitHub Copilot,
    code-scanning bots, and similar tools post AI output; replying with
    AI-drafted text is allowed because the conversation is AI ↔ AI. The
@@ -44,10 +43,16 @@ Operational rules for AI assistants working in this repo:
    posting. **If a human reviewer joins the same thread, rule 3 takes over
    from that point on** — every reply after that human comment must be
    human-written.
-5. **AI co-author trailers** (`Co-Authored-By: Claude ...`) are encouraged
-   in this repo's commits as honest disclosure. They are stripped at the
-   upstream boundary by `upstream-pr.yml.j2` so they don't appear in
-   `music-assistant/server` history.
+5. **AI co-author trailers** (`Co-Authored-By: <agent> ...`) are encouraged
+   in this repo's commits as honest disclosure. Use the identity of the agent
+   that actually did the work — e.g. `Co-Authored-By: Cursor
+   <cursoragent@cursor.com>`, `Co-Authored-By: Claude <model>
+   <noreply@anthropic.com>`, or the line your tool documents. Do **not** copy
+   another tool's example trailer, invent a model string, or duplicate a
+   trailer your environment already injects. Wrong attribution is worse than
+   omitting the trailer. These trailers are stripped at the upstream boundary
+   by `upstream-pr.yml.j2` so they don't appear in `music-assistant/server`
+   history.
 
 ## Development Commands
 
@@ -113,11 +118,15 @@ All non-trivial changes go through a pull request — never push directly to
    AI-drafted replies are allowed here (see *AI Policy Alignment*, rule 4).
    Replies to a **human** reviewer chiming into the same thread must be
    human-written from that point on.
-3. **Version + changelog.** *After* review feedback is addressed, bump the
-   `VERSION` file (PEP 440 — `1.2.0` stable, `1.2.0b1` beta) and add a
-   `CHANGELOG.md` entry following the rules in **Changelog Discipline**
-   below — in the same PR. The release pipeline tags and publishes
-   automatically when the new `VERSION` lands on `dev`.
+3. **Changelog (+ maintainer-owned version).** *After* review feedback is
+   addressed, add a `CHANGELOG.md` entry following the rules in **Changelog
+   Discipline** below — in the same PR. The `VERSION` file is **owned by the
+   maintainer** (`.github/CODEOWNERS`) and protected on `dev`:
+   do **not** bump it in a contributor PR — a `VERSION` change requires the
+   maintainer's Code-Owner approval to merge. The maintainer sets the version
+   (typically at merge/release time, matching the changelog entry), and the
+   release pipeline tags and publishes automatically when the new `VERSION`
+   lands on `dev`.
 4. **Ask before merging.** Always request explicit maintainer approval to
    merge. Do not self-merge or enable auto-merge without it. (Auto-merge is
    reserved for `distribute.yml`-generated wrapper-sync PRs from
@@ -134,6 +143,18 @@ Never push to or open PRs against the upstream Music Assistant repo
 provider repo is the source of truth; sync to the integration fork and
 upstream PR submission run automatically through `ma-provider-tools`
 workflows (`sync-to-fork.yml`, `upstream-pr.yml`).
+
+**Reverse-sync (incoming).** Contributions made *upstream* against the inlined
+provider (someone editing `music_assistant/providers/yandex_music/` directly in
+`music-assistant/server`) are detected and ported back here automatically by the
+`ma-provider-tools` reverse-sync radar. They arrive as **draft** PRs on a
+`reverse-sync/<domain>-pr<N>` branch, crediting the upstream author via
+`Co-authored-by`. A PR labelled **`needs-human`** applied with conflicts: it
+carries `<<<<<<<` markers (and the upstream change may need adapting to this
+repo's current code) — resolve them, drop the label, and treat it like any other
+PR (review, changelog, maintainer approval). `VERSION` / `translations/en.json`
+are never touched by reverse-sync; bump them as usual. Do **not** manually
+re-port a change the radar already opened a PR for.
 
 This provider is intended to be inlined into
 `music_assistant/providers/yandex_music` upstream eventually — that is the
@@ -291,10 +312,12 @@ relax the rule.
 - **No prose between `## [version]` and the first `### Category`.**
   Release-note tooling collects bullets that appear *after* the first
   category heading; intro paragraphs are silently dropped.
-- **One entry per version.** When the PR bumps `VERSION` from `X.Y.Z`
-  to `X.Y.(Z+1)`, add a single `## [X.Y.(Z+1)] - YYYY-MM-DD` block
-  above the existing top-most version, populated with the categories
-  the PR touches. Do not retroactively edit older version blocks.
+- **One entry per version.** For the release that lands these changes
+  (`X.Y.Z` → `X.Y.(Z+1)`), add a single `## [X.Y.(Z+1)] - YYYY-MM-DD`
+  block above the existing top-most version, populated with the categories
+  the PR touches. Do not retroactively edit older version blocks. The
+  matching `VERSION` bump is applied by the maintainer (see *Pull Request
+  Workflow* step 3).
 
 ## Debugging
 
