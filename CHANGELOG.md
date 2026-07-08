@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.7.0] - 2026-07-08
+
+### Added
+
+- Settings and browse folders are now localized through Music Assistant's translation pipeline: the provider ships a `strings.json` English source, and all 31 MA locales — including the complete Russian translation already live upstream — apply automatically to setting labels, descriptions, quality options, wave-preset controls, browse folders and recommendation sections.
+- The post-login "click Save" warning is localizable like every other setting string.
+- The settings dialog now shows Music Assistant's standard unofficial-provider notice.
+
+### Changed
+
+- Browse folder names are no longer hardcoded in two languages (Russian/English) inside the provider; they resolve per user locale at display time. Names discovered from Yandex's own catalog (genre/mood tags) keep Yandex's localized wording as before.
+
+### Fixed
+
+- Quality and wave-preset dropdowns store the correct internal value again; with current Music Assistant model versions the display title and stored value were silently swapped.
+
 ## [3.6.0] - 2026-07-08
 
 ### Added
