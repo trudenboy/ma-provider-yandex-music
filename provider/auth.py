@@ -22,6 +22,7 @@ import asyncio
 import html
 import json
 import logging
+import time
 from string import Template
 from typing import TYPE_CHECKING, Final
 
@@ -40,6 +41,11 @@ from ya_passport_auth.exceptions import (
 from music_assistant.helpers.auth import AuthenticationHelper
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Coroutine
+    from typing import Any
+
+    from ya_passport_auth import DeviceCodeSession
+
     from music_assistant import MusicAssistant
 
 _LOGGER = logging.getLogger(__name__)
@@ -50,8 +56,25 @@ _DEVICE_CODE_PAGE_PATH = "/yandex_music/device_code"
 # runs in a background task — it never delays the config flow's response.
 _POST_AUTH_GRACE_SECONDS = 3
 
-# Keep strong references to deferred route-teardown tasks (RUF006).
-_teardown_tasks: set[asyncio.Task[None]] = set()
+# Pending deferred route teardowns keyed by page path, so a rapid retry with
+# the same session id can take the routes over instead of colliding.
+_pending_teardowns: dict[str, asyncio.Task[None]] = {}
+
+# JS-consumed subset of the page strings; the rest is substituted server-side.
+_JS_STRING_KEYS: Final = (
+    "copied",
+    "copy_manual",
+    "hint_copy",
+    "expired_title",
+    "expired_text",
+    "success_title",
+    "success_text",
+    "failed_title",
+    "failed_text",
+    "denied_text",
+    "ended_title",
+    "ended_text",
+)
 
 _PAGE_STRINGS: Final[dict[str, dict[str, str]]] = {
     "en": {
@@ -219,20 +242,25 @@ _PAGE_TEMPLATE: Final = Template("""<!DOCTYPE html>
             }
             if (!ok) ok = fallbackCopy();
             codeElement.classList.toggle('copied', ok);
-            hintElement.textContent = ok ? strings.copied : strings.copy_manual;
+            if (hintElement) {
+                hintElement.textContent = ok ? strings.copied : strings.copy_manual;
+            }
             if (ok) {
                 setTimeout(() => {
                     codeElement.classList.remove('copied');
-                    hintElement.textContent = strings.hint_copy;
+                    if (hintElement) hintElement.textContent = strings.hint_copy;
                 }, 2000);
             }
         }
-        codeElement.addEventListener('click', copyCode);
-        codeElement.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); copyCode(); }
-        });
+        if (codeElement) {
+            codeElement.addEventListener('click', copyCode);
+            codeElement.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); copyCode(); }
+            });
+        }
 
         function renderCountdown() {
+            if (!countdownElement) return;
             const m = Math.floor(remaining / 60);
             const s = String(remaining % 60).padStart(2, '0');
             countdownElement.textContent = m + ':' + s;
@@ -265,10 +293,13 @@ _PAGE_TEMPLATE: Final = Template("""<!DOCTYPE html>
                         return;
                     }
                     if (data.state === 'failed') {
-                        const message = data.reason === 'expired' ? strings.expired_text
-                            : data.reason === 'denied' ? strings.denied_text
-                            : strings.failed_text;
-                        showResult(strings.failed_title, message);
+                        if (data.reason === 'expired') {
+                            showResult(strings.expired_title, strings.expired_text);
+                        } else if (data.reason === 'denied') {
+                            showResult(strings.failed_title, strings.denied_text);
+                        } else {
+                            showResult(strings.failed_title, strings.failed_text);
+                        }
                         return;
                     }
                 }
@@ -293,21 +324,92 @@ def _resolve_language(mass: MusicAssistant) -> str:
     return "en"
 
 
-def _schedule_route_teardown(mass: MusicAssistant, *paths: str) -> None:
-    """Unregister *paths* after the grace period without blocking the caller.
+def _make_route_handlers(
+    session: DeviceCodeSession,
+    status_url: str,
+    state: dict[str, str],
+    language: str,
+) -> tuple[
+    Callable[[web.Request], Coroutine[Any, Any, web.Response]],
+    Callable[[web.Request], Coroutine[Any, Any, web.Response]],
+]:
+    """
+    Build the (page, status) request handlers for a device-code login session.
+
+    :param session: The device-code session issued by Yandex.
+    :param status_url: MA-hosted endpoint the page polls for the login state.
+    :param state: Mutable login state shared with the flow; served as JSON.
+    :param language: Page language, ``"ru"`` or ``"en"``.
+    """
+    issued_at = time.monotonic()
+
+    async def _serve_page(_request: web.Request) -> web.Response:
+        # Render per request so the countdown reflects the time the code has
+        # actually left (late popup open, page reload).
+        remaining = max(0, session.expires_in - int(time.monotonic() - issued_at))
+        return web.Response(
+            text=_build_device_code_page(
+                user_code=session.user_code,
+                verification_url=session.verification_url,
+                status_url=status_url,
+                expires_in=remaining,
+                language=language,
+            ),
+            content_type="text/html",
+            charset="utf-8",
+            headers={
+                "Cache-Control": "no-store",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
+
+    async def _serve_status(_request: web.Request) -> web.Response:
+        return web.json_response(
+            dict(state),
+            headers={"Cache-Control": "no-store"},
+        )
+
+    return _serve_page, _serve_status
+
+
+def _cancel_pending_teardown(page_path: str) -> None:
+    """Cancel a pending route teardown left by a previous login attempt.
+
+    :param page_path: Page route path whose deferred teardown should be
+        cancelled before the routes are taken over by a new attempt.
+    """
+    task = _pending_teardowns.pop(page_path, None)
+    if task is not None:
+        task.cancel()
+
+
+def _schedule_route_teardown(mass: MusicAssistant, page_path: str, status_path: str) -> None:
+    """Unregister the login page routes after the grace period, without blocking.
 
     :param mass: The MusicAssistant instance owning the webserver routes.
-    :param paths: Dynamic route paths (GET) to unregister.
+    :param page_path: Page route path (GET) to unregister.
+    :param status_path: Status route path (GET) to unregister.
     """
 
     async def _teardown() -> None:
         await asyncio.sleep(_POST_AUTH_GRACE_SECONDS)
-        for path in paths:
-            mass.webserver.unregister_dynamic_route(path, "GET")
+        for path in (page_path, status_path):
+            # The webserver may already be shutting down — one failed
+            # unregister must not skip the remaining route.
+            try:
+                mass.webserver.unregister_dynamic_route(path, "GET")
+            except Exception as err:
+                _LOGGER.debug("Could not unregister route %s: %s", path, err)
 
-    task = asyncio.create_task(_teardown())
-    _teardown_tasks.add(task)
-    task.add_done_callback(_teardown_tasks.discard)
+    task = mass.create_task(_teardown())
+    _pending_teardowns[page_path] = task
+
+    def _discard(done: asyncio.Task[None]) -> None:
+        if _pending_teardowns.get(page_path) is done:
+            del _pending_teardowns[page_path]
+
+    task.add_done_callback(_discard)
 
 
 def _build_device_code_page(
@@ -337,7 +439,8 @@ def _build_device_code_page(
     # json.dumps emits a JS string literal, but `</script>` would still break
     # out of the surrounding <script> block. Escape the slash to be safe.
     safe_status_url = json.dumps(status_url).replace("</", "<\\/")
-    safe_strings = json.dumps(strings, ensure_ascii=False).replace("</", "<\\/")
+    js_strings = {key: strings[key] for key in _JS_STRING_KEYS}
+    safe_strings = json.dumps(js_strings, ensure_ascii=False).replace("</", "<\\/")
     return _PAGE_TEMPLATE.substitute(
         lang=strings["lang"],
         title=html.escape(strings["title"]),
@@ -360,7 +463,7 @@ async def perform_device_auth(mass: MusicAssistant, session_id: str) -> tuple[st
     Asks Yandex for a device code, presents it to the user via an intermediate
     HTML page served from MA's own webserver, then polls until the user
     confirms or the code expires. Returns (or raises) as soon as the outcome
-    is known — the page routes are torn down by a deferred background task.
+    is known.
 
     Returns (x_token, music_token, refresh_token) as plain strings for MA
     config storage.
@@ -380,36 +483,19 @@ async def perform_device_auth(mass: MusicAssistant, session_id: str) -> tuple[st
             status_path = f"{page_path}/status"
             status_url = f"{mass.webserver.base_url}{status_path}"
             state: dict[str, str] = {"state": "pending"}
-
-            page_html = _build_device_code_page(
-                user_code=session.user_code,
-                verification_url=session.verification_url,
-                status_url=status_url,
-                expires_in=session.expires_in,
-                language=_resolve_language(mass),
+            serve_page, serve_status = _make_route_handlers(
+                session, status_url, state, _resolve_language(mass)
             )
 
-            async def _serve_page(_request: web.Request) -> web.Response:
-                return web.Response(
-                    text=page_html,
-                    content_type="text/html",
-                    charset="utf-8",
-                    headers={
-                        "Cache-Control": "no-store",
-                        "Pragma": "no-cache",
-                        "Expires": "0",
-                    },
-                )
-
-            async def _serve_status(_request: web.Request) -> web.Response:
-                return web.json_response(
-                    dict(state),
-                    headers={"Cache-Control": "no-store"},
-                )
-
-            mass.webserver.register_dynamic_route(page_path, _serve_page, "GET")
-            mass.webserver.register_dynamic_route(status_path, _serve_status, "GET")
             try:
+                # A rapid retry can reuse the session id while the previous
+                # attempt's routes still await their grace-period teardown —
+                # take the paths over instead of colliding.
+                _cancel_pending_teardown(page_path)
+                mass.webserver.unregister_dynamic_route(page_path, "GET")
+                mass.webserver.unregister_dynamic_route(status_path, "GET")
+                mass.webserver.register_dynamic_route(page_path, serve_page, "GET")
+                mass.webserver.register_dynamic_route(status_path, serve_status, "GET")
                 async with AuthenticationHelper(mass, session_id) as auth_helper:
                     auth_helper.send_url(f"{mass.webserver.base_url}{page_path}")
                     try:
@@ -417,14 +503,15 @@ async def perform_device_auth(mass: MusicAssistant, session_id: str) -> tuple[st
                     except asyncio.CancelledError:
                         # Don't mark cancellations as auth failures.
                         raise
-                    except DeviceCodeTimeoutError:
-                        state.update({"state": "failed", "reason": "expired"})
-                        raise
-                    except InvalidCredentialsError:
-                        state.update({"state": "failed", "reason": "denied"})
-                        raise
-                    except Exception:
-                        state.update({"state": "failed", "reason": "error"})
+                    except Exception as exc:
+                        reason = (
+                            "expired"
+                            if isinstance(exc, DeviceCodeTimeoutError)
+                            else "denied"
+                            if isinstance(exc, InvalidCredentialsError)
+                            else "error"
+                        )
+                        state.update({"state": "failed", "reason": reason})
                         raise
 
                     music_token = creds.music_token

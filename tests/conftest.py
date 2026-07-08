@@ -16,7 +16,17 @@ from music_assistant_models.media_items import ItemMapping
 # onto the upstream import path before any test module imports it.
 _PROVIDER_DIR = Path(__file__).resolve().parent.parent / "provider"
 _PROVIDER_PKG = "music_assistant.providers.yandex_music"
-if _PROVIDER_PKG not in sys.modules:
+_existing = sys.modules.get(_PROVIDER_PKG)
+if _existing is not None:
+    # Something imported the provider before this conftest ran — silently
+    # testing the venv snapshot instead of the working tree must be fatal.
+    _loaded_from = Path(getattr(_existing, "__file__", "") or "").resolve().parent
+    if _loaded_from != _PROVIDER_DIR:
+        raise RuntimeError(
+            f"{_PROVIDER_PKG} was already imported from {_loaded_from}; "
+            f"tests must run against {_PROVIDER_DIR}"
+        )
+else:
     _spec = importlib.util.spec_from_file_location(
         _PROVIDER_PKG,
         _PROVIDER_DIR / "__init__.py",
