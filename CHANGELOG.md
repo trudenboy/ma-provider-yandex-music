@@ -513,4 +513,4 @@ No changes.
 ## 2026-01-28
 
 - feat: add Yandex Music provider (music-assistant/server#3002)
-- Reverse-synced upstream PR #4616 (WIP)
+- Reverse-synced upstream PR #4637 (WIP)
