@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.6.0] - 2026-07-08
+
+### Added
+
+- Device-code login page: countdown until the code expires, with a clear "code expired" state when it runs out.
+- Device-code login page: the Yandex verification URL is shown as visible text (handy for typing it on another device) and the flow is presented as two numbered steps.
+- Device-code login page: Russian localization (picked from the Music Assistant locale) and dark-theme support.
+- Login failures now explain what happened — an expired code, a rejected login, and other errors each show their own message on the page.
+
+### Changed
+
+- The code itself is now the copy control on the device-code page — tap or click the code to copy it; the separate "Copy code" button is gone.
+- The settings dialog responds immediately after a login completes or fails, instead of pausing for several seconds.
+- After a successful login, the settings label warns explicitly that Save must be clicked to keep the session.
+
+### Fixed
+
+- Copying the code no longer dead-ends on phones and tablets when Music Assistant is served over plain HTTP — a fallback copy mechanism works there now.
+- The login popup no longer polls forever after its session ends; it shows a terminal "session ended" message instead.
+- Retrying a device-code login immediately after a failed or completed attempt no longer fails with an internal route collision.
+- The countdown reflects the time the code actually has left, even when the popup opens late or the page is reloaded.
+
 ## [3.5.15] - 2026-05-28
 
 ### Fixed
