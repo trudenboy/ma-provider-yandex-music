@@ -53,7 +53,7 @@ ignore-words-list = "provid,hass,followings,childs,explict,additionals,commitish
 
 # >>> ma-provider-tools sync (mypy) — DO NOT EDIT >>>
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 platform = "linux"
 follow_imports = "silent"
 ignore_missing_imports = true
