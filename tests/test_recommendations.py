@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -21,7 +22,6 @@ from music_assistant_models.media_items import (
 from yandex_music import Track as YandexTrack
 
 from music_assistant.providers.yandex_music.constants import (
-    BROWSE_NAMES_EN,
     MY_WAVE_PLAYLIST_ID,
     RADIO_TRACK_ID_SEP,
     ROTOR_STATION_MY_WAVE,
@@ -29,6 +29,12 @@ from music_assistant.providers.yandex_music.constants import (
 from music_assistant.providers.yandex_music.provider import YandexMusicProvider, _WaveState
 
 from .conftest import DE_JSON_CLIENT
+
+_RECOMMENDATION_STRINGS = json.loads(
+    (Path(__file__).resolve().parent.parent / "provider" / "strings.json").read_text(
+        encoding="utf-8"
+    )
+)["media"]["recommendations"]
 
 
 @pytest.fixture
@@ -56,8 +62,9 @@ def provider_mock() -> Mock:
     provider.mass.cache.get_with_freshness = AsyncMock(return_value=(None, False, False))
     provider.mass.cache.set = AsyncMock()
 
-    # Mock _get_browse_names to return EN names
-    provider._get_browse_names = Mock(return_value=BROWSE_NAMES_EN)
+    # Resolve media labels through the real helper; unauthored keys fall back.
+    provider.mass.translations.get_translation = Mock(return_value=None)
+    provider._media_label = YandexMusicProvider._media_label.__get__(provider, YandexMusicProvider)
 
     return provider
 
@@ -94,7 +101,8 @@ async def test_get_my_wave_recommendations_success(provider_mock: Mock) -> None:
     assert isinstance(result, RecommendationFolder)
     assert result.item_id == MY_WAVE_PLAYLIST_ID
     assert result.provider == provider_mock.instance_id
-    assert result.name == BROWSE_NAMES_EN[MY_WAVE_PLAYLIST_ID]
+    assert result.name == _RECOMMENDATION_STRINGS[MY_WAVE_PLAYLIST_ID]["name"]
+    assert result.translation_key == MY_WAVE_PLAYLIST_ID
     assert result.icon == "mdi-waveform"
     assert len(result.items) > 0
 
@@ -192,7 +200,8 @@ async def test_get_feed_recommendations_success(provider_mock: Mock) -> None:
     assert isinstance(result, RecommendationFolder)
     assert result.item_id == "feed"
     assert result.provider == provider_mock.instance_id
-    assert result.name == BROWSE_NAMES_EN["feed"]
+    assert result.name == _RECOMMENDATION_STRINGS["feed"]["name"]
+    assert result.translation_key == "feed"
     assert result.icon == "mdi-account-music"
     assert len(result.items) > 0
 
@@ -273,7 +282,8 @@ async def test_get_chart_recommendations_success(provider_mock: Mock) -> None:
     assert isinstance(result, RecommendationFolder)
     assert result.item_id == "chart"
     assert result.provider == provider_mock.instance_id
-    assert result.name == BROWSE_NAMES_EN["chart"]
+    assert result.name == _RECOMMENDATION_STRINGS["chart"]["name"]
+    assert result.translation_key == "chart"
     assert result.icon == "mdi-chart-line"
     assert len(result.items) > 0
 
@@ -357,7 +367,8 @@ async def test_get_new_releases_recommendations_success(provider_mock: Mock) -> 
     assert isinstance(result, RecommendationFolder)
     assert result.item_id == "new_releases"
     assert result.provider == provider_mock.instance_id
-    assert result.name == BROWSE_NAMES_EN["new_releases"]
+    assert result.name == _RECOMMENDATION_STRINGS["new_releases"]["name"]
+    assert result.translation_key == "new_releases"
     assert result.icon == "mdi-new-box"
     assert len(result.items) > 0
 
@@ -436,7 +447,8 @@ async def test_get_new_playlists_recommendations_success(provider_mock: Mock) ->
     assert isinstance(result, RecommendationFolder)
     assert result.item_id == "new_playlists"
     assert result.provider == provider_mock.instance_id
-    assert result.name == BROWSE_NAMES_EN["new_playlists"]
+    assert result.name == _RECOMMENDATION_STRINGS["new_playlists"]["name"]
+    assert result.translation_key == "new_playlists"
     assert result.icon == "mdi-playlist-star"
     assert len(result.items) > 0
 
@@ -508,7 +520,8 @@ async def test_get_top_picks_recommendations_success(provider_mock: Mock) -> Non
     assert isinstance(result, RecommendationFolder)
     assert result.item_id == "top_picks"
     assert result.provider == provider_mock.instance_id
-    assert result.name == BROWSE_NAMES_EN["top_picks"]
+    assert result.name == _RECOMMENDATION_STRINGS["top_picks"]["name"]
+    assert result.translation_key == "top_picks"
     assert result.icon == "mdi-star"
     assert len(result.items) > 0
     # Verify it called with "top" tag
@@ -666,11 +679,11 @@ async def test_get_seasonal_mix_recommendations_winter(provider_mock: Mock) -> N
     mock_parsed_playlist.name = "Winter Playlist"
 
     # Patch datetime to return January (month 1)
-    mock_datetime = Mock()
-    mock_datetime.now.return_value.month = 1
+    mock_utc = Mock()
+    mock_utc.return_value.month = 1
 
     with (
-        patch("music_assistant.providers.yandex_music.provider.datetime", mock_datetime),
+        patch("music_assistant.providers.yandex_music.provider.utc", mock_utc),
         patch(
             "music_assistant.providers.yandex_music.provider.parse_playlist",
             return_value=mock_parsed_playlist,
@@ -701,11 +714,11 @@ async def test_get_seasonal_mix_recommendations_summer(provider_mock: Mock) -> N
     mock_parsed_playlist.name = "Summer Playlist"
 
     # Patch datetime to return July (month 7)
-    mock_datetime = Mock()
-    mock_datetime.now.return_value.month = 7
+    mock_utc = Mock()
+    mock_utc.return_value.month = 7
 
     with (
-        patch("music_assistant.providers.yandex_music.provider.datetime", mock_datetime),
+        patch("music_assistant.providers.yandex_music.provider.utc", mock_utc),
         patch(
             "music_assistant.providers.yandex_music.provider.parse_playlist",
             return_value=mock_parsed_playlist,
@@ -732,11 +745,11 @@ async def test_get_seasonal_mix_recommendations_spring_fallback(provider_mock: M
     mock_parsed_playlist.name = "Autumn Playlist"
 
     # Patch datetime to return March (month 3 - spring)
-    mock_datetime = Mock()
-    mock_datetime.now.return_value.month = 3
+    mock_utc = Mock()
+    mock_utc.return_value.month = 3
 
     with (
-        patch("music_assistant.providers.yandex_music.provider.datetime", mock_datetime),
+        patch("music_assistant.providers.yandex_music.provider.utc", mock_utc),
         patch(
             "music_assistant.providers.yandex_music.provider.parse_playlist",
             return_value=mock_parsed_playlist,
@@ -755,10 +768,10 @@ async def test_get_seasonal_mix_recommendations_empty(provider_mock: Mock) -> No
     """Test _get_seasonal_mix_recommendations returns None when API returns empty."""
     provider_mock.client.get_tag_playlists = AsyncMock(return_value=[])
 
-    mock_datetime = Mock()
-    mock_datetime.now.return_value.month = 6
+    mock_utc = Mock()
+    mock_utc.return_value.month = 6
 
-    with patch("music_assistant.providers.yandex_music.provider.datetime", mock_datetime):
+    with patch("music_assistant.providers.yandex_music.provider.utc", mock_utc):
         result = await YandexMusicProvider._get_seasonal_mix_recommendations(provider_mock)
 
     assert result is None
@@ -769,11 +782,11 @@ async def test_get_seasonal_mix_recommendations_invalid_data_error(provider_mock
     """Test _get_seasonal_mix_recommendations handles InvalidDataError gracefully."""
     provider_mock.client.get_tag_playlists = AsyncMock(return_value=[Mock()])
 
-    mock_datetime = Mock()
-    mock_datetime.now.return_value.month = 9
+    mock_utc = Mock()
+    mock_utc.return_value.month = 9
 
     with (
-        patch("music_assistant.providers.yandex_music.provider.datetime", mock_datetime),
+        patch("music_assistant.providers.yandex_music.provider.utc", mock_utc),
         patch(
             "music_assistant.providers.yandex_music.provider.parse_playlist",
             side_effect=InvalidDataError("Parse error"),
