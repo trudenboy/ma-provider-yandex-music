@@ -4,7 +4,7 @@
 fix = true
 show-fixes = true
 line-length = 100
-target-version = "py312"
+target-version = "py314"
 
 [format]
 line-ending = "lf"
@@ -41,6 +41,9 @@ ignore = [
   "UP047",
   "PLW0108",
   "FURB110",
+  "UP037",
+  "PYI055",
+  "TC002",
   "BLE001",
   "FBT001",
   "FBT002",
@@ -60,8 +63,6 @@ ignore = [
   "PTH123",
   "PYI034",
   "G004",
-  "PGH003",
-  "DTZ005",
   "S104",
   "S105",
   "S106",
@@ -76,7 +77,6 @@ ignore = [
   "B904",
   "TRY401",
   "S324",
-  "DTZ006",
   "ERA001",
   "PTH206",
   "C901",
