@@ -329,7 +329,10 @@ async def get_config_entries(
             "Alternatively, you can enter a music token manually in the advanced settings."
         )
     elif action in (CONF_ACTION_AUTH_QR, CONF_ACTION_AUTH_DEVICE):
-        label_text = "Authenticated to Yandex Music. Don't forget to save to complete setup."
+        label_text = (
+            "⚠ Authenticated to Yandex Music — click Save now to finish, "
+            "otherwise the login will be lost."
+        )
     else:
         label_text = "Authenticated to Yandex Music."
 
