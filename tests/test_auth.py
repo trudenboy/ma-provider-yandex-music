@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
-from collections.abc import Awaitable, Callable, Generator
+from collections.abc import AsyncGenerator, Awaitable, Callable, Generator, Iterator
 from typing import TYPE_CHECKING
 from unittest import mock
 
@@ -41,6 +42,15 @@ def skip_grace_sleep() -> Generator[mock.AsyncMock, None, None]:
         new=mock.AsyncMock(),
     ) as patched:
         yield patched
+
+
+@pytest.fixture(autouse=True)
+async def drain_teardown_tasks(
+    skip_grace_sleep: mock.AsyncMock,  # noqa: ARG001 — orders teardown before the patch exits
+) -> AsyncGenerator[None, None]:
+    """Await deferred route-teardown tasks before the grace-sleep patch exits."""
+    yield
+    await _drain_background_tasks()
 
 
 # -- helpers -------------------------------------------------------------------
@@ -82,6 +92,58 @@ def _make_qr_session() -> QrSession:
         csrf_token="csrf_abc",
         qr_url="https://passport.yandex.ru/auth/magic/code/?track_id=track123",
     )
+
+
+@contextlib.contextmanager
+def _patched_flow(mock_client: mock.AsyncMock, mock_auth_helper: mock.AsyncMock) -> Iterator[None]:
+    """Patch PassportClient.create + AuthenticationHelper around a flow call."""
+    with (
+        mock.patch(
+            "music_assistant.providers.yandex_music.auth.PassportClient.create",
+        ) as mock_create,
+        mock.patch(
+            "music_assistant.providers.yandex_music.auth.AuthenticationHelper",
+            return_value=mock_auth_helper,
+        ),
+    ):
+        mock_create.return_value.__aenter__ = mock.AsyncMock(return_value=mock_client)
+        mock_create.return_value.__aexit__ = mock.AsyncMock(return_value=False)
+        yield
+
+
+async def _drain_background_tasks() -> None:
+    """Await every task except the current one (route-teardown tasks)."""
+    pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
+
+
+async def _render_device_page(
+    mock_mass: mock.MagicMock,
+    session: DeviceCodeSession | None = None,
+) -> str:
+    """Run a successful device flow and return the intermediate page HTML."""
+    session = session or _make_device_session()
+    creds = _make_credentials()
+    mock_client = mock.AsyncMock()
+    mock_client.start_device_login.return_value = session
+    mock_client.poll_device_until_confirmed.return_value = creds
+    mock_auth_helper = mock.AsyncMock()
+
+    with _patched_flow(mock_client, mock_auth_helper):
+        await perform_device_auth(mock_mass, "session_page")
+
+    page_call = next(
+        c
+        for c in mock_mass.webserver.register_dynamic_route.call_args_list
+        if not c.args[0].endswith("/status")
+    )
+    handler = page_call.args[1]
+    response = await handler(mock.MagicMock())
+    await _drain_background_tasks()
+    body = response.text
+    assert isinstance(body, str)
+    return body
 
 
 # -- perform_device_auth -------------------------------------------------------
@@ -149,6 +211,10 @@ async def test_perform_device_auth_serves_intermediate_page_and_cleans_up() -> N
 
         await perform_device_auth(mock_mass, "session_1")
 
+    # Route teardown is deferred to a background task (grace period for the
+    # page's final status poll) — drain it before asserting unregistration.
+    await _drain_background_tasks()
+
     expected_path = "/yandex_music/device_code/session_1"
     expected_status_path = f"{expected_path}/status"
 
@@ -211,18 +277,67 @@ async def test_perform_device_auth_status_endpoint_reports_done_after_success() 
     assert payload["state"] == "done"
 
 
-async def test_perform_device_auth_status_reports_failed_on_error(
+async def test_perform_device_auth_returns_without_grace_delay(
     skip_grace_sleep: mock.AsyncMock,
 ) -> None:
-    """When poll fails, status endpoint reports failed and grace sleep still fires.
+    """The flow returns as soon as auth completes — the grace period must not block it.
 
-    Otherwise the page would race with route teardown and only ever see 404s
-    instead of the 'failed' message.
+    The grace sleep is made to hang forever: the caller must still get its
+    tokens immediately, while the routes stay registered until the deferred
+    teardown finally runs.
+    """
+    release = asyncio.Event()
+
+    async def _hang(*_args: object, **_kwargs: object) -> None:
+        await release.wait()
+
+    skip_grace_sleep.side_effect = _hang
+
+    session = _make_device_session()
+    creds = _make_credentials()
+    mock_client = mock.AsyncMock()
+    mock_client.start_device_login.return_value = session
+    mock_client.poll_device_until_confirmed.return_value = creds
+
+    mock_mass = mock.MagicMock()
+    mock_mass.webserver.base_url = "http://ma.local:8095"
+    mock_auth_helper = mock.AsyncMock()
+
+    with _patched_flow(mock_client, mock_auth_helper):
+        tokens = await asyncio.wait_for(perform_device_auth(mock_mass, "session_1"), timeout=1.0)
+
+    assert tokens == ("test_x_token", "test_music_token", "test_refresh_token")
+    # Teardown is still pending — the page can keep polling the final state.
+    mock_mass.webserver.unregister_dynamic_route.assert_not_called()
+
+    release.set()
+    await _drain_background_tasks()
+    unregistered = [c.args for c in mock_mass.webserver.unregister_dynamic_route.call_args_list]
+    assert ("/yandex_music/device_code/session_1", "GET") in unregistered
+    assert ("/yandex_music/device_code/session_1/status", "GET") in unregistered
+
+
+@pytest.mark.parametrize(
+    ("exc", "expected_reason", "expected_match"),
+    [
+        (DeviceCodeTimeoutError("expired"), "expired", "timed out"),
+        (InvalidCredentialsError("denied"), "denied", "denied"),
+        (PassportNetworkError("offline"), "error", "device auth error"),
+    ],
+    ids=["expired", "denied", "error"],
+)
+async def test_perform_device_auth_status_reports_failure_reason(
+    exc: Exception, expected_reason: str, expected_match: str
+) -> None:
+    """When poll fails, the status endpoint reports failed plus a machine-readable reason.
+
+    The page uses the reason to tell the user what to do next — an expired
+    code and a rejected login require different actions.
     """
     session = _make_device_session()
     mock_client = mock.AsyncMock()
     mock_client.start_device_login.return_value = session
-    mock_client.poll_device_until_confirmed.side_effect = DeviceCodeTimeoutError("expired")
+    mock_client.poll_device_until_confirmed.side_effect = exc
 
     mock_mass = mock.MagicMock()
     mock_mass.webserver.base_url = "http://ma.local:8095"
@@ -241,33 +356,25 @@ async def test_perform_device_auth_status_reports_failed_on_error(
     mock_mass.webserver.register_dynamic_route.side_effect = _capture
 
     with (
-        mock.patch(
-            "music_assistant.providers.yandex_music.auth.PassportClient.create",
-        ) as mock_create,
-        mock.patch(
-            "music_assistant.providers.yandex_music.auth.AuthenticationHelper",
-            return_value=mock_auth_helper,
-        ),
+        _patched_flow(mock_client, mock_auth_helper),
+        pytest.raises(LoginFailed, match=expected_match),
     ):
-        mock_create.return_value.__aenter__ = mock.AsyncMock(return_value=mock_client)
-        mock_create.return_value.__aexit__ = mock.AsyncMock(return_value=False)
-
-        with pytest.raises(LoginFailed, match="timed out"):
-            await perform_device_auth(mock_mass, "session_fail")
+        await perform_device_auth(mock_mass, "session_fail")
 
     assert status_handlers, "status handler should have been registered"
     response = await status_handlers[0](mock.MagicMock())
     assert isinstance(response.body, bytes)
     payload = json.loads(response.body)
-    assert payload["state"] == "failed"
-    # Grace sleep must fire on failure so the page can observe "failed" before teardown.
-    skip_grace_sleep.assert_awaited()
+    assert payload == {"state": "failed", "reason": expected_reason}
+    await _drain_background_tasks()
 
 
-async def test_perform_device_auth_does_not_mark_cancellation_as_failure(
-    skip_grace_sleep: mock.AsyncMock,
-) -> None:
-    """CancelledError must propagate without marking state as 'failed' or sleeping."""
+async def test_perform_device_auth_does_not_mark_cancellation_as_failure() -> None:
+    """CancelledError must propagate without marking state as 'failed'.
+
+    Routes must still be torn down eventually so a cancelled login doesn't
+    leak webserver routes.
+    """
     session = _make_device_session()
     mock_client = mock.AsyncMock()
     mock_client.start_device_login.return_value = session
@@ -309,7 +416,11 @@ async def test_perform_device_auth_does_not_mark_cancellation_as_failure(
     assert isinstance(response.body, bytes)
     payload = json.loads(response.body)
     assert payload["state"] == "pending"
-    skip_grace_sleep.assert_not_awaited()
+
+    await _drain_background_tasks()
+    unregistered = [c.args for c in mock_mass.webserver.unregister_dynamic_route.call_args_list]
+    assert ("/yandex_music/device_code/session_cancel", "GET") in unregistered
+    assert ("/yandex_music/device_code/session_cancel/status", "GET") in unregistered
 
 
 async def test_perform_device_auth_route_handler_renders_code_and_url() -> None:
@@ -381,6 +492,7 @@ async def test_perform_device_auth_timeout_raises_login_failed() -> None:
         with pytest.raises(LoginFailed, match="timed out"):
             await perform_device_auth(mock_mass, "session_1")
 
+    await _drain_background_tasks()
     unregistered_paths = [
         c.args for c in mock_mass.webserver.unregister_dynamic_route.call_args_list
     ]
@@ -464,6 +576,65 @@ async def test_perform_device_auth_no_refresh_token_raises_login_failed() -> Non
 
         with pytest.raises(LoginFailed, match="no refresh token"):
             await perform_device_auth(mock_mass, "session_1")
+
+
+# -- device-code page content ---------------------------------------------------
+
+
+def _make_page_mass(locale: object = None) -> mock.MagicMock:
+    """Build a mass mock for page-rendering tests, optionally with a locale."""
+    mock_mass = mock.MagicMock()
+    mock_mass.webserver.base_url = "http://ma.local:8095"
+    if locale is not None:
+        mock_mass.metadata.locale = locale
+    return mock_mass
+
+
+async def test_device_code_page_copy_targets_code_block() -> None:
+    """The code block itself is the copy target; no standalone copy button.
+
+    ``document.execCommand`` must be present as the fallback because the
+    Clipboard API is unavailable on plain-HTTP MA deployments.
+    """
+    body = await _render_device_page(_make_page_mass())
+    assert 'id="copy"' not in body
+    assert "execCommand" in body
+    assert "codeElement.addEventListener('click'" in body
+
+
+async def test_device_code_page_shows_countdown_and_terminal_states() -> None:
+    """The page embeds the code lifetime and treats a 404 status as terminal."""
+    session = _make_device_session(expires_in=543)
+    body = await _render_device_page(_make_page_mass(), session=session)
+    assert "543" in body
+    assert "404" in body
+
+
+async def test_device_code_page_shows_verification_url_as_text() -> None:
+    """The verification URL is visible as text, not only hidden in the link href."""
+    body = await _render_device_page(_make_page_mass())
+    assert body.count("https://oauth.yandex.ru/device") >= 2
+
+
+async def test_device_code_page_localized_russian() -> None:
+    """A Russian MA locale renders the page in Russian."""
+    body = await _render_device_page(_make_page_mass(locale="ru_RU"))
+    assert 'lang="ru"' in body
+    assert "Скопируйте" in body
+
+
+async def test_device_code_page_defaults_to_english_for_unknown_locale() -> None:
+    """A non-string locale (or non-Russian) falls back to English."""
+    body = await _render_device_page(_make_page_mass(locale=mock.MagicMock()))
+    assert 'lang="en"' in body
+    assert "Tap the code" in body
+    assert "Скопируйте" not in body
+
+
+async def test_device_code_page_supports_dark_theme() -> None:
+    """The page adapts to the user's dark colour scheme."""
+    body = await _render_device_page(_make_page_mass())
+    assert "prefers-color-scheme: dark" in body
 
 
 # -- perform_qr_auth ----------------------------------------------------------
