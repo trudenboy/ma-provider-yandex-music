@@ -2,7 +2,7 @@
 [project]
 name = "ma-provider-yandex-music"
 description = "Yandex Music provider for Music Assistant"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dynamic = ["version"]
 dependencies = [
   "ya-passport-auth==1.4.1",
