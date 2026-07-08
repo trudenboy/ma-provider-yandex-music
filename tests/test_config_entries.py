@@ -31,5 +31,6 @@ async def test_get_config_entries_label_prompts_save_after_auth() -> None:
         entries = await get_config_entries(mock_mass, None, CONF_ACTION_AUTH_DEVICE, values)
 
     label = next(e for e in entries if e.key == "label_text")
+    assert label.label is not None
     assert label.label.startswith("⚠")
     assert "Save" in label.label
