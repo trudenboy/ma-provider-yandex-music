@@ -47,7 +47,7 @@ def skip_grace_sleep() -> Generator[mock.AsyncMock]:
 @pytest.fixture(autouse=True)
 async def drain_teardown_tasks(
     skip_grace_sleep: mock.AsyncMock,  # noqa: ARG001 — orders teardown before the patch exits
-) -> AsyncGenerator[None, None]:
+) -> AsyncGenerator[None]:
     """Settle deferred route-teardown tasks before the grace-sleep patch exits.
 
     Cancels leftovers instead of awaiting them so a test that failed before
