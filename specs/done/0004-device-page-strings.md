@@ -2,7 +2,7 @@
 id: "0004"
 title: "Device-code page strings through the MA translations pipeline"
 size: M
-status: inprogress
+status: done
 priority: P1
 effort_minutes: 40
 feature_id:
