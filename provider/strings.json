@@ -347,5 +347,26 @@
   },
   "manifest": {
     "description": "Stream music, personalized recommendations, and lossless FLAC from Yandex Music — including My Wave radio and library sync."
+  },
+  "page": {
+    "device_code": {
+      "title": "Login to Yandex Music",
+      "step_copy": "Copy the code",
+      "hint_copy": "Tap the code to copy it",
+      "copied": "Copied ✓",
+      "copy_manual": "Automatic copy failed — select the code and copy it manually",
+      "step_open": "Open the Yandex page and enter the code",
+      "open_button": "Continue to Yandex",
+      "expires_label": "Code expires in",
+      "expired_title": "Code expired",
+      "expired_text": "The code is no longer valid. Return to Music Assistant and start the login again.",
+      "success_title": "Authorization successful",
+      "success_text": "You can close this window.",
+      "failed_title": "Authorization failed",
+      "failed_text": "Please return to Music Assistant and try again.",
+      "denied_text": "The login was denied. Return to Music Assistant and try again.",
+      "ended_title": "Session ended",
+      "ended_text": "This login session is no longer active. You can close this window."
+    }
   }
 }

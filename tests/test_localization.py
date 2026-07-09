@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, cast
 from unittest import mock
 
 from music_assistant.providers.yandex_music import get_config_entries
+from music_assistant.providers.yandex_music.auth import _PAGE_STRINGS
 from music_assistant.providers.yandex_music.constants import (
     QUALITY_BALANCED,
     QUALITY_EFFICIENT,
@@ -111,6 +112,21 @@ async def test_auth_status_label_localized_via_translation_key() -> None:
     authored = strings["config_entries"][label.translation_key]
     assert isinstance(authored, dict)
     assert "label" in authored
+
+
+async def test_strings_json_authors_device_page_keys() -> None:
+    """Every device-code page string is authored under page.device_code.
+
+    The HTML ``lang`` attribute is presentation plumbing, not a
+    translatable string, so it stays code-side.
+    """
+    strings = _load_strings()
+    page = strings["page"]
+    assert isinstance(page, dict)
+    authored = page["device_code"]
+    assert isinstance(authored, dict)
+    expected = set(_PAGE_STRINGS["en"]) - {"lang"}
+    assert set(authored) == expected
 
 
 def _media_label_provider(authored: str | None) -> mock.MagicMock:

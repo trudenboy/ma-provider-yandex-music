@@ -2,7 +2,7 @@
 id: "0003"
 title: "Port upstream strings.json localization (reverse-sync)"
 size: L
-status: inprogress
+status: done
 priority: P0
 effort_minutes: 120
 feature_id:
