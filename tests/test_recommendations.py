@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import pathlib
-from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -28,13 +27,11 @@ from music_assistant.providers.yandex_music.constants import (
 )
 from music_assistant.providers.yandex_music.provider import YandexMusicProvider, _WaveState
 
-from .conftest import DE_JSON_CLIENT
+from .conftest import DE_JSON_CLIENT, provider_dir
 
-_RECOMMENDATION_STRINGS = json.loads(
-    (Path(__file__).resolve().parent.parent / "provider" / "strings.json").read_text(
-        encoding="utf-8"
-    )
-)["media"]["recommendations"]
+_RECOMMENDATION_STRINGS = json.loads((provider_dir() / "strings.json").read_text(encoding="utf-8"))[
+    "media"
+]["recommendations"]
 
 
 @pytest.fixture

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import TYPE_CHECKING, cast
 from unittest import mock
 
@@ -17,10 +16,12 @@ from music_assistant.providers.yandex_music.constants import (
 )
 from music_assistant.providers.yandex_music.provider import YandexMusicProvider
 
+from .conftest import provider_dir
+
 if TYPE_CHECKING:
     from music_assistant_models.config_entries import ConfigEntry
 
-_PROVIDER_DIR = Path(__file__).resolve().parent.parent / "provider"
+_PROVIDER_DIR = provider_dir()
 
 # The auth status label is dynamic (three states); it keeps an English
 # fallback in code and localizes via per-state translation keys. The
