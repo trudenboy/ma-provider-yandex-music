@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The provider is now marked **stable**, matching its status in upstream Music Assistant.
 - Browse folder names are no longer hardcoded in two languages (Russian/English) inside the provider; they resolve per user locale at display time. Names discovered from Yandex's own catalog (genre/mood tags) keep Yandex's localized wording as before.
 
 ### Fixed
