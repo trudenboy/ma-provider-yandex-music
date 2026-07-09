@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.7.1] - 2026-07-09
+
+### Changed
+
+- The device-code login page, QR flow and token maintenance now come from the shared `ya-passport-auth[ma]` layer used by all Music Assistant yandex providers — same look and behavior, one implementation to receive fixes. The page keeps this provider's title and translations.
+- Transient Yandex Passport failures during login or token refresh now consistently surface as "temporarily unavailable" instead of a login failure, so stored credentials survive network hiccups and rate limiting in every path.
+
 ## [3.7.0] - 2026-07-08
 
 ### Added

@@ -17,6 +17,7 @@ from ya_passport_auth.exceptions import (
     InvalidCredentialsError,
     QRTimeoutError,
     RateLimitedError,
+    YaPassportError,
 )
 from ya_passport_auth.exceptions import (
     NetworkError as PassportNetworkError,
@@ -38,7 +39,7 @@ if TYPE_CHECKING:
 def skip_grace_sleep() -> Generator[mock.AsyncMock]:
     """Bypass the post-auth grace ``asyncio.sleep`` so tests run instantly."""
     with mock.patch(
-        "music_assistant.providers.yandex_music.auth.asyncio.sleep",
+        "ya_passport_auth.ma.routes.asyncio.sleep",
         new=mock.AsyncMock(),
     ) as patched:
         yield patched
@@ -145,7 +146,7 @@ def _patched_flow(mock_client: mock.AsyncMock, mock_auth_helper: mock.AsyncMock)
             "music_assistant.providers.yandex_music.auth.PassportClient.create",
         ) as mock_create,
         mock.patch(
-            "music_assistant.providers.yandex_music.auth.AuthenticationHelper",
+            "music_assistant.helpers.auth.AuthenticationHelper",
             return_value=mock_auth_helper,
         ),
     ):
@@ -210,7 +211,7 @@ async def test_perform_device_auth_returns_three_tokens() -> None:
     assert music_token == "test_music_token"
     assert refresh_token == "test_refresh_token"
     mock_client.start_device_login.assert_awaited_once()
-    mock_client.poll_device_until_confirmed.assert_awaited_once_with(session)
+    mock_client.poll_device_until_confirmed.assert_awaited_once_with(session, total_timeout=None)
 
 
 async def test_perform_device_auth_serves_intermediate_page_and_cleans_up() -> None:
@@ -395,7 +396,7 @@ async def test_device_code_page_countdown_reflects_elapsed_time() -> None:
     session = _make_device_session(expires_in=543)
     fake_time = mock.MagicMock()
     fake_time.monotonic.side_effect = [1000.0, 1100.0]
-    with mock.patch("music_assistant.providers.yandex_music.auth.time", fake_time, create=True):
+    with mock.patch("ya_passport_auth.ma.routes.time", fake_time, create=True):
         body = await _render_device_page(_make_page_mass(), session=session)
     assert "443" in body
 
@@ -405,7 +406,7 @@ async def test_device_code_page_countdown_reflects_elapsed_time() -> None:
     [
         (DeviceCodeTimeoutError("expired"), "expired", "timed out"),
         (InvalidCredentialsError("denied"), "denied", "denied"),
-        (PassportNetworkError("offline"), "error", "device auth error"),
+        (YaPassportError("boom"), "error", "Device authentication failed"),
     ],
     ids=["expired", "denied", "error"],
 )
@@ -550,14 +551,14 @@ async def test_perform_device_auth_timeout_raises_login_failed() -> None:
 async def test_perform_device_auth_ya_passport_error_raises_login_failed() -> None:
     """Generic YaPassportError from library is mapped to LoginFailed."""
     mock_client = mock.AsyncMock()
-    mock_client.start_device_login.side_effect = PassportNetworkError("offline")
+    mock_client.start_device_login.side_effect = YaPassportError("misc")
 
     mock_mass = _make_mass()
     mock_auth_helper = mock.AsyncMock()
 
     with (
         _patched_flow(mock_client, mock_auth_helper),
-        pytest.raises(LoginFailed, match="device auth error"),
+        pytest.raises(LoginFailed, match="Device authentication failed"),
     ):
         await perform_device_auth(mock_mass, "session_1")
 
@@ -746,14 +747,14 @@ async def test_perform_qr_auth_timeout_raises_login_failed() -> None:
 async def test_perform_qr_auth_passport_error_raises_login_failed() -> None:
     """Generic YaPassportError is mapped to LoginFailed."""
     mock_client = mock.AsyncMock()
-    mock_client.start_qr_login.side_effect = PassportNetworkError("connection lost")
+    mock_client.start_qr_login.side_effect = YaPassportError("misc")
 
     mock_mass = _make_mass()
     mock_auth_helper = mock.AsyncMock()
 
     with (
         _patched_flow(mock_client, mock_auth_helper),
-        pytest.raises(LoginFailed, match="Yandex auth error"),
+        pytest.raises(LoginFailed, match="QR authentication failed"),
     ):
         await perform_qr_auth(mock_mass, "session_1")
 
@@ -807,7 +808,7 @@ async def test_refresh_music_token_auth_error_raises_login_failed() -> None:
         mock_create.return_value.__aenter__ = mock.AsyncMock(return_value=mock_client)
         mock_create.return_value.__aexit__ = mock.AsyncMock(return_value=False)
 
-        with pytest.raises(LoginFailed, match="Failed to refresh"):
+        with pytest.raises(LoginFailed, match="Music token refresh was rejected"):
             await refresh_music_token(SecretStr("bad_x_token"))
 
 
@@ -934,7 +935,7 @@ async def test_refresh_credentials_via_passport_error_raises_login_failed() -> N
         mock_create.return_value.__aenter__ = mock.AsyncMock(return_value=mock_client)
         mock_create.return_value.__aexit__ = mock.AsyncMock(return_value=False)
 
-        with pytest.raises(LoginFailed, match="Failed to refresh credentials"):
+        with pytest.raises(LoginFailed, match="Credential refresh was rejected"):
             await refresh_credentials_via_passport(SecretStr("bad_x"), SecretStr("bad_refresh"))
 
 
@@ -972,13 +973,16 @@ _SECRET_PAYLOAD = "token=ABC_TOKEN_LEAK&csrf=xyz"
 
 
 async def test_perform_device_auth_error_does_not_leak_library_payload() -> None:
-    """``LoginFailed`` raised from device-flow must not include library str()."""
+    """Errors raised from device-flow must not include library str()."""
     mock_client = mock.AsyncMock()
     mock_client.start_device_login.side_effect = PassportNetworkError(_SECRET_PAYLOAD)
     mock_mass = _make_mass()
     mock_auth_helper = mock.AsyncMock()
 
-    with _patched_flow(mock_client, mock_auth_helper), pytest.raises(LoginFailed) as exc_info:
+    with (
+        _patched_flow(mock_client, mock_auth_helper),
+        pytest.raises(ResourceTemporarilyUnavailable) as exc_info,
+    ):
         await perform_device_auth(mock_mass, "session_1")
 
     assert _SECRET_PAYLOAD not in str(exc_info.value)
@@ -986,13 +990,16 @@ async def test_perform_device_auth_error_does_not_leak_library_payload() -> None
 
 
 async def test_perform_qr_auth_error_does_not_leak_library_payload() -> None:
-    """``LoginFailed`` raised from QR flow must not include library str()."""
+    """Errors raised from QR flow must not include library str()."""
     mock_client = mock.AsyncMock()
     mock_client.start_qr_login.side_effect = PassportNetworkError(_SECRET_PAYLOAD)
     mock_mass = _make_mass()
     mock_auth_helper = mock.AsyncMock()
 
-    with _patched_flow(mock_client, mock_auth_helper), pytest.raises(LoginFailed) as exc_info:
+    with (
+        _patched_flow(mock_client, mock_auth_helper),
+        pytest.raises(ResourceTemporarilyUnavailable) as exc_info,
+    ):
         await perform_qr_auth(mock_mass, "session_1")
 
     assert _SECRET_PAYLOAD not in str(exc_info.value)

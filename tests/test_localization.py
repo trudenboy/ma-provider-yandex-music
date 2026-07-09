@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, cast
 from unittest import mock
 
 from music_assistant.providers.yandex_music import get_config_entries
-from music_assistant.providers.yandex_music.auth import _PAGE_STRINGS
+from music_assistant.providers.yandex_music.auth import PAGE_CONFIG
 from music_assistant.providers.yandex_music.constants import (
     QUALITY_BALANCED,
     QUALITY_EFFICIENT,
@@ -125,7 +125,9 @@ async def test_strings_json_authors_device_page_keys() -> None:
     assert isinstance(page, dict)
     authored = page["device_code"]
     assert isinstance(authored, dict)
-    expected = set(_PAGE_STRINGS["en"]) - {"lang"}
+    # "context" is the optional provider paragraph — unused (empty) for this
+    # provider, so it is not authored in strings.json either.
+    expected = set(PAGE_CONFIG.strings_for("en")) - {"lang", "context"}
     assert set(authored) == expected
 
 
