@@ -27,6 +27,7 @@ def _alias_working_tree_provider(provider_dir: Path) -> None:
 
     :param provider_dir: Path to the ``provider`` working-tree directory.
     """
+    provider_dir = provider_dir.resolve()
     if not provider_dir.is_dir():
         return
     existing = sys.modules.get(_PROVIDER_PKG)
@@ -49,23 +50,28 @@ def _alias_working_tree_provider(provider_dir: Path) -> None:
         raise ImportError(f"cannot load provider package from {provider_dir}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[_PROVIDER_PKG] = module
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        # Mirror the import machinery: a failed exec must not leave a
+        # half-initialized module registered under the package name.
+        del sys.modules[_PROVIDER_PKG]
+        raise
     # Regular imports also bind the submodule as an attribute of its parent
     # package; monkeypatch and friends resolve dotted paths via getattr.
     parent = importlib.import_module("music_assistant.providers")
     setattr(parent, "yandex_music", module)  # noqa: B010
 
 
-_alias_working_tree_provider(Path(__file__).resolve().parent.parent / "provider")
+# The assignment + is_dir() shape (not a bare call argument) keeps this
+# dereference visible to the rewrite-safe Rule C gate in CI.
+_PROVIDER_DIR = Path(__file__).resolve().parent.parent / "provider"
+if _PROVIDER_DIR.is_dir():
+    _alias_working_tree_provider(_PROVIDER_DIR)
 
 
 def provider_dir() -> Path:
-    """Directory of the provider package under test, in either layout.
-
-    Resolves through the imported package: in the provider repo the aliasing
-    above points it at the working tree's ``provider/``; upstream it is the
-    inlined ``music_assistant/providers/yandex_music/`` checkout itself.
-    """
+    """Directory of the provider package under test, in either layout."""
     pkg = importlib.import_module(_PROVIDER_PKG)
     pkg_file = pkg.__file__
     assert pkg_file is not None  # a real package always has a file
