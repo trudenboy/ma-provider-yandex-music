@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -12,11 +11,9 @@ from music_assistant_models.media_items import BrowseFolder
 
 from music_assistant.providers.yandex_music.provider import YandexMusicProvider
 
-_STRINGS = json.loads(
-    (Path(__file__).resolve().parent.parent / "provider" / "strings.json").read_text(
-        encoding="utf-8"
-    )
-)
+from .conftest import provider_dir
+
+_STRINGS = json.loads((provider_dir() / "strings.json").read_text(encoding="utf-8"))
 
 
 def _make_provider_mock(features: set[ProviderFeature]) -> Mock:
