@@ -16,3 +16,4 @@ ma-server.repo
 site/
 .ma-data/
 docs-site/node_modules/
+ma-server/
