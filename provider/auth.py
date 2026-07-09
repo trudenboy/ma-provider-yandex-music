@@ -315,20 +315,58 @@ _PAGE_TEMPLATE: Final = Template("""<!DOCTYPE html>
 
 def _resolve_language(mass: MusicAssistant) -> str:
     """Return the page language ("ru" or "en") for the active MA locale."""
+    if isinstance(locale := _safe_locale(mass), str) and locale.lower().startswith("ru"):
+        return "ru"
+    return "en"
+
+
+def _safe_locale(mass: MusicAssistant) -> str | None:
+    """Return the active MA locale string, or None when unavailable."""
     try:
         locale = mass.metadata.locale
     except Exception:
-        return "en"
-    if isinstance(locale, str) and locale.lower().startswith("ru"):
-        return "ru"
-    return "en"
+        return None
+    return locale if isinstance(locale, str) else None
+
+
+async def _resolve_page_strings(mass: MusicAssistant) -> dict[str, str]:
+    """
+    Resolve the device-code page strings for the active MA locale.
+
+    Prefers the MA translations catalog (strings.json → Lokalise) and falls
+    back per key to the in-code English/Russian table when a translation is
+    not yet available or the MA build predates the translations controller.
+    """
+    fallback = dict(_PAGE_STRINGS[_resolve_language(mass)])
+    translations = getattr(mass, "translations", None)
+    if translations is None:
+        return fallback
+    locale = _safe_locale(mass)
+    try:
+        await translations.ensure_locale_loaded(locale)
+    except Exception as err:
+        _LOGGER.debug("Could not load locale catalog %s: %s", locale, err)
+        return fallback
+    for key in fallback:
+        if key == "lang":
+            continue
+        try:
+            value = translations.get_translation(
+                f"page.device_code.{key}", locale=locale, owner="yandex_music"
+            )
+        except Exception as err:
+            _LOGGER.debug("Translation lookup failed for %s: %s", key, err)
+            return fallback
+        if isinstance(value, str):
+            fallback[key] = value
+    return fallback
 
 
 def _make_route_handlers(
     session: DeviceCodeSession,
     status_url: str,
     state: dict[str, str],
-    language: str,
+    strings: dict[str, str],
 ) -> tuple[
     Callable[[web.Request], Coroutine[Any, Any, web.Response]],
     Callable[[web.Request], Coroutine[Any, Any, web.Response]],
@@ -339,7 +377,7 @@ def _make_route_handlers(
     :param session: The device-code session issued by Yandex.
     :param status_url: MA-hosted endpoint the page polls for the login state.
     :param state: Mutable login state shared with the flow; served as JSON.
-    :param language: Page language, ``"ru"`` or ``"en"``.
+    :param strings: Resolved page strings (see :func:`_resolve_page_strings`).
     """
     issued_at = time.monotonic()
 
@@ -353,7 +391,7 @@ def _make_route_handlers(
                 verification_url=session.verification_url,
                 status_url=status_url,
                 expires_in=remaining,
-                language=language,
+                strings=strings,
             ),
             content_type="text/html",
             charset="utf-8",
@@ -418,7 +456,7 @@ def _build_device_code_page(
     verification_url: str,
     status_url: str,
     expires_in: int,
-    language: str,
+    strings: dict[str, str],
 ) -> str:
     """
     Render the HTML page shown to the user during Device Flow login.
@@ -433,9 +471,8 @@ def _build_device_code_page(
     :param verification_url: Yandex page where the code must be entered.
     :param status_url: MA-hosted endpoint the page polls for the login state.
     :param expires_in: Code lifetime in seconds; drives the on-page countdown.
-    :param language: Page language, ``"ru"`` or ``"en"``.
+    :param strings: Resolved page strings (see :func:`_resolve_page_strings`).
     """
-    strings = _PAGE_STRINGS.get(language, _PAGE_STRINGS["en"])
     # json.dumps emits a JS string literal, but `</script>` would still break
     # out of the surrounding <script> block. Escape the slash to be safe.
     safe_status_url = json.dumps(status_url).replace("</", "<\\/")
@@ -484,7 +521,7 @@ async def perform_device_auth(mass: MusicAssistant, session_id: str) -> tuple[st
             status_url = f"{mass.webserver.base_url}{status_path}"
             state: dict[str, str] = {"state": "pending"}
             serve_page, serve_status = _make_route_handlers(
-                session, status_url, state, _resolve_language(mass)
+                session, status_url, state, await _resolve_page_strings(mass)
             )
 
             try:

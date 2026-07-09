@@ -656,6 +656,36 @@ async def test_device_code_page_supports_dark_theme() -> None:
     assert "prefers-color-scheme: dark" in body
 
 
+async def test_device_code_page_uses_translated_strings() -> None:
+    """Strings resolved by the MA translations controller reach the page."""
+    mock_mass = _make_page_mass(locale="de_DE")
+    mock_mass.translations.ensure_locale_loaded = mock.AsyncMock()
+    mock_mass.translations.get_translation = mock.Mock(
+        side_effect=lambda key, **_kw: (
+            "Anmeldung bei Yandex Music" if key.endswith(".title") else None
+        )
+    )
+    body = await _render_device_page(mock_mass)
+    assert "Anmeldung bei Yandex Music" in body
+
+
+async def test_device_code_page_falls_back_without_translation() -> None:
+    """Unresolved keys fall back to the in-code table in the page language."""
+    mock_mass = _make_page_mass(locale="ru_RU")
+    mock_mass.translations.ensure_locale_loaded = mock.AsyncMock()
+    mock_mass.translations.get_translation = mock.Mock(return_value=None)
+    body = await _render_device_page(mock_mass)
+    assert "Скопируйте" in body
+
+
+async def test_device_code_page_survives_missing_translations_controller() -> None:
+    """An MA build without the translations controller renders the page as today."""
+    mock_mass = _make_page_mass()
+    del mock_mass.translations
+    body = await _render_device_page(mock_mass)
+    assert "Tap the code" in body
+
+
 # -- perform_qr_auth ----------------------------------------------------------
 
 

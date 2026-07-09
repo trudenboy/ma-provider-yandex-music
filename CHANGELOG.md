@@ -11,10 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Settings and browse folders are now localized through Music Assistant's translation pipeline: the provider ships a `strings.json` English source, and all 31 MA locales — including the complete Russian translation already live upstream — apply automatically to setting labels, descriptions, quality options, wave-preset controls, browse folders and recommendation sections.
 - The post-login "click Save" warning is localizable like every other setting string.
+- The device-code login page joins the same translation pipeline: its strings are authored for all MA locales, with the built-in English/Russian texts kept as a fallback until a translation ships (or on older Music Assistant builds).
 - The settings dialog now shows Music Assistant's standard unofficial-provider notice.
 
 ### Changed
 
+- The provider is now marked **stable**, matching its status in upstream Music Assistant.
 - Browse folder names are no longer hardcoded in two languages (Russian/English) inside the provider; they resolve per user locale at display time. Names discovered from Yandex's own catalog (genre/mood tags) keep Yandex's localized wording as before.
 
 ### Fixed
