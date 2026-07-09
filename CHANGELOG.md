@@ -258,6 +258,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.8.1] - 2026-07-09
+
+- Bump version from 3.8.0 to 3.8.1 (`dfe7219`)
+- chore: untrack the ma-server gitlink (#211) (`4b45fb6`)
+- test: upstream-layout rewrite safety — port #208 leftovers, harden and cover the conftest aliasing (#209) (`864f0f2`)
+- style: auto-fix ruff (`1205ba1`)
+- test: make the working-tree alias no-op in the upstream layout (#208) (`7551f5e`)
+- chore: update changelog for v3.8.0 [skip ci] (`4c27e6b`)
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
 
 ## [3.5.0] - 2026-05-12
