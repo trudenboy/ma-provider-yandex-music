@@ -237,6 +237,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.8.0] - 2026-07-09
+
+- chore: sync workflow wrappers from ma-provider-tools (#206) (`85d33d7`)
+- Bump version from 3.7.0 to 3.8.0 (`2986496`)
+- refactor(auth): adopt the shared ya_passport_auth.ma layer (#204) (`4ecece6`)
+- style: auto-fix ruff (`7eda64a`)
+- chore: sync workflow wrappers from ma-provider-tools (#205) (`52da324`)
+- chore(deps): bump ya-passport-auth to 1.5.0 (#201) (`b5f63e1`)
+- style: auto-fix ruff (`6e9b16d`)
+- chore: sync workflow wrappers from ma-provider-tools (#200) (`532a8f8`)
+- chore(specs): move spec 0004 to done after PR #195 merge (#196) (`0d9ac64`)
+- style: auto-fix ruff (`a91c0c3`)
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
 
 ## [3.5.0] - 2026-05-12
