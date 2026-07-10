@@ -269,6 +269,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [3.8.2] - 2026-07-10
+
+- Bump version from 3.8.1 to 3.8.2 (`1f9e293`)
+- chore(deps): regenerate uv.lock for ya-passport-auth[ma] 1.7.0 (#212) (`4ec4617`)
+- Update ya-passport-auth requirement to version 1.7.0 (`3bd4b09`)
+- chore: update changelog for v3.8.1 [skip ci] (`45e05c4`)
+
+---
+
 <!-- changelog entries will be added here by release workflow -->
 
 ## [3.5.0] - 2026-05-12
