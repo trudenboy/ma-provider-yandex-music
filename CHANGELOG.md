@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.8.3] - 2026-07-13
+
+### Changed
+
+- The shared authentication texts (login buttons, "Remember session", the device-code login page) now reference Music Assistant's common translation catalog instead of carrying local copies — translations arrive once for all yandex providers. The page title keeps this provider's wording. The "Remember session" description gains a clarification (adopted ecosystem-wide) that toggling it off drops the stored long-lived tokens immediately.
+
 ## [3.8.1] - 2026-07-09
 
 ### Fixed
