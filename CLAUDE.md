@@ -69,6 +69,16 @@ code adheres to the project standards.
 
 ## Code Style
 
+### Method Order
+
+Private methods (single/double underscore, non-dunder) must live at the
+**bottom** of each class: once a private method appears, every later method in
+the class body must also be private. This is upstream music-assistant/server's
+AGENTS.md rule, enforced locally by the `check-method-order` pre-commit hook
+(`scripts/check_method_order.py`, distributed from ma-provider-tools — do not
+edit). Violations that only surface at the upstream PR are exactly what this
+hook exists to prevent.
+
 ### Comments
 
 Only use comments to explain complex, multi-line blocks of code. Do not comment
