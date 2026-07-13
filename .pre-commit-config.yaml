@@ -78,6 +78,16 @@ repos:
         entry: uv run --active --no-project trailing-whitespace-fixer
         stages: [pre-commit, pre-push, manual]
 
+      # Mirrors upstream music-assistant/server check_method_order (AGENTS.md:
+      # private methods live at the bottom of each class) so the rule fails
+      # here instead of at the first upstream PR (ma-provider-tools#115).
+      - id: check-method-order
+        name: 🔤 Check method order (private methods last)
+        language: system
+        entry: uv run --active --no-project python scripts/check_method_order.py
+        pass_filenames: false
+        files: ^(provider/.*\.py|scripts/check_method_order\.py)$
+
       - id: mypy
         name: 🔍 Mypy Type Checker
         entry: uv run --active --no-project mypy
