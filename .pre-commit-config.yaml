@@ -6,6 +6,7 @@ repos:
         name: 🐶 Ruff Linter
         language: system
         types: [python]
+        files: ^(provider/.*\.py|tests/.*\.py)$
         entry: uv run --active --no-project --with 'ruff<0.15' ruff check --fix
         require_serial: true
         stages: [pre-commit, pre-push, manual]
@@ -14,6 +15,7 @@ repos:
         name: 🐶 Ruff Formatter
         language: system
         types: [python]
+        files: ^(provider/.*\.py|tests/.*\.py)$
         entry: uv run --active --no-project --with 'ruff<0.15' ruff format
         require_serial: true
         stages: [pre-commit, pre-push, manual]
