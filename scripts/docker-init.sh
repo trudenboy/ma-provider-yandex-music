@@ -40,7 +40,7 @@ if [ -n "$DEPS" ]; then
     # `/app/venv/bin/pip: not found`. Prefer uv when available; fall back
     # to pip for any image that still has it.
     if [ -x /app/venv/bin/uv ]; then
-        /app/venv/bin/uv pip install --quiet --python /app/venv/bin/python $DEPS
+        /app/venv/bin/uv pip install --quiet --index-strategy unsafe-best-match --python /app/venv/bin/python $DEPS
     else
         /app/venv/bin/pip install --quiet $DEPS
     fi
