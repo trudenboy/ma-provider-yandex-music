@@ -51,7 +51,7 @@ if [ -n "$WORKSPACE" ]; then
   if [ -f "$REPO_ROOT/provider/manifest.json" ]; then
     REQS=$(python3 -c "import json; m=json.load(open('$REPO_ROOT/provider/manifest.json')); print(' '.join(m.get('requirements',[])))")
     if [ -n "$REQS" ]; then
-      VIRTUAL_ENV="$WORKSPACE/.venv" uv pip install $REQS
+      VIRTUAL_ENV="$WORKSPACE/.venv" uv pip install --index-strategy unsafe-best-match $REQS
     fi
   fi
 
@@ -68,8 +68,11 @@ else
   source "$REPO_ROOT/$ENV_NAME/bin/activate"
 
 
-  # Install upstream MA server + provider in editable mode
-  uv pip install \
+  # Install upstream MA server + provider in editable mode.
+  # --index-strategy: MA pins some deps (e.g. pillow) that live on PyPI while
+  # also using the PyTorch CPU extra-index; without this uv stops at the first
+  # index and fails to resolve them.
+  uv pip install --index-strategy unsafe-best-match \
     "git+https://github.com/music-assistant/server.git@dev" \
     -e "$REPO_ROOT/.[test]"
 
