@@ -16,7 +16,6 @@ ignore = [
   "ANN003",
   "ANN401",
   "D203",
-  "D213",
   "D417",
   "EM101",
   "EM102",
@@ -41,9 +40,6 @@ ignore = [
   "UP047",
   "PLW0108",
   "FURB110",
-  "UP037",
-  "PYI055",
-  "TC002",
   "BLE001",
   "FBT001",
   "FBT002",
@@ -61,7 +57,6 @@ ignore = [
   "PTH118",
   "PTH120",
   "PTH123",
-  "PYI034",
   "G004",
   "S104",
   "S105",
@@ -80,15 +75,13 @@ ignore = [
   "ERA001",
   "PTH206",
   "C901",
-  "RUF012",
   "S304",
-  "RUF006",
   "TRY300",
   "S608",
-  "S307",
   "B007",
   "ANN204",
 ]
+extend-select = ["D213"]
 
 [lint.pydocstyle]
 convention = "pep257"
