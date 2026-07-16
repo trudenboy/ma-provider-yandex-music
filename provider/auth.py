@@ -1,4 +1,5 @@
-"""Yandex Music authentication flows.
+"""
+Yandex Music authentication flows.
 
 Thin provider-side wrappers over the shared Music Assistant auth layer in
 ``ya_passport_auth.ma`` (device-code page, QR flow, token maintenance with
@@ -62,7 +63,8 @@ PAGE_CONFIG = DevicePageConfig(
 
 
 async def perform_device_auth(mass: MusicAssistant, session_id: str) -> tuple[str, str, str]:
-    """Perform Yandex OAuth Device Flow and return credential tokens.
+    """
+    Perform Yandex OAuth Device Flow and return credential tokens.
 
     Asks Yandex for a device code, presents it to the user via an
     MA-hosted intermediate page, then polls until the user confirms or the
@@ -82,7 +84,8 @@ async def perform_device_auth(mass: MusicAssistant, session_id: str) -> tuple[st
 
 
 async def perform_qr_auth(mass: MusicAssistant, session_id: str) -> tuple[str, str]:
-    """Perform full QR authentication flow.
+    """
+    Perform full QR authentication flow.
 
     Opens a QR code popup via MA frontend, polls for scan confirmation,
     then returns tokens as plain strings for MA config storage.
@@ -97,7 +100,8 @@ async def perform_qr_auth(mass: MusicAssistant, session_id: str) -> tuple[str, s
 
 
 async def refresh_music_token(x_token: SecretStr) -> SecretStr:
-    """Exchange an x_token for a fresh music-scoped OAuth token.
+    """
+    Exchange an x_token for a fresh music-scoped OAuth token.
 
     Distinguishes transient Passport failures (network/rate limiting) from
     credential-invalid errors: only the latter raise ``LoginFailed``, so
@@ -109,7 +113,8 @@ async def refresh_music_token(x_token: SecretStr) -> SecretStr:
 async def refresh_credentials_via_passport(
     x_token: SecretStr, refresh_token: SecretStr
 ) -> Credentials:
-    """Silently re-issue the full credential triple using a refresh token.
+    """
+    Silently re-issue the full credential triple using a refresh token.
 
     Only available for accounts authenticated via the Device Flow (QR login
     does not yield a ``refresh_token``). Rotates both ``x_token`` and
@@ -120,7 +125,8 @@ async def refresh_credentials_via_passport(
 
 
 async def validate_x_token(x_token: SecretStr) -> bool:
-    """Return True if *x_token* is still accepted by Yandex Passport.
+    """
+    Return True if *x_token* is still accepted by Yandex Passport.
 
     A ``False`` return signals "rejected by Passport" — a terminal credential
     failure. Transient network or rate-limit errors are re-raised so callers

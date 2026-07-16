@@ -16,7 +16,8 @@ if TYPE_CHECKING:
 
 
 async def test_get_config_entries_label_prompts_save_after_auth() -> None:
-    """After a successful login action, the label must warn about the Save step.
+    """
+    After a successful login action, the label must warn about the Save step.
 
     Tokens live only in the dialog values until the user hits Save — a missed
     Save silently discards the whole login.
