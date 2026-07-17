@@ -50,9 +50,11 @@ Operational rules for AI assistants working in this repo:
    <noreply@anthropic.com>`, or the line your tool documents. Do **not** copy
    another tool's example trailer, invent a model string, or duplicate a
    trailer your environment already injects. Wrong attribution is worse than
-   omitting the trailer. These trailers are stripped at the upstream boundary
-   by `upstream-pr.yml.j2` so they don't appear in `music-assistant/server`
-   history.
+   omitting the trailer. AI-agent trailers are stripped at the upstream
+   boundary by `upstream-pr.yml.j2` so they don't appear in
+   `music-assistant/server` history; **human** `Co-Authored-By` trailers are
+   collected from the synced commit range and appended to the sync commit,
+   so contributor credit survives the squash into upstream.
 
 ## Development Commands
 
