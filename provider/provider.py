@@ -3695,6 +3695,156 @@ class YandexMusicProvider(MusicProvider):
                 "Unable to stream audiobook: no playable chapters found"
             ) from last_error
 
+<<<<<<< ours
+=======
+    async def get_rotor_station_tracks(
+        self, station_id: str, queue: str | int | None = None
+    ) -> tuple[list[Any], str | None]:
+        """Fetch tracks from a rotor station using the session API.
+
+        Public surface — pinned by the ynison plugin
+        (`YandexMusicProviderLike.get_rotor_station_tracks`). The
+        ``(tracks, batch_id)`` return contract is kept for that caller even
+        though batch_id is now a session-scoped identifier.
+
+        Routes to ``_fetch_rotor_session_batch`` so the wave session state
+        (`session_id`, seen tracks, prefetch) is shared with our own Browse /
+        on_played / on_streamed flows. ``queue`` is the most recently played
+        track ID the external caller observed — we record it as the
+        pagination cursor before calling through.
+
+        :param station_id: Rotor station ID (e.g. "user:onyourwave",
+            "genre:rock", "mood:calm", "track:1234").
+        :param queue: Last-played track ID for pagination. Ignored on the
+            very first call (no session yet) but still recorded.
+        :return: Tuple of (list of yandex tracks, batch_id or None).
+        """
+        wave = self._get_wave_state(station_id)
+        # Cursor update + batch fetch run under the station's lock, matching
+        # the discipline in browse / recommendations / prefetch. Without it,
+        # ynison replenish racing with a concurrent MA browse could interleave
+        # last_track_id writes and leave session_id / batch_id out of sync.
+        async with wave.lock:
+            if queue is not None:
+                wave.last_track_id = str(queue)
+            return await self._fetch_rotor_session_batch(wave, station_id)
+
+    def get_quality(self) -> str:
+        """Return the configured audio quality tier (e.g. 'balanced', 'superb')."""
+        quality = str(self.config.get_value(CONF_QUALITY) or QUALITY_BALANCED).strip().lower()
+        if quality == "lossless":
+            quality = QUALITY_SUPERB
+        return quality
+
+    async def resolve_image(self, path: str) -> str | bytes:
+        """Resolve wave cover image with background color fill for transparent PNGs.
+
+        If the image URL has an associated background color (stored in _wave_bg_colors),
+        downloads the PNG from Yandex CDN and composites it on a solid color background
+        using Pillow, returning JPEG bytes. Falls back to the original URL on any error.
+
+        :param path: Image URL (may include #rrggbb fragment used as cache key).
+        :return: Composited JPEG bytes, or original path string as fallback.
+        """
+        bg_color = self._wave_bg_colors.get(path)
+        if not bg_color:
+            return path
+
+        # Strip the #color fragment before fetching the actual image
+        fetch_url = path.split("#", maxsplit=1)[0] if "#" in path else path
+        try:
+            async with self.mass.http_session.get(fetch_url) as resp:
+                resp.raise_for_status()
+                raw = await resp.read()
+        except Exception as err:
+            self.logger.debug("Failed to fetch wave cover %s: %s", fetch_url, err)
+            return fetch_url
+
+        def _composite() -> bytes:
+            bg_clean = bg_color.lstrip("#")
+            try:
+                r = int(bg_clean[0:2], 16)
+                g = int(bg_clean[2:4], 16)
+                b = int(bg_clean[4:6], 16)
+            except ValueError, IndexError:
+                return raw
+            fg = PilImage.open(BytesIO(raw)).convert("RGBA")
+            bg = PilImage.new("RGBA", fg.size, (r, g, b, 255))
+            bg.paste(fg, mask=fg)
+            out = BytesIO()
+            bg.convert("RGB").save(out, "JPEG", quality=92)
+            return out.getvalue()
+
+        try:
+            return await asyncio.to_thread(_composite)
+        except Exception as err:
+            self.logger.debug("Wave cover composite failed for %s: %s", fetch_url, err)
+            return fetch_url
+
+    async def on_played(
+        self,
+        media_type: MediaType,
+        prov_item_id: str,
+        fully_played: bool,
+        position: int,
+        media_item: MediaItemType,
+        is_playing: bool = False,
+    ) -> None:
+        """Report periodic playback updates.
+
+        - Audiobooks: persist chapter progress via play_audio so Yandex's
+          own clients resume at the right point.
+        - Wave tracks: send rotor ``trackStarted`` while actively playing and
+          kick off a background prefetch so DSTM refill serves wave-curated
+          tracks with no extra round-trip. DSTM itself is the user's toggle —
+          the provider does not flip it.
+
+        Generic track history reporting is not attempted here — the only
+        known channel Yandex writes into ``/handlers/music-history`` is a
+        long-lived Ynison WebSocket session, which lives in the sibling
+        yandex_ynison plugin. Regular tracks played through MA are therefore
+        invisible to Listening History unless that plugin is also active.
+        """
+        if media_type == MediaType.AUDIOBOOK:
+            await self._report_audiobook_progress(prov_item_id, position)
+            return
+        if media_type != MediaType.TRACK:
+            return
+        _, station_id = _parse_radio_item_id(prov_item_id)
+        if station_id and is_playing:
+            track_id, _ = _parse_radio_item_id(prov_item_id)
+            wave = self._wave_states.get(station_id) or self._get_wave_state(station_id)
+            await self._send_wave_feedback(wave, station_id, "trackStarted", track_id=track_id)
+            self.mass.create_task(self._prefetch_rotor_session(station_id))
+
+    async def on_streamed(self, streamdetails: StreamDetails) -> None:
+        """Report stream completion to Yandex.
+
+        - Audiobooks: a final ``play_audio`` with the absolute stream
+          position so the last listening point is preserved across Yandex
+          clients. Cleans up session state even when ``data`` was stripped.
+        - Wave tracks (composite item_id carries a station suffix): a rotor
+          ``trackFinished`` or ``skip`` event with the actual seconds streamed
+          so Yandex can improve recommendations.
+        """
+        data = streamdetails.data if isinstance(streamdetails.data, dict) else None
+        if streamdetails.media_type == MediaType.AUDIOBOOK:
+            await self._report_audiobook_final(streamdetails, data or {})
+            return
+        if streamdetails.media_type != MediaType.TRACK:
+            return
+        track_id, station_id = _parse_radio_item_id(streamdetails.item_id)
+        if not station_id:
+            return
+        seconds = int(streamdetails.seconds_streamed or 0)
+        duration = int(streamdetails.duration or 0)
+        feedback_type = "trackFinished" if duration and seconds >= max(0, duration - 10) else "skip"
+        wave = self._wave_states.get(station_id) or self._get_wave_state(station_id)
+        await self._send_wave_feedback(
+            wave, station_id, feedback_type, track_id=track_id, total_played_seconds=seconds
+        )
+
+>>>>>>> theirs
     def _audiobook_progress_point(
         self,
         chapter_durations_ms: list[int],

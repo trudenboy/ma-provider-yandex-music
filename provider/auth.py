@@ -136,4 +136,14 @@ async def validate_x_token(x_token: SecretStr) -> bool:
     :raises NetworkError: Transient network failure reaching Passport.
     :raises RateLimitedError: Passport returned 429.
     """
+<<<<<<< ours
     return await _validate_x_token(x_token)
+=======
+    try:
+        async with PassportClient.create() as client:
+            return bool(await client.validate_x_token(x_token))
+    except NetworkError, RateLimitedError:
+        raise
+    except YaPassportError:
+        return False
+>>>>>>> theirs
