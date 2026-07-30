@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import random
 import uuid
@@ -1000,7 +1001,9 @@ class YandexMusicProvider(MusicProvider):
     async def get_recommendations(self) -> list[RecommendationFolder]:
         """Return static recommendation row descriptors without backend calls."""
         seasonal_tag = TAG_SEASONAL_MAP.get(utc().month, "autumn")
-        seasonal_name = seasonal_tag.title()
+        seasonal_name, _ = self._media_label(
+            "folder", _media_label_key(seasonal_tag), seasonal_tag.title()
+        )
         return [
             RecommendationFolder(
                 item_id=MY_WAVE_PLAYLIST_ID,
@@ -1049,6 +1052,7 @@ class YandexMusicProvider(MusicProvider):
                 provider=self.instance_id,
                 name="Mood Mix",
                 translation_key="mood_mix",
+                subtitle=await self._rotating_row_tag_subtitle("mood"),
                 icon="mdi-emoticon-outline",
             ),
             RecommendationFolder(
@@ -1056,6 +1060,7 @@ class YandexMusicProvider(MusicProvider):
                 provider=self.instance_id,
                 name="Activity Mix",
                 translation_key="activity_mix",
+                subtitle=await self._rotating_row_tag_subtitle("activity"),
                 icon="mdi-run",
             ),
             RecommendationFolder(
@@ -1086,11 +1091,15 @@ class YandexMusicProvider(MusicProvider):
         elif item_id == "top_picks":
             folder = await self._get_top_picks_recommendations()
         elif item_id == "mood_mix":
-            if tag := await self._pick_random_tag_for_category("mood"):
-                folder = await self._get_mood_mix_recommendations(tag)
+            if tags := await self._get_valid_tags_for_category("mood"):
+                folder = await self._get_mood_mix_recommendations(
+                    self._rotating_row_tag("mood", tags)
+                )
         elif item_id == "activity_mix":
-            if tag := await self._pick_random_tag_for_category("activity"):
-                folder = await self._get_activity_mix_recommendations(tag)
+            if tags := await self._get_valid_tags_for_category("activity"):
+                folder = await self._get_activity_mix_recommendations(
+                    self._rotating_row_tag("activity", tags)
+                )
         elif item_id == "seasonal_mix":
             folder = await self._get_seasonal_mix_recommendations()
         return folder.items if folder else UniqueList()
@@ -3428,18 +3437,6 @@ class YandexMusicProvider(MusicProvider):
             icon="mdi-star",
         )
 
-    async def _pick_random_tag_for_category(self, category: str) -> str | None:
-        """
-        Pick a random valid tag for a category (not cached — enables rotation).
-
-        :param category: Category name ('mood', 'activity', etc.).
-        :return: Random tag slug, or None if no valid tags.
-        """
-        valid_tags = await self._get_valid_tags_for_category(category)
-        if not valid_tags:
-            return None
-        return random.choice(valid_tags)
-
     @use_cache(1800, allow_expired_cache=True)
     async def _get_mood_mix_recommendations(self, mood_tag: str) -> RecommendationFolder | None:
         """
@@ -3848,3 +3845,36 @@ class YandexMusicProvider(MusicProvider):
             total_played_seconds=offset,
             end_position_seconds=offset,
         )
+
+    async def _rotating_row_tag_subtitle(self, category: str) -> str | None:
+        """
+        Return the current rotating tag label from cache without backend I/O.
+
+        :param category: Tag category, such as ``mood`` or ``activity``.
+        :return: Localized tag label, or ``None`` while the cache is cold.
+        """
+        tags, _, found = await self.mass.cache.get_with_freshness(
+            f"_get_valid_tags_for_category.{category}",
+            provider=self.instance_id,
+            include_expired=True,
+        )
+        if not found or not isinstance(tags, list):
+            return None
+        valid_tags = [tag for tag in tags if isinstance(tag, str)]
+        if not valid_tags:
+            return None
+        tag = self._rotating_row_tag(category, valid_tags)
+        return self._media_label("folder", _media_label_key(tag), tag.title())[0]
+
+    def _rotating_row_tag(self, category: str, valid_tags: list[str]) -> str:
+        """
+        Deterministically select a tag for this provider and UTC hour.
+
+        :param category: Tag category the values belong to.
+        :param valid_tags: Non-empty ordered tag list.
+        :return: The selected tag slug.
+        """
+        hour_bucket = int(utc().timestamp()) // 3600
+        seed = f"{self.instance_id}.{category}.{hour_bucket}".encode()
+        index = int.from_bytes(hashlib.sha256(seed).digest()[:8], "big") % len(valid_tags)
+        return valid_tags[index]
