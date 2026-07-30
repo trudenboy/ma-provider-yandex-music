@@ -10,14 +10,24 @@ provider-init machinery which would otherwise drag in a real
 
 from __future__ import annotations
 
-from typing import Any
+import logging
+from typing import Any, cast
 from unittest import mock
 
 import pytest
-from music_assistant_models.errors import ResourceTemporarilyUnavailable
+from music_assistant_models.errors import LoginFailed, ResourceTemporarilyUnavailable
 
 from music_assistant.models.music_provider import MusicProvider
-from music_assistant.providers.yandex_music.constants import TRACK_BATCH_SIZE
+from music_assistant.providers.yandex_music.constants import (
+    CONF_BASE_URL,
+    CONF_MANUAL_TOKEN,
+    CONF_REFRESH_TOKEN,
+    CONF_RESTRICTIVE_RATE_LIMITS,
+    CONF_TOKEN,
+    CONF_X_TOKEN,
+    DEFAULT_BASE_URL,
+    TRACK_BATCH_SIZE,
+)
 from music_assistant.providers.yandex_music.provider import YandexMusicProvider
 
 
@@ -37,6 +47,97 @@ def _make_provider() -> tuple[YandexMusicProvider, mock.AsyncMock]:
     # ``instance_id`` and ``domain`` on the base class read from ``self.config``;
     # tests that need them attach a minimal config stub.
     return provider, mock_client
+
+
+def _make_auth_init_provider(
+    manual_token: str,
+) -> tuple[YandexMusicProvider, mock.MagicMock, mock.MagicMock]:
+    """Build the provider state needed to exercise manual-token initialization."""
+    provider = YandexMusicProvider.__new__(YandexMusicProvider)
+    provider._client = None
+    provider.mass = mock.MagicMock()
+    provider.logger = mock.MagicMock()
+    provider.logger.level = logging.INFO
+    values = {
+        CONF_MANUAL_TOKEN: manual_token,
+        CONF_BASE_URL: DEFAULT_BASE_URL,
+        CONF_RESTRICTIVE_RATE_LIMITS: False,
+    }
+    provider.config = mock.MagicMock()
+    provider.config.get_value = mock.MagicMock(
+        side_effect=lambda key, default=None: values.get(key, default)
+    )
+    setup_values = {
+        CONF_TOKEN: "old-token",
+        CONF_X_TOKEN: "old-x-token",
+        CONF_REFRESH_TOKEN: "old-refresh-token",
+    }
+    update_setup_data = mock.MagicMock()
+    update_config_value = mock.MagicMock()
+    untyped_provider = cast("Any", provider)
+    untyped_provider.get_setup_value = mock.MagicMock(side_effect=setup_values.get)
+    untyped_provider._update_setup_data = update_setup_data
+    untyped_provider._update_config_value = update_config_value
+    return provider, update_setup_data, update_config_value
+
+
+async def test_manual_token_replacement_is_validated_then_promoted() -> None:
+    """A working replacement supersedes and removes every old session credential."""
+    provider, update_setup_data, update_config_value = _make_auth_init_provider("new-token")
+    client = mock.AsyncMock()
+
+    with (
+        mock.patch(
+            "music_assistant.providers.yandex_music.provider.YandexMusicClient",
+            return_value=client,
+        ) as client_class,
+        mock.patch("music_assistant.providers.yandex_music.provider.YandexMusicStreamingManager"),
+        mock.patch(
+            "music_assistant.providers.yandex_music.provider.refresh_music_token",
+            new=mock.AsyncMock(),
+        ) as refresh_music_token,
+    ):
+        await provider.handle_async_init()
+
+    supplied_token = client_class.call_args.args[0]
+    assert supplied_token.get_secret() == "new-token"
+    client.connect.assert_awaited_once()
+    refresh_music_token.assert_not_awaited()
+    update_setup_data.assert_has_calls(
+        [
+            mock.call(CONF_TOKEN, "new-token"),
+            mock.call(CONF_X_TOKEN, None),
+            mock.call(CONF_REFRESH_TOKEN, None),
+        ]
+    )
+    update_config_value.assert_called_once_with(CONF_MANUAL_TOKEN, None, immediate=True)
+
+
+async def test_invalid_manual_token_keeps_existing_setup_credentials() -> None:
+    """A rejected replacement is discarded without damaging working setup data."""
+    provider, update_setup_data, update_config_value = _make_auth_init_provider("invalid-token")
+    client = mock.AsyncMock()
+    client.connect.side_effect = LoginFailed("rejected")
+
+    with (
+        mock.patch(
+            "music_assistant.providers.yandex_music.provider.YandexMusicClient",
+            return_value=client,
+        ) as client_class,
+        mock.patch(
+            "music_assistant.providers.yandex_music.provider.refresh_music_token",
+            new=mock.AsyncMock(),
+        ) as refresh_music_token,
+        pytest.raises(LoginFailed, match="rejected"),
+    ):
+        await provider.handle_async_init()
+
+    supplied_token = client_class.call_args.args[0]
+    assert supplied_token.get_secret() == "invalid-token"
+    assert client_class.call_count == 1
+    refresh_music_token.assert_not_awaited()
+    update_setup_data.assert_not_called()
+    update_config_value.assert_called_once_with(CONF_MANUAL_TOKEN, None, immediate=True)
 
 
 # -- M4: get_playlist_tracks must not abort on a single empty batch -----------

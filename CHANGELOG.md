@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.8.6] - 2026-07-30
+
+### Added
+
+- Manual token authentication is available as a dedicated setup method, with an advanced one-shot token replacement option for existing provider instances.
+
+### Changed
+
+- QR login remains the default authentication method and now renders on an opaque white background for more reliable scanning.
+- Device Code login now shows the verification address and code in a larger, clearer instruction card.
+- Authentication can be restarted at any time through Music Assistant's standard Reconfigure action.
+
+### Fixed
+
+- Token input is shown only for manual-token authentication and invalid replacement tokens no longer overwrite working stored credentials.
+- Device Code progress text now correctly explains that the code must be entered on the Yandex verification page.
+
 ## [3.8.5] - 2026-07-30
 
 ### Added

@@ -63,6 +63,7 @@ from .constants import (
     CONF_ACTION_SAVE_WAVE_PRESET,
     CONF_BASE_URL,
     CONF_LIKED_TRACKS_MAX_TRACKS,
+    CONF_MANUAL_TOKEN,
     CONF_MY_WAVE_MAX_TRACKS,
     CONF_QUALITY,
     CONF_REFRESH_TOKEN,
@@ -439,9 +440,9 @@ class YandexMusicProvider(MusicProvider):
         """
         Return Config entries to configure this provider.
 
-        Authentication runs in the interactive setup flow (see setup_flow.py); this
-        surface only exposes the genuine playback options and the My Wave preset builder
-        (whose save/delete actions are handled in ``handle_config_action``).
+        Authentication runs in the interactive setup flow (see setup_flow.py). This
+        surface exposes a one-shot advanced token replacement alongside playback options
+        and the My Wave preset builder (whose actions use ``handle_config_action``).
         """
         return (
             CONF_ENTRY_UNOFFICIAL_PROVIDER,
@@ -496,6 +497,14 @@ class YandexMusicProvider(MusicProvider):
                 required=False,
                 advanced=True,
             ),
+            # One-shot manual token replacement (advanced)
+            ConfigEntry(
+                key=CONF_MANUAL_TOKEN,
+                type=ConfigEntryType.SECURE_STRING,
+                required=False,
+                advanced=True,
+                requires_reload=True,
+            ),
         )
 
     async def handle_config_action(self, action: str) -> tuple[ConfigEntry, ...]:
@@ -533,13 +542,20 @@ class YandexMusicProvider(MusicProvider):
             return await self.get_config_entries()
         return await super().handle_config_action(action)
 
-    async def handle_async_init(self) -> None:
+    async def handle_async_init(self) -> None:  # noqa: PLR0915
         """Handle async initialization of the provider."""
+        manual_token = self.config.get_value(CONF_MANUAL_TOKEN)
         token = self.get_setup_value(CONF_TOKEN)
         x_token = self.get_setup_value(CONF_X_TOKEN)
         refresh_token = self.get_setup_value(CONF_REFRESH_TOKEN)
         base_url = self.config.get_value(CONF_BASE_URL, DEFAULT_BASE_URL)
         restrictive = bool(self.config.get_value(CONF_RESTRICTIVE_RATE_LIMITS, False))
+        replacing_token = bool(manual_token)
+
+        if replacing_token:
+            token = str(manual_token)
+            x_token = None
+            refresh_token = None
 
         if not token and not x_token:
             raise LoginFailed("No Yandex Music token provided. Please authenticate.")
@@ -554,6 +570,11 @@ class YandexMusicProvider(MusicProvider):
                 )
                 await self._client.connect()
             except LoginFailed:
+                if replacing_token:
+                    self.logger.warning("Manually supplied music token was rejected")
+                    self._client = None
+                    self._update_config_value(CONF_MANUAL_TOKEN, None, immediate=True)
+                    raise
                 self.logger.warning("Music token is invalid or expired")
                 # Clear the dead token so restarts go straight to refresh
                 self._update_setup_data(CONF_TOKEN, None)
@@ -563,6 +584,12 @@ class YandexMusicProvider(MusicProvider):
                     self._client = None
                 else:
                     raise
+
+        if replacing_token:
+            self._update_setup_data(CONF_TOKEN, str(token))
+            self._update_setup_data(CONF_X_TOKEN, None)
+            self._update_setup_data(CONF_REFRESH_TOKEN, None)
+            self._update_config_value(CONF_MANUAL_TOKEN, None, immediate=True)
 
         # Refresh from x_token if music token absent or failed
         if not token and x_token:

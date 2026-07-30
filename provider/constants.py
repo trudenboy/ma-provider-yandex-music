@@ -6,6 +6,7 @@ from typing import Final
 
 # Configuration Keys
 CONF_TOKEN: Final[str] = "token"
+CONF_MANUAL_TOKEN: Final[str] = "manual_token"
 CONF_QUALITY: Final[str] = "quality"
 CONF_BASE_URL: Final[str] = "base_url"
 
