@@ -526,21 +526,12 @@ class YandexMusicProvider(MusicProvider):
 
         # The English name on each folder doubles as the fallback; translation_key localizes
         # it for the connection locale at serialization (the server is the single source).
-        folders: list[BrowseFolder] = []
+        items: list[MediaItemType | ItemMapping | BrowseFolder] = []
         base = path if path.endswith("//") else path.rstrip("/") + "/"
-        # My Wave folder (always enabled — Яндекс «Моя волна»)
-        folders.append(
-            BrowseFolder(
-                item_id=MY_WAVE_PLAYLIST_ID,
-                provider=self.instance_id,
-                path=f"{base}{MY_WAVE_PLAYLIST_ID}",
-                name="My Wave",
-                translation_key=MY_WAVE_PLAYLIST_ID,
-                is_playable=True,
-            )
-        )
+        # My Wave is a dynamic playlist so the queue can request refills.
+        items.append(await self.get_playlist(MY_WAVE_PLAYLIST_ID))
         # Wave modes folder (P4): discover / calm / active / language presets
-        folders.append(
+        items.append(
             BrowseFolder(
                 item_id=MY_WAVE_MODES_FOLDER_ID,
                 provider=self.instance_id,
@@ -552,7 +543,7 @@ class YandexMusicProvider(MusicProvider):
         )
         # User-defined wave presets (P8) — shown only when any configured.
         if self._get_user_wave_presets():
-            folders.append(
+            items.append(
                 BrowseFolder(
                     item_id=MY_WAVE_PRESETS_FOLDER_ID,
                     provider=self.instance_id,
@@ -563,7 +554,7 @@ class YandexMusicProvider(MusicProvider):
                 )
             )
         # For You folder — Picks + Mixes (Яндекс «Для вас»)
-        folders.append(
+        items.append(
             BrowseFolder(
                 item_id=FOR_YOU_FOLDER_ID,
                 provider=self.instance_id,
@@ -584,7 +575,7 @@ class YandexMusicProvider(MusicProvider):
             )
         )
         if has_library:
-            folders.append(
+            items.append(
                 BrowseFolder(
                     item_id=COLLECTION_FOLDER_ID,
                     provider=self.instance_id,
@@ -595,7 +586,7 @@ class YandexMusicProvider(MusicProvider):
                 )
             )
         # Radio folder — rotor stations (Яндекс волны, shown as Radio)
-        folders.append(
+        items.append(
             BrowseFolder(
                 item_id=RADIO_FOLDER_ID,
                 provider=self.instance_id,
@@ -606,7 +597,7 @@ class YandexMusicProvider(MusicProvider):
             )
         )
         # AI Wave Sets — parametric stations from /landing-blocks/mixes-waves
-        folders.append(
+        items.append(
             BrowseFolder(
                 item_id=MY_WAVES_SET_FOLDER_ID,
                 provider=self.instance_id,
@@ -617,7 +608,7 @@ class YandexMusicProvider(MusicProvider):
             )
         )
         # Pinned items — user-pinned artists/albums/playlists/waves
-        folders.append(
+        items.append(
             BrowseFolder(
                 item_id=PINNED_ITEMS_FOLDER_ID,
                 provider=self.instance_id,
@@ -628,7 +619,7 @@ class YandexMusicProvider(MusicProvider):
             )
         )
         # Listening history — recently played tracks/albums
-        folders.append(
+        items.append(
             BrowseFolder(
                 item_id=LISTENING_HISTORY_FOLDER_ID,
                 provider=self.instance_id,
@@ -638,9 +629,9 @@ class YandexMusicProvider(MusicProvider):
                 is_playable=False,
             )
         )
-        if len(folders) == 1:
-            return await self.browse(folders[0].path)
-        return folders
+        if len(items) == 1 and isinstance(items[0], BrowseFolder):
+            return await self.browse(items[0].path)
+        return items
 
     # Search
 
@@ -904,6 +895,7 @@ class YandexMusicProvider(MusicProvider):
                     )
                 },
                 is_editable=False,
+                is_dynamic=True,
             )
 
         if prov_playlist_id == LIKED_TRACKS_PLAYLIST_ID:

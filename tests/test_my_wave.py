@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from music_assistant_models.enums import MediaType
+from music_assistant_models.enums import MediaType, ProviderFeature
 from music_assistant_models.errors import InvalidDataError
-from music_assistant_models.media_items import ProviderMapping
+from music_assistant_models.media_items import Playlist, ProviderMapping
 from music_assistant_models.media_items import Track as MATrack
 
 from music_assistant.providers.yandex_music import (
@@ -17,6 +17,7 @@ from music_assistant.providers.yandex_music import (
     _save_wave_preset_action,
 )
 from music_assistant.providers.yandex_music.constants import (
+    MY_WAVE_PLAYLIST_ID,
     RADIO_TRACK_ID_SEP,
     ROTOR_STATION_MY_WAVE,
 )
@@ -72,6 +73,38 @@ def test_wave_state_is_per_instance_isolated() -> None:
     assert b.seen_track_ids == set()
     assert b.prefetched == []
     assert b.settings == {}
+
+
+async def test_root_browse_exposes_my_wave_as_dynamic_playlist() -> None:
+    """Root browse returns My Wave as a dynamic playlist."""
+    provider = Mock(spec=YandexMusicProvider)
+    provider.instance_id = "yandex_music_instance"
+    provider.supported_features = {ProviderFeature.BROWSE}
+    provider._get_user_wave_presets.return_value = []
+    dynamic = Playlist(
+        item_id=MY_WAVE_PLAYLIST_ID,
+        provider=provider.instance_id,
+        name="My Wave",
+        provider_mappings=set(),
+        is_dynamic=True,
+    )
+    provider.get_playlist = AsyncMock(return_value=dynamic)
+
+    items = await YandexMusicProvider.browse(provider, "yandex_music_instance://")
+
+    assert isinstance(items[0], Playlist)
+    assert items[0].is_dynamic is True
+
+
+async def test_virtual_my_wave_playlist_is_dynamic() -> None:
+    """The locally constructed My Wave playlist requests dynamic refill."""
+    provider = Mock(spec=YandexMusicProvider)
+    provider.instance_id = "yandex_music_instance"
+    provider.domain = "yandex_music"
+
+    playlist = await YandexMusicProvider.get_playlist(provider, MY_WAVE_PLAYLIST_ID)
+
+    assert playlist.is_dynamic is True
 
 
 # -- _fetch_rotor_session_batch (session-API helper) --------------------------
