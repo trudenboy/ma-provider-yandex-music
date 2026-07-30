@@ -7,6 +7,7 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 from unittest import mock
+from urllib.parse import unquote
 
 import pytest
 from music_assistant_models.enums import FlowStepType
@@ -140,6 +141,15 @@ async def _assert_login_has_hard_timeout(
         passport_client.create.return_value = _async_cm(client)
         with pytest.raises(StepExpiredError):
             await asyncio.wait_for(login(session), timeout=0.2)
+
+
+def test_qr_image_has_opaque_white_quiet_zone() -> None:
+    """The QR remains high-contrast against Music Assistant's dark theme."""
+    image = ym_flow._qr_image("https://passport.yandex.ru/qr/test")
+    svg = unquote(image.split(",", 1)[1])
+
+    assert "<path fill='#fff' d='M0 0h37v37h-37z'/>" in svg
+    assert "<path class='qrline' stroke='#000' d='M4 4.5" in svg
 
 
 async def test_qr_login_has_hard_timeout() -> None:
