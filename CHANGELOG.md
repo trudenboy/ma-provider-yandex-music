@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Parser compatibility baselines now cover the `artist_entity_type` and `life_span` metadata fields introduced by current Music Assistant models.
 
+### Removed
+
+- Device-code and QR popup sign-in actions that depended on authentication helpers removed by current Music Assistant; manual music-token entry and silent refresh for existing stored credentials remain available.
+
 ## [3.8.3] - 2026-07-16
 
 - fix(tests): `_MockResponse.__aenter__` returns `Self` (PYI034), per the upstream dev ruff rules.

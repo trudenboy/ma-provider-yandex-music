@@ -7,31 +7,30 @@ from unittest import mock
 
 from music_assistant.providers.yandex_music import get_config_entries
 from music_assistant.providers.yandex_music.constants import (
-    CONF_ACTION_AUTH_DEVICE,
-    CONF_SESSION_ID,
+    CONF_ACTION_CLEAR_AUTH,
+    CONF_REFRESH_TOKEN,
+    CONF_TOKEN,
+    CONF_X_TOKEN,
 )
 
 if TYPE_CHECKING:
     from music_assistant_models.config_entries import ConfigValueType
 
 
-async def test_get_config_entries_label_prompts_save_after_auth() -> None:
-    """
-    After a successful login action, the label must warn about the Save step.
+async def test_get_config_entries_uses_manual_token_without_popup_actions() -> None:
+    """Expose manual token setup while retaining stored refresh credentials."""
+    values: dict[str, ConfigValueType] = {
+        CONF_X_TOKEN: "stored-x",
+        CONF_REFRESH_TOKEN: "stored-refresh",
+    }
 
-    Tokens live only in the dialog values until the user hits Save — a missed
-    Save silently discards the whole login.
-    """
-    mock_mass = mock.MagicMock()
-    values: dict[str, ConfigValueType] = {CONF_SESSION_ID: "sess-1"}
+    entries = await get_config_entries(mock.MagicMock(), None, None, values)
+    by_key = {entry.key: entry for entry in entries}
 
-    with mock.patch(
-        "music_assistant.providers.yandex_music.perform_device_auth",
-        new=mock.AsyncMock(return_value=("x_tok", "music_tok", "refresh_tok")),
-    ):
-        entries = await get_config_entries(mock_mass, None, CONF_ACTION_AUTH_DEVICE, values)
-
-    label = next(e for e in entries if e.key == "label_text")
-    assert label.label is not None
-    assert label.label.startswith("⚠")
-    assert "Save" in label.label
+    assert "auth_device" not in by_key
+    assert "auth_qr" not in by_key
+    assert "remember_session" not in by_key
+    assert CONF_TOKEN in by_key
+    assert CONF_ACTION_CLEAR_AUTH in by_key
+    assert by_key[CONF_X_TOKEN].value == "stored-x"
+    assert by_key[CONF_REFRESH_TOKEN].value == "stored-refresh"
