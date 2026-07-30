@@ -1,10 +1,22 @@
-"""Yandex Music token-maintenance wrappers."""
+"""
+Yandex Music token-maintenance helpers.
+
+Thin provider-side wrappers over the shared Music Assistant auth layer in
+``ya_passport_auth.ma`` (token maintenance with unified error mapping).
+
+Token maintenance helpers (:func:`refresh_music_token`,
+:func:`refresh_credentials_via_passport`, :func:`validate_x_token`) exchange
+or validate the stored Yandex Passport tokens.
+"""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-# Re-exported as the stable patch target for token-maintenance tests.
+# PassportClient is re-imported here (not used directly) so the test-suite's
+# established patch target `<this module>.PassportClient.create` keeps
+# working — patching the classmethod mutates the class object shared with
+# the ya_passport_auth.ma flows.
 from ya_passport_auth import PassportClient  # noqa: F401
 from ya_passport_auth.ma import (
     refresh_credentials as _refresh_credentials,
