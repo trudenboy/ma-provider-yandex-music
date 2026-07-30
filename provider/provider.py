@@ -997,61 +997,103 @@ class YandexMusicProvider(MusicProvider):
                 self.logger.debug("Error parsing similar artist: %s", err)
         return artists
 
-    async def recommendations(self) -> list[RecommendationFolder]:
-        """
-        Get recommendations with multiple discovery folders.
+    async def get_recommendations(self) -> list[RecommendationFolder]:
+        """Return static recommendation row descriptors without backend calls."""
+        seasonal_tag = TAG_SEASONAL_MAP.get(utc().month, "autumn")
+        seasonal_name = seasonal_tag.title()
+        return [
+            RecommendationFolder(
+                item_id=MY_WAVE_PLAYLIST_ID,
+                provider=self.instance_id,
+                name="My Wave",
+                translation_key=MY_WAVE_PLAYLIST_ID,
+                icon="mdi-waveform",
+            ),
+            RecommendationFolder(
+                item_id="feed",
+                provider=self.instance_id,
+                name="Made for You",
+                translation_key="feed",
+                icon="mdi-account-music",
+            ),
+            RecommendationFolder(
+                item_id="chart",
+                provider=self.instance_id,
+                name="Chart",
+                translation_key="chart",
+                icon="mdi-chart-line",
+            ),
+            RecommendationFolder(
+                item_id="new_releases",
+                provider=self.instance_id,
+                name="New Releases",
+                translation_key="new_releases",
+                icon="mdi-new-box",
+            ),
+            RecommendationFolder(
+                item_id="new_playlists",
+                provider=self.instance_id,
+                name="New Playlists",
+                translation_key="new_playlists",
+                icon="mdi-playlist-star",
+            ),
+            RecommendationFolder(
+                item_id="top_picks",
+                provider=self.instance_id,
+                name="Top Picks",
+                translation_key="top_picks",
+                icon="mdi-star",
+            ),
+            RecommendationFolder(
+                item_id="mood_mix",
+                provider=self.instance_id,
+                name="Mood Mix",
+                translation_key="mood_mix",
+                icon="mdi-emoticon-outline",
+            ),
+            RecommendationFolder(
+                item_id="activity_mix",
+                provider=self.instance_id,
+                name="Activity Mix",
+                translation_key="activity_mix",
+                icon="mdi-run",
+            ),
+            RecommendationFolder(
+                item_id="seasonal_mix",
+                provider=self.instance_id,
+                name=f"Seasonal: {seasonal_name}",
+                translation_key="seasonal_mix",
+                translation_params=[seasonal_name],
+                icon="mdi-weather-sunny",
+            ),
+        ]
 
-        Returns My Wave, Feed (Made for You), Chart, New Releases, and
-        New Playlists sections.
-
-        :return: List of recommendation folders.
-        """
-        folders: list[RecommendationFolder] = []
-
-        folder = await self._get_my_wave_recommendations()
-        if folder:
-            folders.append(folder)
-
-        folder = await self._get_feed_recommendations()
-        if folder:
-            folders.append(folder)
-
-        folder = await self._get_chart_recommendations()
-        if folder:
-            folders.append(folder)
-
-        folder = await self._get_new_releases_recommendations()
-        if folder:
-            folders.append(folder)
-
-        folder = await self._get_new_playlists_recommendations()
-        if folder:
-            folders.append(folder)
-
-        # Picks & Mixes recommendations
-        folder = await self._get_top_picks_recommendations()
-        if folder:
-            folders.append(folder)
-
-        # Mood mix: select tag outside cache so rotation actually works
-        mood_tag = await self._pick_random_tag_for_category("mood")
-        if mood_tag:
-            folder = await self._get_mood_mix_recommendations(mood_tag)
-            if folder:
-                folders.append(folder)
-
-        # Activity mix: select tag outside cache so rotation actually works
-        activity_tag = await self._pick_random_tag_for_category("activity")
-        if activity_tag:
-            folder = await self._get_activity_mix_recommendations(activity_tag)
-            if folder:
-                folders.append(folder)
-
-        folder = await self._get_seasonal_mix_recommendations()
-        if folder:
-            folders.append(folder)
-
-        return folders
+    async def get_recommendation_items(
+        self, item_id: str
+    ) -> UniqueList[MediaItemType | ItemMapping | BrowseFolder]:
+        """Load items for one recommendation row."""
+        folder: RecommendationFolder | None = None
+        if item_id == MY_WAVE_PLAYLIST_ID:
+            folder = await self._get_my_wave_recommendations()
+        elif item_id == "feed":
+            folder = await self._get_feed_recommendations()
+        elif item_id == "chart":
+            folder = await self._get_chart_recommendations()
+        elif item_id == "new_releases":
+            folder = await self._get_new_releases_recommendations()
+        elif item_id == "new_playlists":
+            folder = await self._get_new_playlists_recommendations()
+        elif item_id == "top_picks":
+            folder = await self._get_top_picks_recommendations()
+        elif item_id == "mood_mix":
+            if tag := await self._pick_random_tag_for_category("mood"):
+                folder = await self._get_mood_mix_recommendations(tag)
+        elif item_id == "activity_mix":
+            if tag := await self._pick_random_tag_for_category("activity"):
+                folder = await self._get_activity_mix_recommendations(tag)
+        elif item_id == "seasonal_mix":
+            folder = await self._get_seasonal_mix_recommendations()
+        return folder.items if folder else UniqueList()
 
     @use_cache(3600 * 3, allow_expired_cache=True)
     async def get_playlist_tracks(self, prov_playlist_id: str, page: int = 0) -> list[Track]:

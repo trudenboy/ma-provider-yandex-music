@@ -8,7 +8,7 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from music_assistant_models.enums import MediaType
+from music_assistant_models.enums import MediaType, ProviderFeature
 from music_assistant_models.errors import InvalidDataError
 from music_assistant_models.media_items import (
     Album,
@@ -33,6 +33,18 @@ _RECOMMENDATION_STRINGS = json.loads((provider_dir() / "strings.json").read_text
     "media"
 ]["recommendations"]
 
+ROW_IDS = [
+    MY_WAVE_PLAYLIST_ID,
+    "feed",
+    "chart",
+    "new_releases",
+    "new_playlists",
+    "top_picks",
+    "mood_mix",
+    "activity_mix",
+    "seasonal_mix",
+]
+
 
 @pytest.fixture
 def provider_mock() -> Mock:
@@ -40,6 +52,7 @@ def provider_mock() -> Mock:
     provider = Mock(spec=YandexMusicProvider)
     provider.domain = "yandex_music"
     provider.instance_id = "yandex_music_instance"
+    provider.supported_features = {ProviderFeature.RECOMMENDATIONS}
     provider.logger = Mock()
 
     # Mock client
@@ -796,96 +809,71 @@ async def test_get_seasonal_mix_recommendations_invalid_data_error(provider_mock
 
 
 @pytest.mark.asyncio
-async def test_recommendations_aggregates_all_folders(provider_mock: Mock) -> None:
-    """Test recommendations() aggregates all recommendation folders."""
-    # Mock all individual recommendation methods to return folders
-    mock_folder = Mock(spec=RecommendationFolder)
-    mock_folder.item_id = "test_folder"
-    mock_folder.name = "Test Folder"
+async def test_get_recommendations_returns_static_rows_without_backend_calls(
+    provider_mock: Mock,
+) -> None:
+    """Recommendation discovery returns ordered empty row descriptors."""
+    rows = await YandexMusicProvider.get_recommendations(provider_mock)
 
-    async def return_folder(*_args: Any, **_kwargs: Any) -> RecommendationFolder:
-        return mock_folder
-
-    async def return_tag(_category: str) -> str:
-        return "test_tag"
-
-    # Set the methods directly on the provider mock instance
-    provider_mock._get_my_wave_recommendations = return_folder
-    provider_mock._get_feed_recommendations = return_folder
-    provider_mock._get_chart_recommendations = return_folder
-    provider_mock._get_new_releases_recommendations = return_folder
-    provider_mock._get_new_playlists_recommendations = return_folder
-    provider_mock._get_top_picks_recommendations = return_folder
-    provider_mock._get_mood_mix_recommendations = return_folder
-    provider_mock._get_activity_mix_recommendations = return_folder
-    provider_mock._get_seasonal_mix_recommendations = return_folder
-    provider_mock._pick_random_tag_for_category = return_tag
-
-    result = await YandexMusicProvider.recommendations(provider_mock)
-
-    assert len(result) == 9  # All 9 methods returned folders
+    assert [row.item_id for row in rows] == ROW_IDS
+    assert all(not row.items for row in rows)
+    assert provider_mock.client.mock_calls == []
 
 
 @pytest.mark.asyncio
-async def test_recommendations_filters_none_folders(provider_mock: Mock) -> None:
-    """Test recommendations() filters out None results from individual methods."""
-    mock_folder = Mock(spec=RecommendationFolder)
-    mock_folder.item_id = "test_folder"
-    mock_folder.name = "Test Folder"
+async def test_get_recommendation_items_chart_triggers_only_chart_fetch(
+    provider_mock: Mock,
+) -> None:
+    """Loading Chart calls only the Chart row helper."""
+    track = Mock(spec=Track)
+    folder = RecommendationFolder(
+        item_id="chart",
+        provider=provider_mock.instance_id,
+        name="Chart",
+        items=[track],
+    )
+    provider_mock._get_chart_recommendations = AsyncMock(return_value=folder)
 
-    # Create async functions that return the desired values
-    async def return_folder(*_args: Any, **_kwargs: Any) -> RecommendationFolder:
-        return mock_folder
+    items = await YandexMusicProvider.get_recommendation_items(provider_mock, "chart")
 
-    async def return_none(*_args: Any, **_kwargs: Any) -> None:
-        return None
-
-    async def return_tag(_category: str) -> str:
-        return "test_tag"
-
-    # Set the methods directly on the provider mock instance
-    provider_mock._get_my_wave_recommendations = return_folder
-    provider_mock._get_feed_recommendations = return_none
-    provider_mock._get_chart_recommendations = return_folder
-    provider_mock._get_new_releases_recommendations = return_none
-    provider_mock._get_new_playlists_recommendations = return_folder
-    provider_mock._get_top_picks_recommendations = return_none
-    provider_mock._get_mood_mix_recommendations = return_folder
-    provider_mock._get_activity_mix_recommendations = return_none
-    provider_mock._get_seasonal_mix_recommendations = return_folder
-    provider_mock._pick_random_tag_for_category = return_tag
-
-    result = await YandexMusicProvider.recommendations(provider_mock)
-
-    # Should only return 5 folders (4 None were filtered out)
-    assert len(result) == 5
+    provider_mock._get_chart_recommendations.assert_awaited_once()
+    assert list(items) == [track]
+    assert provider_mock.client.mock_calls == []
 
 
 @pytest.mark.asyncio
-async def test_recommendations_returns_empty_list_when_all_none(provider_mock: Mock) -> None:
-    """Test recommendations() returns empty list when all methods return None."""
+async def test_get_recommendation_items_picks_tag_outside_cached_helper(
+    provider_mock: Mock,
+) -> None:
+    """Mood row chooses its rotating tag before calling the cached helper."""
+    playlist = Mock(spec=Playlist)
+    folder = RecommendationFolder(
+        item_id="mood_mix",
+        provider=provider_mock.instance_id,
+        name="Mood Mix",
+        items=[playlist],
+    )
+    provider_mock._pick_random_tag_for_category = AsyncMock(return_value="focus")
+    provider_mock._get_mood_mix_recommendations = AsyncMock(return_value=folder)
 
-    async def return_none(*_args: Any, **_kwargs: Any) -> None:
-        return None
+    items = await YandexMusicProvider.get_recommendation_items(provider_mock, "mood_mix")
 
-    async def return_no_tag(_category: str) -> None:
-        return None
+    provider_mock._pick_random_tag_for_category.assert_awaited_once_with("mood")
+    provider_mock._get_mood_mix_recommendations.assert_awaited_once_with("focus")
+    assert list(items) == [playlist]
 
-    # Set the methods directly on the provider mock instance
-    provider_mock._get_my_wave_recommendations = return_none
-    provider_mock._get_feed_recommendations = return_none
-    provider_mock._get_chart_recommendations = return_none
-    provider_mock._get_new_releases_recommendations = return_none
-    provider_mock._get_new_playlists_recommendations = return_none
-    provider_mock._get_top_picks_recommendations = return_none
-    provider_mock._get_mood_mix_recommendations = return_none
-    provider_mock._get_activity_mix_recommendations = return_none
-    provider_mock._get_seasonal_mix_recommendations = return_none
-    provider_mock._pick_random_tag_for_category = return_no_tag
 
-    result = await YandexMusicProvider.recommendations(provider_mock)
+@pytest.mark.asyncio
+async def test_get_recommendation_items_empty_or_unknown_returns_empty(
+    provider_mock: Mock,
+) -> None:
+    """Missing tags, empty helpers, and unknown row IDs yield an empty list."""
+    provider_mock._pick_random_tag_for_category = AsyncMock(return_value=None)
+    provider_mock._get_feed_recommendations = AsyncMock(return_value=None)
 
-    assert result == []
+    assert not await YandexMusicProvider.get_recommendation_items(provider_mock, "mood_mix")
+    assert not await YandexMusicProvider.get_recommendation_items(provider_mock, "feed")
+    assert not await YandexMusicProvider.get_recommendation_items(provider_mock, "unknown")
 
 
 @pytest.mark.asyncio
