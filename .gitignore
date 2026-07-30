@@ -17,3 +17,4 @@ site/
 .ma-data/
 docs-site/node_modules/
 ma-server/
+.worktrees/
