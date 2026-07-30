@@ -1,11 +1,11 @@
 """
 Setup flow for the Yandex Music provider.
 
-The user picks a login method (Yandex Passport OAuth Device Flow or QR) and whether to
-remember the session, then signs in with the native ``PassportClient``: the device code
-(or QR code) is rendered as an inline image and completion is detected by polling, not a
-browser callback the flow UI cannot drive. A shown code that elapses is minted afresh and
-the progress step re-emitted in place.
+The user picks a login method (Yandex Passport OAuth Device Flow, QR, or a manually
+supplied music token). Passport flows can remember the session, while manual login stores
+only the supplied music token. The device code (or QR code) is rendered as an inline image
+and completion is detected by polling, not a browser callback the flow UI cannot drive. A
+shown code that elapses is minted afresh and the progress step re-emitted in place.
 
 On success the music token is persisted as setup data; when "remember session" is on the
 long-lived ``x_token`` (and, Device-Flow only, the ``refresh_token``) are stored too so the
@@ -49,6 +49,7 @@ if TYPE_CHECKING:
 CONF_METHOD = "method"
 METHOD_DEVICE = "device"
 METHOD_QR = "qr"
+METHOD_TOKEN = "token"
 
 _DEVICE_NAME = "Music Assistant"
 _AUTH_FLOW_TIMEOUT_SECONDS = 15 * 60
@@ -72,42 +73,63 @@ async def run_setup(session: SetupSession) -> None:
                     options=[
                         ConfigValueOption(value=METHOD_QR),
                         ConfigValueOption(value=METHOD_DEVICE),
+                        ConfigValueOption(value=METHOD_TOKEN),
                     ],
+                ),
+                ConfigEntry(
+                    key=CONF_TOKEN,
+                    type=ConfigEntryType.SECURE_STRING,
+                    required=False,
+                    depends_on=CONF_METHOD,
+                    depends_on_value=METHOD_TOKEN,
                 ),
                 ConfigEntry(
                     key=CONF_REMEMBER_SESSION,
                     type=ConfigEntryType.BOOLEAN,
                     required=False,
                     default_value=True,
+                    depends_on=CONF_METHOD,
+                    depends_on_value_not=METHOD_TOKEN,
                 ),
             ],
             step_id="user",
             errors=errors,
         )
         method = str(values[CONF_METHOD])
-        remember = bool(values[CONF_REMEMBER_SESSION])
-        try:
-            if method == METHOD_QR:
-                creds = await _qr_login(session)
-            else:
-                creds = await _device_login(session)
-        except AbortFlow:
-            raise
-        except YaPassportError as err:
-            errors = {"base": str(err)}
-            continue
-        if creds.music_token is None:
-            errors = {"base": "no_music_token"}
-            continue
-        collected: dict[str, ConfigValueType] = {CONF_TOKEN: creds.music_token.get_secret()}
-        if remember:
-            collected[CONF_X_TOKEN] = creds.x_token.get_secret()
-            collected[CONF_REFRESH_TOKEN] = (
-                creds.refresh_token.get_secret() if creds.refresh_token is not None else None
-            )
+        if method == METHOD_TOKEN:
+            token = values.get(CONF_TOKEN)
+            if not token:
+                errors = {CONF_TOKEN: "required"}
+                continue
+            collected: dict[str, ConfigValueType] = {
+                CONF_TOKEN: str(token),
+                CONF_X_TOKEN: None,
+                CONF_REFRESH_TOKEN: None,
+            }
         else:
-            collected[CONF_X_TOKEN] = None
-            collected[CONF_REFRESH_TOKEN] = None
+            remember = bool(values[CONF_REMEMBER_SESSION])
+            try:
+                if method == METHOD_QR:
+                    creds = await _qr_login(session)
+                else:
+                    creds = await _device_login(session)
+            except AbortFlow:
+                raise
+            except YaPassportError as err:
+                errors = {"base": str(err)}
+                continue
+            if creds.music_token is None:
+                errors = {"base": "no_music_token"}
+                continue
+            collected = {CONF_TOKEN: creds.music_token.get_secret()}
+            if remember:
+                collected[CONF_X_TOKEN] = creds.x_token.get_secret()
+                collected[CONF_REFRESH_TOKEN] = (
+                    creds.refresh_token.get_secret() if creds.refresh_token is not None else None
+                )
+            else:
+                collected[CONF_X_TOKEN] = None
+                collected[CONF_REFRESH_TOKEN] = None
         try:
             await session.finish(collected)
             return
