@@ -63,6 +63,7 @@ from .constants import (
     CONF_ACTION_SAVE_WAVE_PRESET,
     CONF_BASE_URL,
     CONF_LIKED_TRACKS_MAX_TRACKS,
+    CONF_MANUAL_TOKEN,
     CONF_MY_WAVE_MAX_TRACKS,
     CONF_QUALITY,
     CONF_REFRESH_TOKEN,
@@ -439,9 +440,9 @@ class YandexMusicProvider(MusicProvider):
         """
         Return Config entries to configure this provider.
 
-        Authentication runs in the interactive setup flow (see setup_flow.py); this
-        surface only exposes the genuine playback options and the My Wave preset builder
-        (whose save/delete actions are handled in ``handle_config_action``).
+        Authentication runs in the interactive setup flow (see setup_flow.py). This
+        surface exposes a one-shot advanced token replacement alongside playback options
+        and the My Wave preset builder (whose actions use ``handle_config_action``).
         """
         return (
             CONF_ENTRY_UNOFFICIAL_PROVIDER,
@@ -495,6 +496,14 @@ class YandexMusicProvider(MusicProvider):
                 default_value=False,
                 required=False,
                 advanced=True,
+            ),
+            # One-shot manual token replacement (advanced)
+            ConfigEntry(
+                key=CONF_MANUAL_TOKEN,
+                type=ConfigEntryType.SECURE_STRING,
+                required=False,
+                advanced=True,
+                requires_reload=True,
             ),
         )
 

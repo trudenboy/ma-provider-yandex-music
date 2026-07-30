@@ -6,6 +6,8 @@ import json
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, Mock
 
+from music_assistant_models.enums import ConfigEntryType
+
 from music_assistant.providers.yandex_music.constants import (
     CONF_ACTION_SAVE_WAVE_PRESET,
     CONF_BASE_URL,
@@ -60,6 +62,18 @@ async def test_get_config_entries_has_no_auth_entries_or_actions() -> None:
     assert "auth_device" not in actions
     assert "auth_qr" not in actions
     assert "clear_auth" not in actions
+
+
+async def test_get_config_entries_has_advanced_token_replacement() -> None:
+    """A new token can be supplied once without exposing the stored credential."""
+    entries = await YandexMusicProvider.get_config_entries(_provider())
+    entry = next(item for item in entries if item.key == "manual_token")
+
+    assert entry.type == ConfigEntryType.SECURE_STRING
+    assert entry.required is False
+    assert entry.advanced is True
+    assert entry.requires_reload is True
+    assert entry.value is None
 
 
 async def test_get_config_entries_keeps_genuine_options() -> None:

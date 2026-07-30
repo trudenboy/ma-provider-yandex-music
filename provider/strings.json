@@ -43,15 +43,24 @@
     },
     "method": {
       "label": "Login method",
-      "description": "Sign in with a short device code, or by scanning a QR code with the Yandex app on your phone.",
+      "description": "Sign in by scanning a QR code, with a short device code, or by entering an existing Yandex Music token manually.",
       "options": {
         "device": "Device code",
-        "qr": "QR code"
+        "qr": "QR code",
+        "token": "Token (manual)"
       }
+    },
+    "token": {
+      "label": "Yandex Music token",
+      "description": "Enter an existing Yandex Music token. A manually supplied token cannot refresh automatically when it expires."
     },
     "remember_session": {
       "label": "Remember session (auto-refresh token)",
       "description": "When enabled, stores a long-lived session token to automatically refresh your music token when it expires. When disabled, you must re-authenticate manually when the token expires."
+    },
+    "manual_token": {
+      "label": "Replace Yandex Music token",
+      "description": "Optional one-time replacement. Leave empty to keep the current token. The new token is validated when you save, then moved to encrypted authentication storage and removed from this field. To run QR or Device Code login again, open the provider menu and select Reconfigure."
     },
     "quality": {
       "label": "Audio quality",

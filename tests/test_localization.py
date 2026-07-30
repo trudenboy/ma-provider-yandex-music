@@ -62,6 +62,21 @@ async def test_strings_json_has_media_and_manifest_sections() -> None:
     assert strings["manifest"]["description"]
 
 
+def test_strings_json_covers_manual_auth_controls() -> None:
+    """Manual setup and replacement controls have complete user-facing guidance."""
+    strings = _load_strings()
+    config_entries = strings["config_entries"]
+    method = config_entries["method"]
+
+    assert method["options"]["token"]
+    assert config_entries["token"]["label"]
+    assert "refresh" in str(config_entries["token"]["description"]).lower()
+    assert config_entries["manual_token"]["label"]
+    replacement_description = str(config_entries["manual_token"]["description"])
+    assert "empty" in replacement_description.lower()
+    assert "Reconfigure" in replacement_description
+
+
 async def test_config_entries_have_no_hardcoded_labels() -> None:
     """Static entries author their text in strings.json, not in code."""
     entries = await _get_entries()
