@@ -613,3 +613,4 @@ No changes.
 
 - feat: add Yandex Music provider (music-assistant/server#3002)
 - Reverse-synced upstream PR #4637 (WIP)
+- test(parsers): refresh snapshots for `artist_entity_type` and `life_span` added by music-assistant/server#4793.
