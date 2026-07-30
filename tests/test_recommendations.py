@@ -17,6 +17,7 @@ from music_assistant_models.media_items import (
     Playlist,
     RecommendationFolder,
     Track,
+    UniqueList,
 )
 from yandex_music import Track as YandexTrack
 
@@ -830,7 +831,7 @@ async def test_get_recommendation_items_chart_triggers_only_chart_fetch(
         item_id="chart",
         provider=provider_mock.instance_id,
         name="Chart",
-        items=[track],
+        items=UniqueList([track]),
     )
     provider_mock._get_chart_recommendations = AsyncMock(return_value=folder)
 
@@ -851,7 +852,7 @@ async def test_get_recommendation_items_picks_tag_outside_cached_helper(
         item_id="mood_mix",
         provider=provider_mock.instance_id,
         name="Mood Mix",
-        items=[playlist],
+        items=UniqueList([playlist]),
     )
     provider_mock._pick_random_tag_for_category = AsyncMock(return_value="focus")
     provider_mock._get_mood_mix_recommendations = AsyncMock(return_value=folder)
