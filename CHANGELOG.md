@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Parser compatibility baselines now cover the `artist_entity_type` and `life_span` metadata fields introduced by current Music Assistant models.
+- Authentication token maintenance now uses `ya-passport-auth` 1.8.0, including its shared RFC 8628 polling improvements while retaining the existing refresh APIs.
 
 ### Removed
 
