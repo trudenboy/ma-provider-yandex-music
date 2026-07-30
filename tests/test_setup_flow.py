@@ -189,8 +189,8 @@ async def test_device_countdown_respects_hard_timeout() -> None:
     assert 0 < shown_expiry <= 10
 
 
-async def test_auth_form_exposes_conditional_manual_token() -> None:
-    """The token field only accompanies the manual method in the shared auth form."""
+async def test_manual_token_is_only_shown_after_selecting_its_method() -> None:
+    """QR and Device Code never render the secure token input on their method form."""
 
     async def finish(_s: SetupSession, _values: dict[str, Any]) -> dict[str, str]:
         raise AssertionError("form inspection must not finish the flow")
@@ -206,17 +206,25 @@ async def test_auth_form_exposes_conditional_manual_token() -> None:
             )
         )
         method_entry = next(entry for entry in form.entries if entry.key == ym_flow.CONF_METHOD)
-        token_entry = next(entry for entry in form.entries if entry.key == CONF_TOKEN)
-        remember_entry = next(entry for entry in form.entries if entry.key == CONF_REMEMBER_SESSION)
-
         assert {option.value for option in method_entry.options} >= {"qr", "device", "token"}
         assert method_entry.default_value == ym_flow.METHOD_QR
+        assert CONF_TOKEN not in {entry.key for entry in form.entries}
+
+        session.handle_submit({ym_flow.CONF_METHOD: "token", CONF_REMEMBER_SESSION: True})
+        token_form = await _wait_for(
+            lambda: (
+                session.current_step
+                if session.current_step
+                and session.current_step.type == FlowStepType.FORM
+                and session.current_step.step_id == "token_login"
+                else None
+            ),
+            timeout=0.5,
+        )
+        token_entry = next(entry for entry in token_form.entries if entry.key == CONF_TOKEN)
         assert token_entry.type == ConfigEntryType.SECURE_STRING
-        assert token_entry.required is False
-        assert token_entry.depends_on == ym_flow.CONF_METHOD
-        assert token_entry.depends_on_value == "token"
-        assert remember_entry.depends_on == ym_flow.CONF_METHOD
-        assert remember_entry.depends_on_value_not == "token"
+        assert token_entry.required is True
+        assert {entry.key for entry in token_form.entries} == {CONF_TOKEN}
     finally:
         task.cancel()
         with suppress(BaseException):
@@ -237,7 +245,14 @@ async def test_manual_token_login_persists_only_submitted_token() -> None:
     with mock.patch.object(ym_flow, "PassportClient") as passport_client:
         passport_client.create.return_value = _async_cm(client)
         task = asyncio.create_task(ym_flow.run_setup(session))
-        await _drive(session, {ym_flow.CONF_METHOD: "token", CONF_TOKEN: "manual-token"})
+        await _wait_for(lambda: session.current_step and session.current_step.step_id == "user")
+        session.handle_submit({ym_flow.CONF_METHOD: "token", CONF_REMEMBER_SESSION: True})
+        await _wait_for(
+            lambda: session.current_step and session.current_step.step_id == "token_login",
+            timeout=0.5,
+        )
+        session.handle_submit({CONF_TOKEN: "manual-token"})
+        await _wait_for(lambda: session.finished)
         await task
 
     assert collected == {
@@ -257,16 +272,18 @@ async def test_manual_token_login_rejects_empty_token() -> None:
     session, _mass = _make_session(finish)
     task = asyncio.create_task(ym_flow.run_setup(session))
     try:
+        await _wait_for(lambda: session.current_step and session.current_step.step_id == "user")
+        session.handle_submit({ym_flow.CONF_METHOD: "token", CONF_REMEMBER_SESSION: True})
         await _wait_for(
-            lambda: session.current_step and session.current_step.type == FlowStepType.FORM
+            lambda: session.current_step and session.current_step.step_id == "token_login",
+            timeout=0.5,
         )
-        session.handle_submit({ym_flow.CONF_METHOD: "token"})
+        session.handle_submit({CONF_TOKEN: ""})
         await _wait_for(
             lambda: (
-                (session.current_step and session.current_step.errors.get(CONF_TOKEN) == "required")
-                or task.done()
+                session.current_step and session.current_step.errors.get(CONF_TOKEN) == "required"
             ),
-            timeout=0.2,
+            timeout=0.5,
         )
         assert session.current_step is not None
         assert session.current_step.errors == {CONF_TOKEN: "required"}

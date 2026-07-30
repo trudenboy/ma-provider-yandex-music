@@ -77,19 +77,10 @@ async def run_setup(session: SetupSession) -> None:
                     ],
                 ),
                 ConfigEntry(
-                    key=CONF_TOKEN,
-                    type=ConfigEntryType.SECURE_STRING,
-                    required=False,
-                    depends_on=CONF_METHOD,
-                    depends_on_value=METHOD_TOKEN,
-                ),
-                ConfigEntry(
                     key=CONF_REMEMBER_SESSION,
                     type=ConfigEntryType.BOOLEAN,
                     required=False,
                     default_value=True,
-                    depends_on=CONF_METHOD,
-                    depends_on_value_not=METHOD_TOKEN,
                 ),
             ],
             step_id="user",
@@ -97,12 +88,25 @@ async def run_setup(session: SetupSession) -> None:
         )
         method = str(values[CONF_METHOD])
         if method == METHOD_TOKEN:
-            token = values.get(CONF_TOKEN)
-            if not token:
-                errors = {CONF_TOKEN: "required"}
-                continue
+            token_errors: dict[str, str] | None = None
+            while True:
+                token_values = await session.form(
+                    [
+                        ConfigEntry(
+                            key=CONF_TOKEN,
+                            type=ConfigEntryType.SECURE_STRING,
+                            required=True,
+                        )
+                    ],
+                    step_id="token_login",
+                    errors=token_errors,
+                    last_step=True,
+                )
+                if token_values[CONF_TOKEN]:
+                    break
+                token_errors = {CONF_TOKEN: "required"}
             collected: dict[str, ConfigValueType] = {
-                CONF_TOKEN: str(token),
+                CONF_TOKEN: str(token_values[CONF_TOKEN]),
                 CONF_X_TOKEN: None,
                 CONF_REFRESH_TOKEN: None,
             }

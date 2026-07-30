@@ -104,6 +104,10 @@
       "description": "Open the verification URL and enter the code shown. A fresh code is shown automatically if it expires.",
       "progress_text": "Waiting for you to confirm the code in the Yandex app..."
     },
+    "token_login": {
+      "title": "Enter Yandex Music token",
+      "description": "Paste an existing Yandex Music token. The token is validated before the provider is saved."
+    },
     "abort": {
       "login_denied": "The login request was denied in the Yandex app."
     }
