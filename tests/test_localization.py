@@ -41,7 +41,7 @@ async def _get_entries() -> tuple[ConfigEntry, ...]:
     provider.get_config_value = mock.MagicMock(
         side_effect=lambda _key, default=None, **_kw: default
     )
-    return cast("tuple[ConfigEntry, ...]", await YandexMusicProvider.get_config_entries(provider))
+    return await YandexMusicProvider.get_config_entries(provider)
 
 
 async def test_strings_json_covers_config_entries() -> None:
