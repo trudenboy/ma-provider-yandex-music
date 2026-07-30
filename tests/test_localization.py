@@ -77,6 +77,18 @@ def test_strings_json_covers_manual_auth_controls() -> None:
     assert "Reconfigure" in replacement_description
 
 
+def test_device_flow_copy_describes_browser_confirmation() -> None:
+    """Device Flow tells users to enter the code on the shown web page."""
+    device_login = _load_strings()["setup_flow"]["device_login"]
+    description = str(device_login["description"])
+    progress_text = str(device_login["progress_text"])
+
+    assert "address shown" in description.lower()
+    assert "enter the code" in progress_text.lower()
+    assert "verification page" in progress_text.lower()
+    assert "app" not in progress_text.lower()
+
+
 async def test_config_entries_have_no_hardcoded_labels() -> None:
     """Static entries author their text in strings.json, not in code."""
     entries = await _get_entries()

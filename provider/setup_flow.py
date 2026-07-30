@@ -222,14 +222,20 @@ def _qr_image(qr_url: str) -> str:
 
 def _device_image(user_code: str, verification_url: str) -> str:
     """Render the device ``user_code`` + verification URL as an SVG data URI."""
+    display_url = verification_url.removeprefix("https://").removeprefix("http://")
     svg = (
-        '<svg xmlns="http://www.w3.org/2000/svg" width="460" height="180" '
-        'viewBox="0 0 460 180" role="img">'
-        '<rect width="460" height="180" rx="16" fill="#ffdb4d"/>'
-        '<text x="230" y="82" font-family="monospace" font-size="46" font-weight="700" '
+        '<svg xmlns="http://www.w3.org/2000/svg" width="420" height="260" '
+        'viewBox="0 0 420 260" role="img">'
+        '<rect width="420" height="260" rx="18" fill="#ffdb4d"/>'
+        '<text x="210" y="40" font-family="sans-serif" font-size="18" font-weight="600" '
+        'text-anchor="middle" fill="#5a4a00">Open this address in a browser</text>'
+        '<rect x="20" y="55" width="380" height="58" rx="10" fill="#fff"/>'
+        '<text x="210" y="93" font-family="sans-serif" font-size="24" font-weight="700" '
+        f'text-anchor="middle" fill="#1a1a1a">{escape(display_url)}</text>'
+        '<text x="210" y="154" font-family="sans-serif" font-size="18" font-weight="600" '
+        'text-anchor="middle" fill="#5a4a00">Then enter this code</text>'
+        '<text x="210" y="220" font-family="monospace" font-size="52" font-weight="700" '
         f'text-anchor="middle" fill="#1a1a1a">{escape(user_code)}</text>'
-        '<text x="230" y="130" font-family="sans-serif" font-size="16" '
-        f'text-anchor="middle" fill="#5a4a00">{escape(verification_url)}</text>'
         "</svg>"
     )
     return "data:image/svg+xml;base64," + base64.b64encode(svg.encode("utf-8")).decode("ascii")

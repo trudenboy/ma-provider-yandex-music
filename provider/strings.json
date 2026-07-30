@@ -101,8 +101,8 @@
     },
     "device_login": {
       "title": "Enter the code",
-      "description": "Open the verification URL and enter the code shown. A fresh code is shown automatically if it expires.",
-      "progress_text": "Waiting for you to confirm the code in the Yandex app..."
+      "description": "Open the address shown in the yellow card in a browser, then enter the large code. A fresh code is shown automatically if it expires.",
+      "progress_text": "Waiting for you to enter the code on the verification page..."
     },
     "token_login": {
       "title": "Enter Yandex Music token",

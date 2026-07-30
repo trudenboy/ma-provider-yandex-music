@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import time
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
@@ -187,6 +188,18 @@ async def test_device_countdown_respects_hard_timeout() -> None:
 
     assert shown_expiry is not None
     assert 0 < shown_expiry <= 10
+
+
+def test_device_image_makes_verification_address_prominent() -> None:
+    """The non-clickable fallback clearly tells users where to enter the code."""
+    image = ym_flow._device_image("ABCD-1234", "https://ya.ru/device")
+    svg = base64.b64decode(image.split(",", 1)[1]).decode("utf-8")
+
+    assert "Open this address in a browser" in svg
+    assert ">ya.ru/device</text>" in svg
+    assert "https://ya.ru/device" not in svg
+    address = svg.split(">ya.ru/device</text>", 1)[0].rsplit("<text", 1)[1]
+    assert 'font-size="24"' in address
 
 
 async def test_manual_token_is_only_shown_after_selecting_its_method() -> None:
