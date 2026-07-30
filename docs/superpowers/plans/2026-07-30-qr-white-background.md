@@ -43,7 +43,7 @@ def test_qr_image_has_opaque_white_quiet_zone() -> None:
     image = ym_flow._qr_image("https://passport.yandex.ru/qr/test")
     svg = unquote(image.split(",", 1)[1])
     root = ElementTree.fromstring(svg)
-    paths = root.findall("{http://www.w3.org/2000/svg}path")
+    paths = root.findall(".//{http://www.w3.org/2000/svg}path")
 
     background = next(path for path in paths if path.get("fill") == "#fff")
     modules = next(path for path in paths if path.get("stroke") == "#000")
