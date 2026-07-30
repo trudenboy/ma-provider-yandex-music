@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [3.8.4] - 2026-07-30
 
+### Added
+
+- Recommendation rows now load on demand when selected, avoiding unnecessary Yandex requests during discovery.
+
 ### Changed
 
 - Parser compatibility baselines now cover the `artist_entity_type` and `life_span` metadata fields introduced by current Music Assistant models.
