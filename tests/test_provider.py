@@ -11,7 +11,7 @@ provider-init machinery which would otherwise drag in a real
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 from unittest import mock
 
 import pytest
@@ -49,7 +49,9 @@ def _make_provider() -> tuple[YandexMusicProvider, mock.AsyncMock]:
     return provider, mock_client
 
 
-def _make_auth_init_provider(manual_token: str) -> YandexMusicProvider:
+def _make_auth_init_provider(
+    manual_token: str,
+) -> tuple[YandexMusicProvider, mock.MagicMock, mock.MagicMock]:
     """Build the provider state needed to exercise manual-token initialization."""
     provider = YandexMusicProvider.__new__(YandexMusicProvider)
     provider._client = None
@@ -70,15 +72,18 @@ def _make_auth_init_provider(manual_token: str) -> YandexMusicProvider:
         CONF_X_TOKEN: "old-x-token",
         CONF_REFRESH_TOKEN: "old-refresh-token",
     }
-    provider.get_setup_value = mock.MagicMock(side_effect=setup_values.get)
-    provider._update_setup_data = mock.MagicMock()
-    provider._update_config_value = mock.MagicMock()
-    return provider
+    update_setup_data = mock.MagicMock()
+    update_config_value = mock.MagicMock()
+    untyped_provider = cast("Any", provider)
+    untyped_provider.get_setup_value = mock.MagicMock(side_effect=setup_values.get)
+    untyped_provider._update_setup_data = update_setup_data
+    untyped_provider._update_config_value = update_config_value
+    return provider, update_setup_data, update_config_value
 
 
 async def test_manual_token_replacement_is_validated_then_promoted() -> None:
     """A working replacement supersedes and removes every old session credential."""
-    provider = _make_auth_init_provider("new-token")
+    provider, update_setup_data, update_config_value = _make_auth_init_provider("new-token")
     client = mock.AsyncMock()
 
     with (
@@ -98,19 +103,19 @@ async def test_manual_token_replacement_is_validated_then_promoted() -> None:
     assert supplied_token.get_secret() == "new-token"
     client.connect.assert_awaited_once()
     refresh_music_token.assert_not_awaited()
-    provider._update_setup_data.assert_has_calls(
+    update_setup_data.assert_has_calls(
         [
             mock.call(CONF_TOKEN, "new-token"),
             mock.call(CONF_X_TOKEN, None),
             mock.call(CONF_REFRESH_TOKEN, None),
         ]
     )
-    provider._update_config_value.assert_called_once_with(CONF_MANUAL_TOKEN, None, immediate=True)
+    update_config_value.assert_called_once_with(CONF_MANUAL_TOKEN, None, immediate=True)
 
 
 async def test_invalid_manual_token_keeps_existing_setup_credentials() -> None:
     """A rejected replacement is discarded without damaging working setup data."""
-    provider = _make_auth_init_provider("invalid-token")
+    provider, update_setup_data, update_config_value = _make_auth_init_provider("invalid-token")
     client = mock.AsyncMock()
     client.connect.side_effect = LoginFailed("rejected")
 
@@ -131,8 +136,8 @@ async def test_invalid_manual_token_keeps_existing_setup_credentials() -> None:
     assert supplied_token.get_secret() == "invalid-token"
     assert client_class.call_count == 1
     refresh_music_token.assert_not_awaited()
-    provider._update_setup_data.assert_not_called()
-    provider._update_config_value.assert_called_once_with(CONF_MANUAL_TOKEN, None, immediate=True)
+    update_setup_data.assert_not_called()
+    update_config_value.assert_called_once_with(CONF_MANUAL_TOKEN, None, immediate=True)
 
 
 # -- M4: get_playlist_tracks must not abort on a single empty batch -----------

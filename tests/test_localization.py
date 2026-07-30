@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 from unittest import mock
 
 from music_assistant.providers.yandex_music.constants import (
@@ -28,7 +28,7 @@ _PROVIDER_DIR = provider_dir()
 _DYNAMIC_LABEL_KEYS = {"label_text", "unofficial_provider_note"}
 
 
-def _load_strings() -> dict[str, dict[str, object]]:
+def _load_strings() -> dict[str, Any]:
     """Load the provider's strings.json authoring file."""
     data = json.loads((_PROVIDER_DIR / "strings.json").read_text(encoding="utf-8"))
     assert isinstance(data, dict)
@@ -41,7 +41,7 @@ async def _get_entries() -> tuple[ConfigEntry, ...]:
     provider.get_config_value = mock.MagicMock(
         side_effect=lambda _key, default=None, **_kw: default
     )
-    return await YandexMusicProvider.get_config_entries(provider)
+    return cast("tuple[ConfigEntry, ...]", await YandexMusicProvider.get_config_entries(provider))
 
 
 async def test_strings_json_covers_config_entries() -> None:
