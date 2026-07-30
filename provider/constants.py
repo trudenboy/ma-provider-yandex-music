@@ -15,6 +15,7 @@ CONF_ACTION_CLEAR_AUTH: Final[str] = "clear_auth"
 # Stored authentication credentials
 CONF_X_TOKEN: Final[str] = "x_token"
 CONF_REFRESH_TOKEN: Final[str] = "refresh_token"
+CONF_REMEMBER_SESSION: Final[str] = "remember_session"
 
 # Advanced toggle: enable a token-wide concurrency cap to keep MA below
 # Yandex's per-token edge concurrency limit on datacenter / VPN IPs

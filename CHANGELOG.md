@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.8.5] - 2026-07-30
+
+### Added
+
+- Interactive Yandex authentication now uses Music Assistant's guided setup flow with QR login selected by default, optional Device Code login, automatic code refresh, and optional long-lived session storage.
+
+### Changed
+
+- Authentication secrets are stored as setup data and provider options now follow Music Assistant's current instance-level configuration contract.
+- QR rendering uses `segno` 1.6.6; token maintenance remains on `ya-passport-auth[ma]` 1.8.0.
+
+### Fixed
+
+- Reverse-synced upstream server changes from PRs #4873, #5010, and #5017 so the release synchronization guard no longer reports the upstream Yandex Music provider as ahead.
+- Abandoned QR and Device Code login sessions now stop after 15 minutes instead of refreshing codes and polling indefinitely.
+
 ## [3.8.4] - 2026-07-30
 
 ### Added

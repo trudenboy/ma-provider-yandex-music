@@ -12,11 +12,9 @@ from music_assistant_models.errors import InvalidDataError
 from music_assistant_models.media_items import Playlist, ProviderMapping
 from music_assistant_models.media_items import Track as MATrack
 
-from music_assistant.providers.yandex_music import (
-    _delete_wave_preset_action,
-    _save_wave_preset_action,
-)
 from music_assistant.providers.yandex_music.constants import (
+    CONF_ACTION_DELETE_WAVE_PRESET,
+    CONF_ACTION_SAVE_WAVE_PRESET,
     MY_WAVE_PLAYLIST_ID,
     RADIO_TRACK_ID_SEP,
     ROTOR_STATION_MY_WAVE,
@@ -75,29 +73,9 @@ def test_wave_state_is_per_instance_isolated() -> None:
     assert b.settings == {}
 
 
-async def test_root_browse_exposes_my_wave_as_dynamic_playlist() -> None:
-    """Root browse returns My Wave as a dynamic playlist."""
-    provider = Mock(spec=YandexMusicProvider)
-    provider.instance_id = "yandex_music_instance"
-    provider.supported_features = {ProviderFeature.BROWSE}
-    provider._get_user_wave_presets.return_value = []
-    dynamic = Playlist(
-        item_id=MY_WAVE_PLAYLIST_ID,
-        provider=provider.instance_id,
-        name="My Wave",
-        provider_mappings=set(),
-        is_dynamic=True,
-    )
-    provider.get_playlist = AsyncMock(return_value=dynamic)
-
-    items = await YandexMusicProvider.browse(provider, "yandex_music_instance://")
-
-    assert isinstance(items[0], Playlist)
-    assert items[0].is_dynamic is True
-
-
-async def test_virtual_my_wave_playlist_is_dynamic() -> None:
-    """The locally constructed My Wave playlist requests dynamic refill."""
+@pytest.mark.asyncio
+async def test_get_my_wave_playlist_is_dynamic() -> None:
+    """My Wave is dynamic so the queue requests fresh Rotor batches."""
     provider = Mock(spec=YandexMusicProvider)
     provider.instance_id = "yandex_music_instance"
     provider.domain = "yandex_music"
@@ -105,6 +83,27 @@ async def test_virtual_my_wave_playlist_is_dynamic() -> None:
     playlist = await YandexMusicProvider.get_playlist(provider, MY_WAVE_PLAYLIST_ID)
 
     assert playlist.is_dynamic is True
+
+
+@pytest.mark.asyncio
+async def test_browse_root_exposes_my_wave_as_playlist() -> None:
+    """Playing My Wave from Browse preserves the dynamic playlist as the queue source."""
+    provider = Mock(spec=YandexMusicProvider)
+    provider.instance_id = "yandex_music_instance"
+    provider.domain = "yandex_music"
+    provider.supported_features = {ProviderFeature.BROWSE}
+    provider._get_user_wave_presets = Mock(return_value=[])
+    my_wave = await YandexMusicProvider.get_playlist(
+        provider,
+        MY_WAVE_PLAYLIST_ID,
+    )
+    provider.get_playlist = AsyncMock(return_value=my_wave)
+
+    items = await YandexMusicProvider.browse(provider, f"{provider.instance_id}://")
+
+    assert isinstance(items[0], Playlist)
+    assert items[0].is_dynamic is True
+    provider.get_playlist.assert_awaited_once_with(MY_WAVE_PLAYLIST_ID)
 
 
 # -- _fetch_rotor_session_batch (session-API helper) --------------------------
@@ -546,7 +545,27 @@ def test_get_user_wave_presets_drops_whitespace_only_values() -> None:
 # -- save / delete preset actions --------------------------------------------
 
 
-def test_save_wave_preset_action_appends_and_clears_draft() -> None:
+def _action_provider(values: dict[str, ConfigValueType]) -> Mock:
+    """
+    Build a provider stub whose config reads/writes go through *values*.
+
+    Mirrors how ``handle_config_action`` reads draft/preset fields via
+    ``get_config_value`` and persists results via ``_update_config_value``.
+    """
+    provider = Mock(spec=YandexMusicProvider)
+    provider.get_config_value = Mock(
+        side_effect=lambda key, default=None, **_kw: values.get(key, default)
+    )
+
+    def _update(key: str, value: ConfigValueType, **_kw: object) -> None:
+        values[key] = value
+
+    provider._update_config_value = Mock(side_effect=_update)
+    provider.get_config_entries = AsyncMock(return_value=())
+    return provider
+
+
+async def test_save_wave_preset_action_appends_and_clears_draft() -> None:
     """Save action writes the draft into JSON storage and clears draft fields."""
     values: dict[str, ConfigValueType] = {
         "wave_preset_draft_name": "Morning",
@@ -556,7 +575,9 @@ def test_save_wave_preset_action_appends_and_clears_draft() -> None:
         "wave_presets_data": "",
     }
 
-    _save_wave_preset_action(values)
+    await YandexMusicProvider.handle_config_action(
+        _action_provider(values), CONF_ACTION_SAVE_WAVE_PRESET
+    )
 
     stored_raw = values["wave_presets_data"]
     assert isinstance(stored_raw, str)
@@ -569,7 +590,7 @@ def test_save_wave_preset_action_appends_and_clears_draft() -> None:
     assert values["wave_preset_draft_language"] == ""
 
 
-def test_save_wave_preset_action_overwrites_same_name() -> None:
+async def test_save_wave_preset_action_overwrites_same_name() -> None:
     """Saving with an existing name replaces the prior entry — no duplicates."""
     values: dict[str, ConfigValueType] = {
         "wave_preset_draft_name": "Morning",
@@ -582,7 +603,9 @@ def test_save_wave_preset_action_overwrites_same_name() -> None:
         ),
     }
 
-    _save_wave_preset_action(values)
+    await YandexMusicProvider.handle_config_action(
+        _action_provider(values), CONF_ACTION_SAVE_WAVE_PRESET
+    )
 
     stored_raw = values["wave_presets_data"]
     assert isinstance(stored_raw, str)
@@ -592,7 +615,7 @@ def test_save_wave_preset_action_overwrites_same_name() -> None:
     assert morning == {"name": "Morning", "diversity": "favorite"}
 
 
-def test_save_wave_preset_action_rejects_blank_name() -> None:
+async def test_save_wave_preset_action_rejects_blank_name() -> None:
     """Save without a preset name raises InvalidDataError and changes nothing."""
     values: dict[str, ConfigValueType] = {
         "wave_preset_draft_name": "   ",
@@ -600,11 +623,13 @@ def test_save_wave_preset_action_rejects_blank_name() -> None:
     }
 
     with pytest.raises(InvalidDataError):
-        _save_wave_preset_action(values)
+        await YandexMusicProvider.handle_config_action(
+            _action_provider(values), CONF_ACTION_SAVE_WAVE_PRESET
+        )
     assert values["wave_presets_data"] == ""
 
 
-def test_delete_wave_preset_action_removes_by_name() -> None:
+async def test_delete_wave_preset_action_removes_by_name() -> None:
     """Delete action drops the selected preset and clears the selector."""
     values: dict[str, ConfigValueType] = {
         "wave_preset_to_delete": "Morning",
@@ -614,7 +639,9 @@ def test_delete_wave_preset_action_removes_by_name() -> None:
         ),
     }
 
-    _delete_wave_preset_action(values)
+    await YandexMusicProvider.handle_config_action(
+        _action_provider(values), CONF_ACTION_DELETE_WAVE_PRESET
+    )
 
     stored_raw = values["wave_presets_data"]
     assert isinstance(stored_raw, str)
@@ -622,7 +649,7 @@ def test_delete_wave_preset_action_removes_by_name() -> None:
     assert values["wave_preset_to_delete"] == ""
 
 
-def test_delete_wave_preset_action_requires_selection() -> None:
+async def test_delete_wave_preset_action_requires_selection() -> None:
     """No selection → InvalidDataError; storage untouched."""
     values: dict[str, ConfigValueType] = {
         "wave_preset_to_delete": "",
@@ -630,7 +657,9 @@ def test_delete_wave_preset_action_requires_selection() -> None:
     }
 
     with pytest.raises(InvalidDataError):
-        _delete_wave_preset_action(values)
+        await YandexMusicProvider.handle_config_action(
+            _action_provider(values), CONF_ACTION_DELETE_WAVE_PRESET
+        )
     assert values["wave_presets_data"] == '[{"name": "Keep"}]'
 
 
