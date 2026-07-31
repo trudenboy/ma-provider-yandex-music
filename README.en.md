@@ -17,7 +17,7 @@ cd ma-provider-yandex-music
 docker compose -f docker-compose.dev.yml up
 ```
 
-Open the MA web UI at `http://localhost:8095`, then go to **Settings → Music Sources → Add Source → Yandex Music** and enter your OAuth token.
+Open the MA web UI at `http://localhost:8095`, then go to **Settings → Music Sources → Add Source → Yandex Music** and follow the guided login. QR is selected by default; Device Code and manual entry of an existing token are also available.
 
 For the full Docker dev environment guide see [docs/dev-docker.md](docs/dev-docker.md).
 
@@ -38,7 +38,7 @@ For the full Docker dev environment guide see [docs/dev-docker.md](docs/dev-dock
 
 | Guide | Description |
 |-------|-------------|
-| [Configuration](docs/configuration.md) | Token, quality, My Wave, Liked Tracks settings |
+| [Configuration](docs/configuration.md) | QR, Device Code, manual token, reauthentication, and playback settings |
 | [Development](docs/development.md) | Dev setup, tests, linting, commit format |
 | [Contributing](docs/contributing.md) | Bug reports, feature requests, pull requests |
 | [Testing](docs/testing.md) | Running tests locally, CI pipeline, coverage |

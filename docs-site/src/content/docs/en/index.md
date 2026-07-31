@@ -35,7 +35,7 @@ This is an unofficial implementation and is not affiliated with Yandex.
 | [Audio quality up to Lossless FLAC](features/audio-quality/) | ✅ |
 | Multiple simultaneous accounts | ✅ |
 | Maximum quality | Lossless FLAC (with Yandex Plus subscription) |
-| Authentication method | OAuth token |
+| Authentication method | QR code, Device Code, or OAuth token |
 
 
 

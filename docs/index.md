@@ -24,10 +24,10 @@ Contributed and maintained by [TrudenBoy](https://github.com/TrudenBoy).
 
 ## Quick Links
 
-- [Configuration](configuration.md) — Token setup and all settings
+- [Configuration](configuration.md) — Guided authentication, reconfiguration, and all settings
 - [Browse Structure](features/browse.md) — Full browse tree and mapping to Yandex Music web
 - [Features](features/my-wave.md) — My Wave, Liked Tracks, Picks & Mixes, Recommendations, Lyrics, Audio Quality
-- [Known Issues](known-issues.md) — Token expiry, geo-restrictions, and more
+- [Known Issues](known-issues.md) — Authentication recovery, geo-restrictions, and more
 
 ---
 
