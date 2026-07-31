@@ -38,7 +38,7 @@ description: Документация провайдера Yandex Music для M
 | [Качество звука до Lossless FLAC](features/audio-quality/) | ✅ |
 | Несколько аккаунтов одновременно | ✅ |
 | Максимальное качество | Lossless FLAC (с подпиской Яндекс Плюс) |
-| Способ входа | OAuth-токен |
+| Способ входа | QR-код, Device Code или OAuth-токен |
 
 
 

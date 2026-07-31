@@ -2,61 +2,49 @@
 title: Configuration
 ---
 
-import { Steps } from '@astrojs/starlight/components';
+## Authentication
 
-## Step 1 — Get a token
+Open **Music Assistant → Settings → Music Providers**, add **Yandex Music**, and choose a login method:
 
-The provider uses an OAuth token to authenticate with the Yandex Music API.
+| Method | Description |
+|:-------|:------------|
+| **QR code** *(default)* | Scan the high-contrast QR code with the Yandex app and confirm the login. |
+| **Device code** | Open the address shown in the yellow card, then enter the large code on that page. |
+| **Token (manual)** | Paste an existing Yandex Music token. The token is validated before saving, but cannot refresh automatically. |
+
+Expired QR and Device codes are renewed automatically. The complete interactive login stops after 15 minutes; start **Reconfigure** to try again.
+
+**Remember session** applies to QR and Device Code login and is enabled by default. The provider stores the session credentials needed to refresh an expired music token automatically. When disabled, only the current music token is stored and you must reauthenticate after it expires. Manual-token login always stores only that token.
 
 :::danger[Token security]
-An OAuth token grants full access to your Yandex Music account. Do not share it with third parties or enter it on third-party websites. Store the token like a password.
+An OAuth token grants access to your Yandex Music account. Do not share it with third parties or enter it on third-party websites. Store the token like a password.
 :::
 
-### Getting a token
+## Reauthenticate or replace a token
 
-1. Open the following link in your browser:
-   **[oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d](https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d)**
-2. Sign in to your Yandex account if prompted.
-3. After authorization, the browser will redirect to a page with the token in the address bar — find the part that reads `access_token=XXXXXX`.
-4. Copy the token value — the long string of letters and digits after `access_token=` and before the `&` character.
+To restart QR, Device Code, or manual-token login, open the menu for the relevant provider instance and select **Reconfigure**. You do not need to delete and recreate the provider.
 
-Alternative ways to obtain a token (Chrome/Firefox extension, Android APK, and others) are described in the [yandex-music-api documentation](https://yandex-music.readthedocs.io/en/main/token.html).
+Advanced settings also contain **Replace Yandex Music token**, a one-shot field for changing only the token. Leave it empty to keep the current credentials. When saved, the replacement is validated, moved to protected setup storage, and cleared from the field. An invalid replacement is discarded without overwriting the working stored credentials.
 
----
+## Obtaining a token for manual login
 
-## Step 2 — Add the provider in Music Assistant
-<Steps>
-1. Open **Music Assistant → Settings → Music Providers**.
-2. Click **"+ Add"** and select **Yandex Music**.
-3. Paste the copied token into the **"Yandex Music Token"** field.
-4. Select your preferred **audio quality** (see below).
-5. Click **"Save"**.
-6. MA will connect to Yandex Music and begin syncing your library.
-</Steps>
+Manual login is optional. If you use QR or Device Code, no token needs to be copied manually.
 
----
+1. Open [Yandex OAuth](https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d).
+2. Sign in and allow access when prompted.
+3. Copy the value after `access_token=` and before the next `&` in the redirected URL.
+4. Select **Token (manual)** in guided setup and paste the value.
 
 ## Parameters
 
 | Parameter | Default | Description |
-|:---------|:-------------|:---------|
-| **Yandex Music Token** | — | OAuth authorization token. Required. |
-| **Reset authorization** | — | Clears the saved token for re-authentication. |
-| **Audio quality** | Balanced | Quality level: Efficient / Balanced / High / Superb. See [Audio quality](features/audio-quality/) for details. |
-| **My Wave — max tracks** *(advanced)* | 150 | Number of tracks loaded for the My Wave playlist. Fewer → faster loading. Range: 10–1000. |
-| **Liked — max tracks** *(advanced)* | 500 | Maximum tracks in the virtual "Liked" playlist. Higher values slow down loading. Range: 50–2000. |
-| **API Base URL** *(advanced)* | `https://api.music.yandex.net` | Base API URL. Change only if Yandex changes the endpoint. |
+|:----------|:--------|:------------|
+| **Audio quality** | Balanced | Efficient, Balanced, High, or Superb. See [Audio quality](features/audio-quality/) for details. |
+| **My Wave maximum tracks** *(advanced)* | 150 | Tracks exposed by the My Wave playlist. Range: 10–1000. |
+| **My Wave presets** *(advanced)* | None | Named presets built from optional diversity, mood, and language filters. Saved presets appear under **Radio → My Presets**. |
+| **Liked Tracks maximum tracks** *(advanced)* | 200 | Tracks exposed by the Liked Tracks virtual playlist. Range: 50–2000. Higher values increase loading time and CAPTCHA risk. |
+| **API Base URL** *(advanced)* | `https://api.music.yandex.net` | Change only if Yandex changes its API endpoint. |
+| **Restrictive rate limits** *(advanced)* | Off | Safer request concurrency for VPS, VPN, and datacenter IPs. |
+| **Replace Yandex Music token** *(advanced)* | Empty | Optional one-shot token replacement described above. |
 
-Parameters marked *(advanced)* are shown in "Advanced settings" mode.
-
----
-
-## If the token stops working
-
-Tokens may expire after some time. Symptoms: the provider stops playing tracks or shows an authorization error.
-
-**Solution:**
-1. Open the Yandex Music provider settings in MA.
-2. Click **"Reset authorization"**.
-3. Get a new token following the instructions above (Step 1).
-4. Enter the new token and click **"Save"**.
+Parameters marked *(advanced)* are displayed in **Show advanced settings** mode.

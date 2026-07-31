@@ -2,13 +2,13 @@
 title: Known Issues
 ---
 
-## OAuth token expiration
+## Token or session expiration
 
 **Symptoms:** The provider stops working after several days or weeks with no obvious configuration errors.
 
-**Cause:** Yandex Music OAuth tokens have a limited lifetime. Once expired, the provider loses access to the API.
+**Cause:** Manual login and QR or Device Code login with **Remember session** disabled store only the current music token, which cannot be refreshed after it expires. A saved long-lived session can also be revoked by Yandex.
 
-**Solution:** In the provider settings, click **"Reset authorization"**, get a new token by following the instructions on the [Configuration](configuration/) page, and enter it again.
+**Solution:** Open the menu for the relevant provider instance, select **Reconfigure**, and complete QR, Device Code, or manual login again. You do not need to delete and recreate the provider. To replace only the token, use the one-shot **Replace Yandex Music token** field in advanced settings.
 
 ---
 
