@@ -3310,6 +3310,10 @@ class YandexMusicProvider(MusicProvider):
             raise MediaNotFoundError(f"Playlist {prov_playlist_id} not found")
         return parse_playlist(self, playlist)
 
+<<<<<<< ours
+=======
+    @use_cache(3600 * 3, allow_expired_cache=True)
+>>>>>>> theirs
     async def _get_my_wave_playlist_tracks(self, page: int) -> list[Track]:
         """
         Get My Wave tracks for virtual playlist (uncached; uses cursor for page > 0).
