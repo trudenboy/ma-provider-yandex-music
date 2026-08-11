@@ -136,6 +136,7 @@ from .presets import parse_stored_presets
 from .streaming import YandexMusicStreamingManager
 
 if TYPE_CHECKING:
+    from music_assistant_models.config_entries import ConfigActionResult
     from yandex_music import Album as YandexAlbum
     from yandex_music import Track as YandexTrack
 
@@ -507,7 +508,9 @@ class YandexMusicProvider(MusicProvider):
             ),
         )
 
-    async def handle_config_action(self, action: str) -> tuple[ConfigEntry, ...]:
+    async def handle_config_action(
+        self, action: str
+    ) -> tuple[ConfigEntry, ...] | ConfigActionResult | None:
         """
         Handle a wave-preset save/delete button press and re-render the entries.
 
@@ -1408,7 +1411,6 @@ class YandexMusicProvider(MusicProvider):
             folder = await self._get_seasonal_mix_recommendations()
         return folder.items if folder else UniqueList()
 
-    @use_cache(3600 * 3, allow_expired_cache=True)
     async def get_playlist_tracks(self, prov_playlist_id: str, page: int = 0) -> list[Track]:
         """
         Get playlist tracks.
@@ -1432,85 +1434,7 @@ class YandexMusicProvider(MusicProvider):
             self.logger.debug("Liked Tracks playlist returned %s tracks", len(result))
             return result
 
-        # Yandex Music API returns all playlist tracks in one call (no server-side pagination).
-        # Return empty list for page > 0 so the controller pagination loop terminates.
-        if page > 0:
-            return []
-
-        # Parse the playlist ID (format: owner_id:kind)
-        if PLAYLIST_ID_SPLITTER in prov_playlist_id:
-            owner_id, kind = prov_playlist_id.split(PLAYLIST_ID_SPLITTER, 1)
-        else:
-            owner_id = str(self.client.user_id)
-            kind = prov_playlist_id
-
-        playlist = await self.client.get_playlist(owner_id, kind)
-        if not playlist:
-            return []
-
-        # API sometimes returns playlist without tracks; fetch them explicitly if needed
-        tracks_list = playlist.tracks or []
-        track_count = getattr(playlist, "track_count", None) or 0
-        if not tracks_list and track_count > 0:
-            self.logger.debug(
-                "Playlist %s/%s: track_count=%s but no tracks in response, "
-                "calling fetch_tracks_async",
-                owner_id,
-                kind,
-                track_count,
-            )
-            try:
-                tracks_list = await playlist.fetch_tracks_async()
-            except Exception as err:
-                self.logger.warning("fetch_tracks_async failed for %s/%s: %s", owner_id, kind, err)
-            if not tracks_list:
-                raise ResourceTemporarilyUnavailable(
-                    "Playlist tracks not available; try again later"
-                )
-
-        if not tracks_list:
-            return []
-
-        # Yandex returns TrackShort objects, we need to fetch full track info
-        track_ids = [
-            str(track.track_id) if hasattr(track, "track_id") else str(track.id)
-            for track in tracks_list
-            if track
-        ]
-        if not track_ids:
-            return []
-
-        # Fetch full track details in batches to avoid timeouts
-        batch_size = TRACK_BATCH_SIZE
-        full_tracks = []
-        for i in range(0, len(track_ids), batch_size):
-            batch = track_ids[i : i + batch_size]
-            batch_result = await self.client.get_tracks(batch)
-            if not batch_result:
-                # Skip this batch but keep going — the terminal guard below
-                # raises if every batch comes back empty. Aborting on a single
-                # empty batch threw away tracks already fetched from earlier
-                # batches and forced a full retry hours later (under the
-                # @use_cache TTL above).
-                self.logger.warning(
-                    "Empty batch %s-%s for playlist %s, skipping",
-                    i,
-                    i + len(batch) - 1,
-                    prov_playlist_id,
-                )
-                continue
-            full_tracks.extend(batch_result)
-
-        if track_ids and not full_tracks:
-            raise ResourceTemporarilyUnavailable("Failed to load track details; try again later")
-
-        tracks = []
-        for track in full_tracks:
-            try:
-                tracks.append(parse_track(self, track))
-            except InvalidDataError as err:
-                self.logger.debug("Error parsing playlist track: %s", err)
-        return tracks
+        return await self._get_regular_playlist_tracks(prov_playlist_id, page)
 
     @use_cache(3600 * 24 * 7, allow_expired_cache=True)
     async def get_artist_albums(self, prov_artist_id: str) -> list[Album]:
@@ -3310,9 +3234,10 @@ class YandexMusicProvider(MusicProvider):
             raise MediaNotFoundError(f"Playlist {prov_playlist_id} not found")
         return parse_playlist(self, playlist)
 
+    @use_cache(3600 * 3, allow_expired_cache=True)
     async def _get_my_wave_playlist_tracks(self, page: int) -> list[Track]:
         """
-        Get My Wave tracks for virtual playlist (uncached; uses cursor for page > 0).
+        Get My Wave tracks for virtual playlist (uses cursor for page > 0).
 
         Fetches MY_WAVE_BATCH_SIZE Rotor API batches per page call to reduce
         the number of round-trips when the player controller paginates through pages.
@@ -3388,6 +3313,7 @@ class YandexMusicProvider(MusicProvider):
             wave.playlist_next_cursor = next_cursor
             return tracks
 
+    @use_cache(3600 * 3, allow_expired_cache=True)
     async def _get_liked_tracks_playlist_tracks(self, page: int) -> list[Track]:
         """
         Get liked tracks for virtual playlist (sorted in reverse chronological order).
@@ -3448,6 +3374,95 @@ class YandexMusicProvider(MusicProvider):
                     self.logger.debug("Error parsing liked track %s: %s", track_id, err)
 
         self.logger.debug("Liked tracks: fetched %s, parsed %s", len(track_shorts), len(tracks))
+        return tracks
+
+    @use_cache(3600 * 3, allow_expired_cache=True)
+    async def _get_regular_playlist_tracks(self, prov_playlist_id: str, page: int) -> list[Track]:
+        """
+        Get the tracks of a regular (non-virtual) playlist.
+
+        :param prov_playlist_id: The provider playlist ID (format: "owner_id:kind").
+        :param page: Page number for pagination.
+        :return: List of Track objects.
+        """
+        # Yandex Music API returns all playlist tracks in one call (no server-side pagination).
+        # Return empty list for page > 0 so the controller pagination loop terminates.
+        if page > 0:
+            return []
+
+        # Parse the playlist ID (format: owner_id:kind)
+        if PLAYLIST_ID_SPLITTER in prov_playlist_id:
+            owner_id, kind = prov_playlist_id.split(PLAYLIST_ID_SPLITTER, 1)
+        else:
+            owner_id = str(self.client.user_id)
+            kind = prov_playlist_id
+
+        playlist = await self.client.get_playlist(owner_id, kind)
+        if not playlist:
+            return []
+
+        # API sometimes returns playlist without tracks; fetch them explicitly if needed
+        tracks_list = playlist.tracks or []
+        track_count = getattr(playlist, "track_count", None) or 0
+        if not tracks_list and track_count > 0:
+            self.logger.debug(
+                "Playlist %s/%s: track_count=%s but no tracks in response, "
+                "calling fetch_tracks_async",
+                owner_id,
+                kind,
+                track_count,
+            )
+            try:
+                tracks_list = await playlist.fetch_tracks_async()
+            except Exception as err:
+                self.logger.warning("fetch_tracks_async failed for %s/%s: %s", owner_id, kind, err)
+            if not tracks_list:
+                raise ResourceTemporarilyUnavailable(
+                    "Playlist tracks not available; try again later"
+                )
+
+        if not tracks_list:
+            return []
+
+        # Yandex returns TrackShort objects, we need to fetch full track info
+        track_ids = [
+            str(track.track_id) if hasattr(track, "track_id") else str(track.id)
+            for track in tracks_list
+            if track
+        ]
+        if not track_ids:
+            return []
+
+        # Fetch full track details in batches to avoid timeouts
+        batch_size = TRACK_BATCH_SIZE
+        full_tracks = []
+        for i in range(0, len(track_ids), batch_size):
+            batch = track_ids[i : i + batch_size]
+            batch_result = await self.client.get_tracks(batch)
+            if not batch_result:
+                # Skip this batch but keep going — the terminal guard below
+                # raises if every batch comes back empty. Aborting on a single
+                # empty batch threw away tracks already fetched from earlier
+                # batches and forced a full retry hours later (under the
+                # @use_cache TTL above).
+                self.logger.warning(
+                    "Empty batch %s-%s for playlist %s, skipping",
+                    i,
+                    i + len(batch) - 1,
+                    prov_playlist_id,
+                )
+                continue
+            full_tracks.extend(batch_result)
+
+        if track_ids and not full_tracks:
+            raise ResourceTemporarilyUnavailable("Failed to load track details; try again later")
+
+        tracks = []
+        for track in full_tracks:
+            try:
+                tracks.append(parse_track(self, track))
+            except InvalidDataError as err:
+                self.logger.debug("Error parsing playlist track: %s", err)
         return tracks
 
     async def _drain_prefetched_wave_tracks(self, station_key: str, limit: int) -> list[Track]:
