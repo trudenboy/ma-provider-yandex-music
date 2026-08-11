@@ -23,17 +23,45 @@
 ### Task 1: Prove request sharing and split playlist caching by kind
 
 **Files:**
+- Modify: `tests/conftest.py:1-90`
+- Modify: `tests/test_recommendations.py:1-290`
+- Modify: `tests/test_search_audiobooks.py:1-65`
 - Modify: `tests/test_provider.py:1-305`
 - Modify: `provider/provider.py:1411-1514`
 - Modify: `provider/provider.py:3313-3445`
 
 **Interfaces:**
 - Consumes: `use_cache(expiration: int, allow_expired_cache: bool)`, `MY_WAVE_PLAYLIST_ID`, `LIKED_TRACKS_PLAYLIST_ID`, `MusicAssistant.cache`.
-- Produces: `_get_regular_playlist_tracks(self, prov_playlist_id: str, page: int) -> list[Track]`; cached `_get_my_wave_playlist_tracks(self, page: int) -> list[Track]`; cached `_get_liked_tracks_playlist_tracks(self, page: int) -> list[Track]`; uncached dispatcher `get_playlist_tracks(self, prov_playlist_id: str, page: int = 0) -> list[Track]`.
+- Produces: `use_real_create_task(mass: MagicMock | MusicAssistant) -> None`; `_get_regular_playlist_tracks(self, prov_playlist_id: str, page: int) -> list[Track]`; cached `_get_my_wave_playlist_tracks(self, page: int) -> list[Track]`; cached `_get_liked_tracks_playlist_tracks(self, page: int) -> list[Track]`; uncached dispatcher `get_playlist_tracks(self, prov_playlist_id: str, page: int = 0) -> list[Track]`.
 
-- [ ] **Step 1: Add concurrency-test imports and fixtures**
+- [ ] **Step 1: Make cached-method test fixtures use real task creation**
 
-Add `asyncio`, `TYPE_CHECKING`, and `MY_WAVE_PLAYLIST_ID` imports. Under `TYPE_CHECKING`, import `Callable` and `MusicAssistant`. Add `_StubConfig`, the async `cached_provider` fixture backed by `mass_minimal.cache`, and `_wait_for_gated_fetch` exactly as used by the final upstream Yandex tests.
+Port upstream's `use_real_create_task` into `tests/conftest.py`. It binds
+`MusicAssistant.create_task` to a mocked instance, supplies the running loop,
+and keeps `create_task` as a `MagicMock` for existing assertions. Call it from
+the `provider_mock` fixtures in `test_recommendations.py` and
+`test_search_audiobooks.py`.
+
+Add `_media_item_mock` to `test_recommendations.py`; its `__deepcopy__` returns
+the same stand-in, matching value-like real media items. Use it for the parsed
+track stand-ins in the My Wave success/duplicate tests and chart test.
+
+- [ ] **Step 2: Re-run the previously failing baseline files**
+
+```bash
+uv run pytest tests/test_recommendations.py tests/test_search_audiobooks.py -q
+```
+
+Expected: both files pass against current upstream `dev`, eliminating the 43
+baseline failures caused by mocked `mass.create_task`.
+
+- [ ] **Step 3: Add concurrency-test imports and fixtures**
+
+Add `asyncio`, `TYPE_CHECKING`, and `MY_WAVE_PLAYLIST_ID` imports. Under
+`TYPE_CHECKING`, import `Callable`. Add `_StubConfig`, a `cached_provider`
+fixture backed by an empty mocked cache plus `use_real_create_task`, and
+`_wait_for_gated_fetch`, adapting the final upstream Yandex tests to this
+standalone provider repository.
 
 ```python
 class _StubConfig:
@@ -44,12 +72,15 @@ class _StubConfig:
 
 
 @pytest.fixture
-async def cached_provider(
-    mass_minimal: MusicAssistant,
-) -> tuple[YandexMusicProvider, mock.AsyncMock]:
-    await mass_minimal.cache._setup_database()
+def cached_provider() -> tuple[YandexMusicProvider, mock.AsyncMock]:
     provider, mock_client = _make_provider()
-    provider.mass = mass_minimal
+    provider.mass = mock.MagicMock()
+    provider.mass.cache = mock.AsyncMock()
+    provider.mass.cache.get_with_freshness = mock.AsyncMock(
+        return_value=(None, False, False)
+    )
+    provider.mass.cache.set = mock.AsyncMock()
+    use_real_create_task(provider.mass)
     provider.config = _StubConfig()  # type: ignore[assignment]
     provider.manifest = mock.MagicMock(domain="yandex_music")
     provider._wave_states = {}
@@ -66,11 +97,11 @@ async def _wait_for_gated_fetch(started: Callable[[], bool]) -> None:
     await asyncio.sleep(0.05)
 ```
 
-- [ ] **Step 2: Add the two request-sharing characterization tests**
+- [ ] **Step 4: Add the two request-sharing characterization tests**
 
 Add `test_regular_playlist_fetch_is_shared_between_callers` with a gated mocked `get_playlist`, and `test_my_wave_fetch_is_shared_between_callers` with a gated mocked `_fetch_rotor_session_batch`. Launch three identical calls with `asyncio.create_task`, release the gate, assert all results are empty lists, and assert the relevant backend await count is exactly one.
 
-- [ ] **Step 3: Run the new characterization tests**
+- [ ] **Step 5: Run the new characterization tests**
 
 Run:
 
@@ -82,7 +113,7 @@ Expected: both tests pass under the old top-level cache. They characterize the
 request-sharing behavior that must remain green while cache ownership moves to
 the helpers.
 
-- [ ] **Step 4: Retarget the empty-batch regressions to the required helper**
+- [ ] **Step 6: Retarget the empty-batch regressions to the required helper**
 
 Replace both uses of `YandexMusicProvider.get_playlist_tracks.__wrapped__` with `YandexMusicProvider._get_regular_playlist_tracks.__wrapped__`, passing page `0`. Run those two tests and confirm they fail with `AttributeError` because the helper does not exist yet.
 
@@ -90,7 +121,7 @@ Replace both uses of `YandexMusicProvider.get_playlist_tracks.__wrapped__` with 
 uv run pytest tests/test_provider.py::test_get_playlist_tracks_continues_on_empty_batch tests/test_provider.py::test_get_playlist_tracks_raises_only_when_every_batch_is_empty -q
 ```
 
-- [ ] **Step 5: Implement the final upstream cache topology**
+- [ ] **Step 7: Implement the final upstream cache topology**
 
 Remove `@use_cache` from `get_playlist_tracks`. Keep only its logging and virtual-playlist routing, then return `await self._get_regular_playlist_tracks(prov_playlist_id, page)` for regular playlists.
 
@@ -116,7 +147,7 @@ The new method body is exactly the current dispatcher block beginning with
 track hydration, batched detail loading, partial-batch warnings, the terminal
 all-empty guard, and `InvalidDataError` handling without behavioral edits.
 
-- [ ] **Step 6: Run focused tests until green**
+- [ ] **Step 8: Run focused tests until green**
 
 ```bash
 uv run pytest tests/test_provider.py -q
@@ -124,20 +155,20 @@ uv run pytest tests/test_provider.py -q
 
 Expected: all `tests/test_provider.py` tests pass, including the two concurrency tests and both empty-batch regressions.
 
-- [ ] **Step 7: Run focused static checks**
+- [ ] **Step 9: Run focused static checks**
 
 ```bash
-uv run ruff check provider/provider.py tests/test_provider.py
-uv run ruff format --check provider/provider.py tests/test_provider.py
-uv run mypy provider/provider.py tests/test_provider.py
+uv run ruff check provider/provider.py tests/conftest.py tests/test_provider.py tests/test_recommendations.py tests/test_search_audiobooks.py
+uv run ruff format --check provider/provider.py tests/conftest.py tests/test_provider.py tests/test_recommendations.py tests/test_search_audiobooks.py
+uv run mypy provider/provider.py tests/conftest.py tests/test_provider.py tests/test_recommendations.py tests/test_search_audiobooks.py
 ```
 
 Expected: all commands exit 0 without modifying files.
 
-- [ ] **Step 8: Commit the behavior and tests**
+- [ ] **Step 10: Commit the behavior and tests**
 
 ```bash
-git add provider/provider.py tests/test_provider.py
+git add provider/provider.py tests/conftest.py tests/test_provider.py tests/test_recommendations.py tests/test_search_audiobooks.py docs/superpowers
 git commit -m "fix: align playlist request sharing with upstream"
 ```
 

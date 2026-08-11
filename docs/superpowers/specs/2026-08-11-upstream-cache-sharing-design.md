@@ -45,10 +45,19 @@ changes. `VERSION` remains maintainer-owned and is not modified.
 ## Tests
 
 Existing empty-batch regression tests will call the unwrapped regular-playlist
-helper after the dispatcher split. New concurrency tests will use the real
-Music Assistant cache controller and gated async mocks to prove that three
-simultaneous calls produce one backend fetch for both a regular playlist and
-My Wave.
+helper after the dispatcher split. New concurrency tests will use an empty
+mock cache with Music Assistant's real task-coalescing behavior and gated async
+mocks to prove that three simultaneous calls produce one backend fetch for
+both a regular playlist and My Wave.
+
+The upstream single-flight cache helper now creates tracked tasks through
+`MusicAssistant.create_task`. Provider unit-test fixtures that exercise cached
+methods must therefore attach the real task-creation behavior to their mocked
+Music Assistant instance. A provider-local test helper will mirror upstream's
+`tests.common.use_real_create_task`, and cached-result media-item stand-ins will
+preserve identity across `deepcopy`, matching real Music Assistant media items.
+This is test-harness compatibility required by upstream #5370, not a production
+behavior change.
 
 Verification consists of the focused provider tests followed by the complete
 repository test suite and `pre-commit run --all-files`.
