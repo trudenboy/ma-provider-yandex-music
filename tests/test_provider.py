@@ -19,11 +19,8 @@ import pytest
 from music_assistant_models.errors import LoginFailed, ResourceTemporarilyUnavailable
 
 from music_assistant.models.music_provider import MusicProvider
-
-# ``conftest`` maps this namespace to the local provider at runtime; mypy sees upstream dev.
-from music_assistant.providers.yandex_music.constants import (  # type: ignore[attr-defined]
+from music_assistant.providers.yandex_music.constants import (
     CONF_BASE_URL,
-    CONF_MANUAL_TOKEN,
     CONF_REFRESH_TOKEN,
     CONF_RESTRICTIVE_RATE_LIMITS,
     CONF_TOKEN,
@@ -35,6 +32,9 @@ from music_assistant.providers.yandex_music.constants import (  # type: ignore[a
 from music_assistant.providers.yandex_music.provider import YandexMusicProvider
 
 from .conftest import use_real_create_task
+
+# This fork-only setup key may not exist in the installed upstream package used by local mypy.
+_CONF_MANUAL_TOKEN = "manual_token"
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -68,7 +68,7 @@ def _make_auth_init_provider(
     provider.logger = mock.MagicMock()
     provider.logger.level = logging.INFO
     values = {
-        CONF_MANUAL_TOKEN: manual_token,
+        _CONF_MANUAL_TOKEN: manual_token,
         CONF_BASE_URL: DEFAULT_BASE_URL,
         CONF_RESTRICTIVE_RATE_LIMITS: False,
     }
@@ -119,7 +119,7 @@ async def test_manual_token_replacement_is_validated_then_promoted() -> None:
             mock.call(CONF_REFRESH_TOKEN, None),
         ]
     )
-    update_config_value.assert_called_once_with(CONF_MANUAL_TOKEN, None, immediate=True)
+    update_config_value.assert_called_once_with(_CONF_MANUAL_TOKEN, None, immediate=True)
 
 
 async def test_invalid_manual_token_keeps_existing_setup_credentials() -> None:
@@ -146,7 +146,7 @@ async def test_invalid_manual_token_keeps_existing_setup_credentials() -> None:
     assert client_class.call_count == 1
     refresh_music_token.assert_not_awaited()
     update_setup_data.assert_not_called()
-    update_config_value.assert_called_once_with(CONF_MANUAL_TOKEN, None, immediate=True)
+    update_config_value.assert_called_once_with(_CONF_MANUAL_TOKEN, None, immediate=True)
 
 
 # -- M4: get_playlist_tracks must not abort on a single empty batch -----------
