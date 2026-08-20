@@ -60,7 +60,7 @@ Operational rules for AI assistants working in this repo:
 
 - `./scripts/setup.sh` — initial setup (venv via `uv`, dependencies, pre-commit hooks). Re-run after pulling latest code.
 - `uv run pytest` — run all tests
-- `uv run pytest provider/tests/<file>.py` — run a specific test file
+- `uv run pytest tests/<file>.py` — run a specific test file
 - `uv run ruff check provider/` — lint
 - `uv run ruff format provider/` — auto-format
 - `uv run mypy provider/` — type check
