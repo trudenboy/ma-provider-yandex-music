@@ -48,7 +48,7 @@ filterwarnings = [
 
 [tool.codespell]
 # >>> ma-provider-tools sync (codespell skip) — DO NOT EDIT >>>
-skip = "*.js,*.svg,.github/pr-review/standards.md,NOTICE,docs-site/package-lock.json"
+skip = "*.js,*.svg,.github/instructions/music-assistant-standards.instructions.md,NOTICE,docs-site/package-lock.json"
 # <<< ma-provider-tools sync (codespell skip) <<<
 ignore-words-list = "provid,hass,followings,childs,explict,additionals,commitish,nam,"
 
