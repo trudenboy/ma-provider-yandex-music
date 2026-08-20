@@ -6,7 +6,7 @@ description: Настройка окружения разработки для �
 
 ## Требования
 
-- Python 3.12+
+- Python 3.14+
 - [uv](https://docs.astral.sh/uv/) — `curl -LsSf https://astral.sh/uv/install.sh | sh`
 - ffmpeg 6.1+ (для интеграционных тестов MA)
   - macOS: `brew install ffmpeg`
@@ -25,13 +25,13 @@ description: Настройка окружения разработки для �
 
 ```bash
 # Unit-тесты (без MA-сервера)
-uv run pytest provider/tests/ -m "not integration"
+uv run pytest tests/ -m "not integration"
 
 # Полный набор тестов
-uv run pytest provider/tests/
+uv run pytest tests/
 
 # С отчётом покрытия
-uv run pytest provider/tests/ --cov=provider/ --cov-report=html
+uv run pytest tests/ --cov=provider/ --cov-report=html
 ```
 
 ## Именование веток
@@ -51,7 +51,7 @@ git checkout dev && git pull
 git checkout -b feature/my-feature
 
 # разработка + тесты
-uv run pytest provider/tests/
+uv run pytest tests/
 pre-commit run --all-files
 
 # PR: feature/* → dev
@@ -104,5 +104,5 @@ python3 scripts/dev-workspace.py run --dir ~/ma-workspace
 python3 scripts/dev-workspace.py status --dir ~/ma-workspace
 ```
 
-Workspace использует один `trudenboy/ma-server` fork и общий `.venv` (Python 3.12).
+Workspace использует один `trudenboy/ma-server` fork и общий `.venv`.
 Каждый провайдер подключается через симлинк в `ma-server/music_assistant/providers/`.

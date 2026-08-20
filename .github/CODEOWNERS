@@ -5,4 +5,4 @@
 # branches, any PR that touches VERSION needs the maintainer's approval to
 # merge. (The CODEOWNERS file alone does not enforce anything — the branch
 # protection rule is what makes it binding.)
-/provider/VERSION @trudenboy
+/VERSION @trudenboy
