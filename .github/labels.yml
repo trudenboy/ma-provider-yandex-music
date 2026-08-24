@@ -52,4 +52,4 @@
 
 - name: "needs-human"
   color: "d93f0b"
-  description: "Reverse-sync applied with conflicts/.rej — needs manual resolution"
+  description: "Reverse-sync has verified snapshot-merge conflict markers"

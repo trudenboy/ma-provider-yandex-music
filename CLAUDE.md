@@ -161,12 +161,18 @@ provider (someone editing `music_assistant/providers/yandex_music/` directly in
 `music-assistant/server`) are detected and ported back here automatically by the
 `ma-provider-tools` reverse-sync radar. They arrive as **draft** PRs on a
 `reverse-sync/<domain>-pr<N>` branch, crediting the upstream author via
-`Co-authored-by`. A PR labelled **`needs-human`** applied with conflicts: it
-carries `<<<<<<<` markers (and the upstream change may need adapting to this
-repo's current code) — resolve them, drop the label, and treat it like any other
-PR (review, changelog, maintainer approval). `VERSION` / `translations/en.json`
-are never touched by reverse-sync; bump them as usual. Do **not** manually
-re-port a change the radar already opened a PR for.
+`Co-authored-by`. A conflict is always visible in the title as
+**`[needs-human]`** even if label application fails. The draft contains actual
+ported changes plus only real `<<<<<<<` snapshot-merge markers. The radar
+compares the upstream PR's normalized base/head snapshots with the current
+provider files; patch-index SHAs and `git apply` are not part of the merge.
+A scaffold-only PR is forbidden. Resolve the listed artifacts, drop the
+`needs-human` label, and treat it like any other PR (review, changelog,
+maintainer approval). Automatic retries update only untouched bot-owned
+scaffold drafts; they never overwrite a PR with human commits or provider/test
+changes. `VERSION` / `translations/en.json` are never touched by reverse-sync;
+bump them as usual. Do **not** manually re-port a change the radar already
+opened a PR for.
 
 This provider is intended to be inlined into
 `music_assistant/providers/yandex_music` upstream eventually — that is the
