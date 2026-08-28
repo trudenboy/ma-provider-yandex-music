@@ -1,9 +1,8 @@
 # Reverse-sync: upstream PR #5914
 
-WIP=1
-
 Ported from music-assistant/server#5914 into `yandex_music`.
 
 ## Summary
 
-_TODO: describe the change._
+Updates parser snapshots for the Music Assistant media-model fields added by
+upstream, including transcript metadata.

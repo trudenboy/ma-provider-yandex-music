@@ -669,4 +669,4 @@ No changes.
 
 - feat: add Yandex Music provider (music-assistant/server#3002)
 - Reverse-synced upstream PR #4637 (WIP)
-- Reverse-synced upstream PR #5914 (WIP)
+- chore: update parser snapshots for the Music Assistant transcript fields
