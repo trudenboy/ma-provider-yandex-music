@@ -5,7 +5,7 @@ description = "Yandex Music provider for Music Assistant"
 requires-python = ">=3.14"
 dynamic = ["version"]
 dependencies = [
-  "ya-passport-auth[ma]==2.0.1",
+  "ya-passport-auth[ma]==1.8.0",
   "yandex-music==3.0.0",
   "segno==1.6.6",
 ]
