@@ -671,3 +671,4 @@ No changes.
 - Reverse-synced upstream PR #4637 (WIP)
 - chore: update parser snapshots for the Music Assistant transcript fields
 - test: stabilize Yandex login timeout coverage
+- fix: retain library items that cannot be parsed by the provider
