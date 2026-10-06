@@ -39,6 +39,8 @@ ignore = [
   "ASYNC240",
   "UP047",
   "PLW0108",
+  "CPY001",
+  "LOG004",
   "FURB110",
   "BLE001",
   "FBT001",
@@ -68,6 +70,8 @@ ignore = [
   "TRY300",
   "S608",
   "ANN204",
+  "ISC004",
+  "PLR0917",
 ]
 extend-select = ["D213"]
 
