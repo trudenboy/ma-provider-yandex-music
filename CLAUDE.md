@@ -302,6 +302,16 @@ Use **red / green / refactor** TDD for all new features and bug fixes:
   (red), then fix it (green). The reproducer becomes the regression
   guard.
 
+### Standalone-only tests
+
+`tests/` is exported to `music-assistant/server` together with the
+provider. Tests that only make sense in this repo, such as checks on
+`pyproject.toml`, `uv.lock` and `scripts/` or on provider-local docs,
+belong in `tests/standalone/`. The sync and upstream-PR workflows never
+export that directory, so upstream does not get code that is not part of
+the server project. Do not use a module-level `pytest.skip` guard to keep
+such a test quiet upstream; move it to `tests/standalone/` instead.
+
 ## Changelog Discipline
 
 `CHANGELOG.md` follows

@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.8.11] - 2026-10-06
+
+### Changed
+
+- Requires Music Assistant 2.10.0 or newer and `ya-passport-auth` 2.1.0, aligned with the other Yandex providers.
+- Stream URL refreshes during playback use Music Assistant's playback request priority instead of bypassing the request throttle; they still skip cooldown blocks but now wait for a throttle slot.
+- Playlists, favorites and dislikes follow Music Assistant's per-user library model: playlists are private by default and favorites are personal.
+
+### Fixed
+
+- Setup errors keep their localized message after a failed login attempt.
+- Podcasts and audiobooks without a Yandex genre use Music Assistant's shared default genre.
+
 ## [3.8.10] - 2026-08-28
 
 ### Fixed
@@ -685,3 +698,4 @@ No changes.
 - chore: update parser snapshots for the Music Assistant transcript fields
 - test: stabilize Yandex login timeout coverage
 - fix: retain library items that cannot be parsed by the provider
+- Reverse-synced upstream PR #6285 (WIP)
