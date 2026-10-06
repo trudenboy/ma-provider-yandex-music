@@ -1,9 +1,7 @@
 # Reverse-sync: upstream PR #6382
 
-WIP=1
-
 Ported from music-assistant/server#6382 into `yandex_music`.
 
 ## Summary
 
-_TODO: describe the change._
+Setup forms keep the raised `SetupFlowError` itself as the field error, so its localized message survives across providers and flow aborts.

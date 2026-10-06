@@ -21,20 +21,12 @@ from yandex_music.rotor.dashboard import Dashboard
 from yandex_music.rotor.station_result import StationResult
 from yandex_music.utils.sign_request import DEFAULT_SIGN_KEY
 
-<<<<<<< provider
-from music_assistant.helpers.throttle_retry import BYPASS_THROTTLER
-from music_assistant.providers.yandex_music.api_client import (
-||||||| upstream-base
-from music_assistant.helpers.throttle_retry import BYPASS_THROTTLER
-from provider.api_client import (
-=======
 from music_assistant.helpers.throttle_retry import (
     RequestPriority,
     current_priority,
     request_priority,
 )
-from provider.api_client import (
->>>>>>> upstream-head
+from music_assistant.providers.yandex_music.api_client import (
     GET_FILE_INFO_CODECS,
     YandexMusicClient,
 )
@@ -1874,36 +1866,14 @@ async def test_jitter_skipped_under_playback_priority() -> None:
     underlying._request.get = mock.AsyncMock(return_value=raw_response)
     underlying.base_url = "https://api.music.yandex.net"
 
-<<<<<<< provider
-    with mock.patch(
-        "music_assistant.providers.yandex_music.api_client.asyncio.sleep",
-        new_callable=mock.AsyncMock,
-    ) as sleep_mock:
-        token = BYPASS_THROTTLER.set(True)
-        try:
-            await client.get_track_file_info("42")
-        finally:
-            BYPASS_THROTTLER.reset(token)
-||||||| upstream-base
-    with mock.patch(
-        "provider.api_client.asyncio.sleep",
-        new_callable=mock.AsyncMock,
-    ) as sleep_mock:
-        token = BYPASS_THROTTLER.set(True)
-        try:
-            await client.get_track_file_info("42")
-        finally:
-            BYPASS_THROTTLER.reset(token)
-=======
     with (
         mock.patch(
-            "provider.api_client.asyncio.sleep",
+            "music_assistant.providers.yandex_music.api_client.asyncio.sleep",
             new_callable=mock.AsyncMock,
         ) as sleep_mock,
         request_priority(RequestPriority.HIGH),
     ):
         await client.get_track_file_info("42")
->>>>>>> upstream-head
 
     sleep_mock.assert_not_awaited()
 

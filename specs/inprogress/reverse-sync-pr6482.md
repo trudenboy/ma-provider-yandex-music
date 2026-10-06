@@ -1,9 +1,7 @@
 # Reverse-sync: upstream PR #6482
 
-WIP=1
-
 Ported from music-assistant/server#6482 into `yandex_music`.
 
 ## Summary
 
-_TODO: describe the change._
+Favorites become per-user and items can be disliked: `favorite` defaults to `None` instead of `False`, and metadata gains `last_musicbrainz_lookup`. Parser snapshots are updated.
