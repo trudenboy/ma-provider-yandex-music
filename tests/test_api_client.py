@@ -3,23 +3,21 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import hashlib
-import hmac
 import re
 import time
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from types import MethodType
 from typing import Any, cast
 from unittest import mock
 
 import pytest
 from music_assistant_models.errors import LoginFailed, ResourceTemporarilyUnavailable
 from ya_passport_auth import SecretStr
+from yandex_music import ClientAsync
 from yandex_music.exceptions import BadRequestError, NetworkError, UnauthorizedError
 from yandex_music.rotor.dashboard import Dashboard
 from yandex_music.rotor.station_result import StationResult
-from yandex_music.utils.sign_request import DEFAULT_SIGN_KEY
 
 from music_assistant.helpers.throttle_retry import (
     RequestPriority,
@@ -51,6 +49,12 @@ def _make_client() -> tuple[YandexMusicClient, mock.AsyncMock]:
     """
     client = YandexMusicClient(token=SecretStr("fake_token"))
     mock_underlying = mock.AsyncMock()
+    mock_underlying.report_unknown_fields = False
+    mock_underlying.strict = False
+    mock_underlying.on_schema_mismatch = None
+    mock_underlying.tracks_file_info = mock.AsyncMock(
+        wraps=MethodType(ClientAsync.tracks_file_info, mock_underlying)
+    )
     client._client = mock_underlying
     client._user_id = 12345
     # Disable throttling in unit tests — replace every kind with an AsyncMock.
@@ -632,39 +636,6 @@ def test_lrc_regex_rejects_invalid_formats() -> None:
         assert not re.search(pattern, case), f"Should NOT match: {case}"
 
 
-# -- HMAC sign construction tests --------------------------------------------
-
-
-def test_hmac_sign_construction_explicit() -> None:
-    """HMAC sign is constructed explicitly with commas stripped from codecs."""
-    # Simulate the parameters
-    timestamp = 1234567890
-    track_id = "12345"
-
-    # The correct way (explicit construction)
-    codecs_for_sign = GET_FILE_INFO_CODECS.replace(",", "")
-    param_string = f"{timestamp}{track_id}lossless{codecs_for_sign}encraw"
-
-    # Verify codecs_for_sign has no commas
-    assert "," not in codecs_for_sign
-
-    # Verify the construction is correct
-    expected = f"1234567890{track_id}lossless{codecs_for_sign}encraw"
-    assert param_string == expected
-
-    # Verify HMAC can be constructed
-    hmac_sign = hmac.new(
-        DEFAULT_SIGN_KEY.encode(),
-        param_string.encode(),
-        hashlib.sha256,
-    )
-    sign = base64.b64encode(hmac_sign.digest()).decode()[:-1]
-
-    # Verify sign is 43 characters (SHA-256 base64 with one "=" removed)
-    assert len(sign) == 43
-    assert not sign.endswith("=")
-
-
 # -- rate-limit detection -----------------------------------------------------
 
 
@@ -724,7 +695,7 @@ async def test_get_dashboard_stations_returns_personalized_stations() -> None:
     """get_dashboard_stations() returns stations from rotor/stations/dashboard."""
     client, underlying = _make_client()
 
-    _de_client = type("C", (), {"report_unknown_fields": False})()
+    _de_client = ClientAsync("fake_token")
 
     station_result = StationResult.de_json(
         {
@@ -809,7 +780,7 @@ async def test_get_dashboard_stations_skips_user_type() -> None:
     """get_dashboard_stations() filters out personal 'user' type stations."""
     client, underlying = _make_client()
 
-    _de_client = type("C", (), {"report_unknown_fields": False})()
+    _de_client = ClientAsync("fake_token")
 
     personal_station = StationResult.de_json(
         {

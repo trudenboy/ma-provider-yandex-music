@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import hashlib
-import hmac
 import logging
 import random
 import re
@@ -27,7 +24,6 @@ from yandex_music import ClientAsync, MixLink, Search, TrackShort
 from yandex_music import Playlist as YandexPlaylist
 from yandex_music import Track as YandexTrack
 from yandex_music.exceptions import BadRequestError, NetworkError, UnauthorizedError
-from yandex_music.utils.sign_request import DEFAULT_SIGN_KEY
 
 from music_assistant.helpers.datetime import utc
 from music_assistant.helpers.throttle_retry import (
@@ -550,9 +546,9 @@ class YandexMusicClient:
             LOGGER.warning("Error fetching liked albums: %s", err)
             raise ResourceTemporarilyUnavailable("Failed to fetch liked albums") from err
 
-        if result is None:
+        if not result:
             return []
-        album_ids = [
+        album_ids: list[str | int] = [
             str(like.album.id) for like in result if like.album is not None and like.album.id
         ]
         if not album_ids:
@@ -589,7 +585,7 @@ class YandexMusicClient:
         """
         try:
             result = await self._call_with_retry(lambda c: c.users_likes_artists())
-            if result is None:
+            if not result:
                 return []
             return [like.artist for like in result if like.artist is not None]
         except BadRequestError as err:
@@ -607,7 +603,7 @@ class YandexMusicClient:
         """
         try:
             result = await self._call_with_retry(lambda c: c.users_playlists_list())
-            if result is None:
+            if not result:
                 return []
             return list(result)
         except BadRequestError as err:
@@ -625,7 +621,7 @@ class YandexMusicClient:
         """
         try:
             result = await self._call_with_retry(lambda c: c.users_likes_playlists())
-            if result is None:
+            if not result:
                 return []
             playlists = []
             for like in result:
@@ -972,7 +968,7 @@ class YandexMusicClient:
             LOGGER.error("Error fetching download info for track %s: %s", track_id, err)
             return []
 
-    async def get_track_file_info(  # noqa: PLR0915
+    async def get_track_file_info(
         self,
         track_id: str,
         quality: str = "lossless",
@@ -996,7 +992,6 @@ class YandexMusicClient:
         :param transport: Transport mode ("raw" or "encraw").
         :return: Parsed downloadInfo dict (url, codec, key?, ...) or None on error.
         """
-        # Normalize codecs: strip whitespace from each token to prevent HMAC mismatches
         codecs = ",".join(c.strip() for c in codecs.split(",") if c.strip())
 
         # Short-TTL cache to absorb repeat calls from MA's streaming retry loop.
@@ -1031,64 +1026,27 @@ class YandexMusicClient:
                 )
                 return cached
 
-        def _build_signed_params(client: ClientAsync) -> tuple[str, dict[str, Any]]:
-            """
-            Build URL and signed params using current client and timestamp.
-
-            Called on each attempt by _call_with_retry, so the HMAC signature
-            is recomputed with a fresh timestamp on every retry.
-            """
-            timestamp = int(time.time())
-            params = {
-                "ts": timestamp,
-                "trackId": track_id,
-                "quality": quality,
-                "codecs": codecs,
-                "transports": transport,
-            }
-            # Build sign string: ts + trackId + quality + codecs (commas stripped) + transports.
-            codecs_for_sign = codecs.replace(",", "")
-            param_string = f"{timestamp}{track_id}{quality}{codecs_for_sign}{transport}"
-            hmac_sign = hmac.new(
-                DEFAULT_SIGN_KEY.encode(),
-                param_string.encode(),
-                hashlib.sha256,
+        async def _do_request(c: ClientAsync) -> dict[str, Any] | None:
+            file_info = await c.tracks_file_info(
+                track_id, quality=quality, codecs=codecs.split(","), transport=transport
             )
-            # SHA-256 (32 bytes) -> base64 = 44 chars with "=" padding.
-            # Yandex API expects exactly 43 chars (one "=" removed).
-            params["sign"] = base64.b64encode(hmac_sign.digest()).decode()[:-1]
-            url = f"{client.base_url}/get-file-info"
-            return url, params
-
-        def _parse_file_info_result(raw: dict[str, Any] | None) -> dict[str, Any] | None:
-            if not raw or not isinstance(raw, dict):
+            if not file_info or not file_info.download_info or not file_info.download_info.url:
                 return None
-            # yandex-music v3 no longer normalises camelCase keys inside
-            # Response.result, so /get-file-info returns "downloadInfo" as-is.
-            download_info = raw.get("download_info") or raw.get("downloadInfo")
-            if not download_info or not download_info.get("url"):
-                return None
-
-            result = cast("dict[str, Any]", download_info)
-
-            if "key" in download_info:
-                result["needs_decryption"] = True
-                LOGGER.debug(
-                    "Encrypted URL received for track %s, will require decryption",
-                    track_id,
-                )
-            else:
-                result["needs_decryption"] = False
-
+            info = file_info.download_info
+            result: dict[str, Any] = {
+                "url": info.url,
+                "codec": info.codec,
+                "bitrate": info.bitrate,
+                "quality": info.quality,
+                "transport": info.transport,
+                "needs_decryption": bool(info.key),
+            }
+            if info.key:
+                result["key"] = info.key
             return result
 
-        async def _do_request(c: ClientAsync) -> dict[str, Any] | None:
-            url, params = _build_signed_params(c)
-            return await c._request.get(url, params=params)  # type: ignore[no-any-return]
-
         try:
-            result = await self._call_with_retry(_do_request, kind="file_info")
-            parsed = _parse_file_info_result(result)
+            parsed = await self._call_with_retry(_do_request, kind="file_info")
             if parsed:
                 LOGGER.debug(
                     "get-file-info for track %s: Success, codec=%s, transport=%s",
@@ -1202,7 +1160,7 @@ class YandexMusicClient:
         :return: List of album objects.
         """
         try:
-            result = await self._call_with_retry(lambda c: c.albums(album_ids))
+            result = await self._call_with_retry(lambda c: c.albums([*album_ids]))
             return result or []
         except (BadRequestError, NetworkError, ProviderUnavailableError) as err:
             LOGGER.debug("Error fetching albums: %s", err)
@@ -1216,7 +1174,7 @@ class YandexMusicClient:
         :return: List of playlist objects.
         """
         try:
-            result = await self._call_with_retry(lambda c: c.playlists_list(playlist_ids))
+            result = await self._call_with_retry(lambda c: c.playlists_list([*playlist_ids]))
             return result or []
         except (BadRequestError, NetworkError, ProviderUnavailableError) as err:
             LOGGER.debug("Error fetching playlists: %s", err)
@@ -2023,7 +1981,8 @@ class YandexMusicClient:
             # library rename does not crash this endpoint with AttributeError.
             base = getattr(c, "base_url", "https://api.music.yandex.net")
             url = f"{base}/landing-blocks/{block}"
-            return await c._request.get(url)  # type: ignore[no-any-return]
+            result = await c._request.get(url)
+            return result if isinstance(result, dict) else {}
 
         try:
             result = await self._call_with_retry(_get)
