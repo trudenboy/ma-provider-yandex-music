@@ -5,11 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.8.13] - 2026-10-06
+## [3.8.13] - 2026-10-07
 
 ### Changed
 
-- Requires `ya-passport-auth` 2.2.0, keeping the shared Yandex authentication library aligned across the Yandex providers.
+- Updated `ya-passport-auth` to 2.2.0.
+- Updated `yandex-music` to 3.2.0 and use its native stream URL requests for all audio quality settings.
+
+### Fixed
+
+- Encrypted lossless streams retain their detected sample rate and bit depth when stream metadata is incomplete.
 
 ## [3.8.12] - 2026-10-06
 

@@ -828,7 +828,7 @@ requires-dist = [
     { name = "segno", specifier = "==1.6.6" },
     { name = "syrupy", marker = "extra == 'test'", specifier = ">=5.0" },
     { name = "ya-passport-auth", extras = ["ma"], specifier = "==2.2.0" },
-    { name = "yandex-music", specifier = "==3.1.0" },
+    { name = "yandex-music", specifier = "==3.2.0" },
 ]
 provides-extras = ["test"]
 
@@ -1990,15 +1990,15 @@ ma = [
 
 [[package]]
 name = "yandex-music"
-version = "3.1.0"
+version = "3.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "requests", extra = ["socks"] },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/87/2e/cbb8afc6b2f4492f06f55816851c3056720feffd907e224262df79c203b6/yandex_music-3.1.0.tar.gz", hash = "sha256:c6ddb383a3c54df0972ac55426c9260070b4f2166629b68de6bd851b05182459", size = 307312, upload-time = "2026-10-05T18:15:13.465Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/34/f9/16562c0672ba9ee54c7745deb48ebac03bbdb33aece88401a137df1cad3c/yandex_music-3.2.0.tar.gz", hash = "sha256:6c0b99fb448e7d4cbe5ddd10688c5f1701501776ea1db4d2801cff9751adb8fc", size = 335428, upload-time = "2026-10-06T19:36:22.138972Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c3/c5/7288d987a4dda1322af1025aea7fbeb8f3b879375a5e62a4b83cc979f400/yandex_music-3.1.0-py3-none-any.whl", hash = "sha256:c2559555e58359ab8bbcffee0713909b862f086ae0037c418ba597cbd133abac", size = 423326, upload-time = "2026-10-05T18:15:11.808Z" },
+    { url = "https://files.pythonhosted.org/packages/67/76/fc7b9653df26f3f8255e033a302a478b4eb899beeddbd66ae48c005654bb/yandex_music-3.2.0-py3-none-any.whl", hash = "sha256:b897889882707512ece92ca5663aba879dcaa26a88a6ba1c301dec6e2c5bdc3c", size = 406138, upload-time = "2026-10-06T19:36:20.699265Z" },
 ]
 
 [[package]]
