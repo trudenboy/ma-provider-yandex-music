@@ -795,7 +795,7 @@ source = { editable = "." }
 dependencies = [
     { name = "segno" },
     { name = "ya-passport-auth", extra = ["ma"] },
-    { name = "yandex-music" },
+    { name = "yandex-music", extra = ["async"] },
 ]
 
 [package.optional-dependencies]
@@ -828,7 +828,7 @@ requires-dist = [
     { name = "segno", specifier = "==1.6.6" },
     { name = "syrupy", marker = "extra == 'test'", specifier = ">=5.0" },
     { name = "ya-passport-auth", extras = ["ma"], specifier = "==2.2.0" },
-    { name = "yandex-music", specifier = "==3.2.0" },
+    { name = "yandex-music", extras = ["async"], specifier = "==3.2.0" },
 ]
 provides-extras = ["test"]
 
@@ -1999,6 +1999,12 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/34/f9/16562c0672ba9ee54c7745deb48ebac03bbdb33aece88401a137df1cad3c/yandex_music-3.2.0.tar.gz", hash = "sha256:6c0b99fb448e7d4cbe5ddd10688c5f1701501776ea1db4d2801cff9751adb8fc", size = 335428, upload-time = "2026-10-06T19:36:22.138972Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/67/76/fc7b9653df26f3f8255e033a302a478b4eb899beeddbd66ae48c005654bb/yandex_music-3.2.0-py3-none-any.whl", hash = "sha256:b897889882707512ece92ca5663aba879dcaa26a88a6ba1c301dec6e2c5bdc3c", size = 406138, upload-time = "2026-10-06T19:36:20.699265Z" },
+]
+
+[package.optional-dependencies]
+async = [
+    { name = "aiofiles" },
+    { name = "aiohttp" },
 ]
 
 [[package]]
