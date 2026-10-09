@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.8.15] - 2026-10-09
+
+### Changed
+
+- Updated `yandex-music` to 3.2.1 and aligned compatibility handling with Music Assistant.
+- Simultaneous stream URL lookups reuse one request while expired URLs still refresh during playback.
+
+### Fixed
+
+- Failed favourite changes are no longer reported as successful.
+- Expired radio sessions recover with the selected station settings; completed sessions keep their final tracks without restarting automatically.
+
 ## [3.8.14] - 2026-10-07
 
 ### Changed

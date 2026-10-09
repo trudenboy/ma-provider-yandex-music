@@ -209,8 +209,8 @@ class StreamingProviderStubWithTracking:
         self.logger = TrackingLogger()
 
 
-# Real client for model deserialization; no network requests are made.
-DE_JSON_CLIENT = ClientAsync("fake_token")
+# Disconnected real client for library model deserialization.
+DE_JSON_CLIENT = ClientAsync()
 
 
 @pytest.fixture

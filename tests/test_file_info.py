@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -95,3 +96,112 @@ async def test_file_info_missing_url_returns_none(response: dict[str, Any] | Non
     with patch.object(underlying._request, "get", AsyncMock(return_value=response)):
         result = await client.get_track_file_info("42")
     assert result is None
+
+
+async def test_concurrent_file_info_requests_reuse_one_fresh_url() -> None:
+    """Concurrent playback lookups for the same variant spend one API request."""
+    underlying = ClientAsync()
+    client = YandexMusicClient(SecretStr("fake_token"))
+    client._client = underlying
+    response = {
+        "downloadInfo": {
+            "trackId": "42",
+            "quality": "lossless",
+            "codec": "flac",
+            "bitrate": 0,
+            "transport": "raw",
+            "url": "https://cdn.example/fresh",
+            "urls": [],
+        }
+    }
+
+    async def respond(*_args: object, **_kwargs: object) -> dict[str, Any]:
+        await asyncio.sleep(0)
+        return response
+
+    request = AsyncMock(side_effect=respond)
+    with patch.object(underlying.request, "get", request):
+        results = await asyncio.gather(*(client.get_track_file_info("42") for _ in range(3)))
+    assert all(result and result["url"] == "https://cdn.example/fresh" for result in results)
+    assert request.await_count == 1
+
+
+async def test_cancelled_file_info_waiter_does_not_cancel_shared_lookup() -> None:
+    """Cancelling a queued caller leaves the active URL lookup usable."""
+    raw = ClientAsync()
+    client = YandexMusicClient(SecretStr("fake_token"))
+    client._client = raw
+    started = asyncio.Event()
+    release = asyncio.Event()
+    response = {
+        "downloadInfo": {
+            "trackId": "42",
+            "quality": "lossless",
+            "codec": "flac",
+            "bitrate": 0,
+            "transport": "raw",
+            "url": "https://cdn.example/fresh",
+            "urls": [],
+        }
+    }
+
+    async def respond(*_args: object, **_kwargs: object) -> dict[str, Any]:
+        started.set()
+        await release.wait()
+        return response
+
+    request = AsyncMock(side_effect=respond)
+    with patch.object(raw.request, "get", request):
+        active = asyncio.create_task(client.get_track_file_info("42"))
+        await started.wait()
+        waiter = asyncio.create_task(client.get_track_file_info("42"))
+        await asyncio.sleep(0)
+        waiter.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiter
+        release.set()
+        result = await active
+        assert result is not None
+        assert result["url"] == "https://cdn.example/fresh"
+        assert await client.get_track_file_info("42") == result
+    assert request.await_count == 1
+
+
+async def test_cancelled_file_info_lookup_allows_next_waiter_to_retry() -> None:
+    """Cancelling the in-flight request releases its variant lock for another caller."""
+    raw = ClientAsync()
+    client = YandexMusicClient(SecretStr("fake_token"))
+    client._client = raw
+    started = asyncio.Event()
+    response = {
+        "downloadInfo": {
+            "trackId": "42",
+            "quality": "lossless",
+            "codec": "flac",
+            "bitrate": 0,
+            "transport": "raw",
+            "url": "https://cdn.example/fresh",
+            "urls": [],
+        }
+    }
+    calls = 0
+
+    async def respond(*_args: object, **_kwargs: object) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            started.set()
+            await asyncio.Event().wait()
+        return response
+
+    with patch.object(raw.request, "get", AsyncMock(side_effect=respond)):
+        active = asyncio.create_task(client.get_track_file_info("42"))
+        await started.wait()
+        waiter = asyncio.create_task(client.get_track_file_info("42"))
+        await asyncio.sleep(0)
+        active.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await active
+        result = await asyncio.wait_for(waiter, timeout=2)
+        assert result is not None
+        assert result["url"] == "https://cdn.example/fresh"

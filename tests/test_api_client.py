@@ -697,7 +697,7 @@ async def test_get_dashboard_stations_returns_personalized_stations() -> None:
     """get_dashboard_stations() returns stations from rotor/stations/dashboard."""
     client, underlying = _make_client()
 
-    _de_client = ClientAsync("fake_token")
+    _de_client = ClientAsync()
 
     station_result = StationResult.de_json(
         {
@@ -782,7 +782,7 @@ async def test_get_dashboard_stations_skips_user_type() -> None:
     """get_dashboard_stations() filters out personal 'user' type stations."""
     client, underlying = _make_client()
 
-    _de_client = ClientAsync("fake_token")
+    _de_client = ClientAsync()
 
     personal_station = StationResult.de_json(
         {

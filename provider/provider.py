@@ -54,7 +54,11 @@ from music_assistant.controllers.cache import use_cache
 from music_assistant.helpers.datetime import utc
 from music_assistant.models.music_provider import MusicProvider
 
-from .api_client import YandexMusicClient
+from .api_client import (
+    RotorSessionExpiredError,
+    RotorSessionTerminatedError,
+    YandexMusicClient,
+)
 from .auth import refresh_credentials_via_passport, refresh_music_token
 from .browse import _BrowseRouter
 from .constants import (
@@ -2414,7 +2418,12 @@ class YandexMusicProvider(MusicProvider):
         if not cursor:
             return  # No anchor for the next batch yet; try again later.
 
-        tracks, _ = await self.client.rotor_session_tracks(session_id, current_track_id=str(cursor))
+        try:
+            tracks, _ = await self.client.rotor_session_tracks(
+                session_id, current_track_id=str(cursor)
+            )
+        except RotorSessionExpiredError, RotorSessionTerminatedError:
+            return
         if not tracks:
             return
 
@@ -2445,22 +2454,33 @@ class YandexMusicProvider(MusicProvider):
         :param station_id: Rotor station key (may include a "#preset" suffix).
         :return: Tuple of (list of yandex tracks, batch_id or None).
         """
-        # Session-creation path: no session yet, or we have a session but no
-        # cursor yet (`tracks` with an empty queue returns a hard-to-debug
-        # empty batch — starting a fresh session is the same latency but
-        # actually yields tracks).
-        if wave.session_id is None or not wave.last_track_id:
-            base_station, preset_settings = _split_wave_mode(station_id)
-            merged = {**preset_settings, **wave.settings}
-            session_id, tracks, batch_id = await self.client.rotor_session_new(
-                base_station, settings=merged or None
-            )
-            if session_id:
-                wave.session_id = session_id
-        else:
-            tracks, batch_id = await self.client.rotor_session_tracks(
-                wave.session_id, current_track_id=str(wave.last_track_id)
-            )
+        if wave.session_id is not None and wave.last_track_id:
+            try:
+                tracks, batch_id = await self.client.rotor_session_tracks(
+                    wave.session_id, current_track_id=str(wave.last_track_id)
+                )
+            except RotorSessionExpiredError:
+                wave.session_id = None
+                wave.batch_id = None
+                wave.last_track_id = None
+                wave.playlist_next_cursor = None
+                wave.radio_started_sent = False
+                wave.prefetched.clear()
+                wave.seen_track_ids.clear()
+            except RotorSessionTerminatedError:
+                return ([], None)
+            else:
+                if batch_id:
+                    wave.batch_id = batch_id
+                return (tracks, batch_id)
+
+        base_station, preset_settings = _split_wave_mode(station_id)
+        merged = {**preset_settings, **wave.settings}
+        session_id, tracks, batch_id = await self.client.rotor_session_new(
+            base_station, settings=merged or None
+        )
+        if session_id:
+            wave.session_id = session_id
         if batch_id:
             wave.batch_id = batch_id
         return (tracks, batch_id)
