@@ -72,6 +72,14 @@ LOGGER = logging.getLogger(__name__)
 _T = TypeVar("_T")
 
 
+class RotorSessionExpiredError(Exception):
+    """The server no longer recognizes the requested radio session."""
+
+
+class RotorSessionTerminatedError(Exception):
+    """The server explicitly ended the requested radio session."""
+
+
 def _liked_track_sort_key(track: Any) -> datetime:
     """
     Return a naive ``datetime`` for sorting liked tracks chronologically.
@@ -140,6 +148,7 @@ class YandexMusicClient:
         self._file_info_cache: OrderedDict[
             tuple[str, str, str, str], tuple[float, dict[str, Any]]
         ] = OrderedDict()
+        self._file_info_locks: dict[tuple[str, str, str, str], tuple[asyncio.Lock, int]] = {}
         # Per-endpoint concurrency locks. Yandex's edge layer reacts to
         # concurrent requests to the same URL family (per-endpoint scraper
         # signature), not steady-state RPS. Defense-in-depth on top of the
@@ -405,6 +414,10 @@ class YandexMusicClient:
         )
         if result is None:
             return ([], None)
+        if result.unknown_session:
+            raise RotorSessionExpiredError(session_id)
+        if result.terminated and not result.sequence:
+            raise RotorSessionTerminatedError(session_id)
         tracks = await self._hydrate_session_tracks(result.sequence or [])
         return (tracks, result.batch_id)
 
@@ -988,112 +1001,18 @@ class YandexMusicClient:
         """
         codecs = ",".join(c.strip() for c in codecs.split(",") if c.strip())
 
-        # Short-TTL cache to absorb repeat calls from MA's streaming retry loop.
-        # Bypass when refresh is in progress (playback priority): a refresh fires
-        # specifically because the previous URL expired on the CDN side, so the
-        # cached entry is useless.
-        # Include `codecs` in the key: the server may pick a different codec
-        # (and URL) based on the codec preference order, so two calls with the
-        # same (track, quality, transport) but different codec lists must not
-        # share a cache slot.
         cache_key = (track_id, quality, codecs, transport)
-        if current_priority() is not RequestPriority.HIGH:
-            # Check the file_info circuit-breaker BEFORE the cache lookup —
-            # otherwise a cooldown-period caller could be served a stale URL
-            # from before the block was engaged. Fail fast (return None) so
-            # MA's streaming layer treats the track as unavailable.
-            try:
-                self._check_block("file_info")
-            except ResourceTemporarilyUnavailable as err:
-                LOGGER.debug(
-                    "get-file-info for track %s: file_info cooldown active (%s)",
-                    track_id,
-                    err,
-                )
-                return None
-            cached = self._file_info_cache_get(cache_key)
-            if cached is not None:
-                LOGGER.debug(
-                    "get-file-info for track %s: cache hit (transport=%s)",
-                    track_id,
-                    transport,
-                )
-                return cached
-
-        async def _do_request(c: ClientAsync) -> dict[str, Any] | None:
-            file_info = await c.tracks_file_info(
-                track_id, quality=quality, codecs=codecs.split(","), transport=transport
-            )
-            if not file_info or not file_info.download_info or not file_info.download_info.url:
-                return None
-            info = file_info.download_info
-            result: dict[str, Any] = {
-                "url": info.url,
-                "codec": info.codec,
-                "bitrate": info.bitrate,
-                "quality": info.quality,
-                "transport": info.transport,
-                "needs_decryption": bool(info.key),
-            }
-            if info.key:
-                result["key"] = info.key
-            return result
-
+        lock, users = self._file_info_locks.get(cache_key, (asyncio.Lock(), 0))
+        self._file_info_locks[cache_key] = (lock, users + 1)
         try:
-            parsed = await self._call_with_retry(_do_request, kind="file_info")
-            if parsed:
-                LOGGER.debug(
-                    "get-file-info for track %s: Success, codec=%s, transport=%s",
-                    track_id,
-                    parsed.get("codec"),
-                    transport,
-                )
-                # Always store the freshest URL — including under playback priority.
-                # A successful refresh proves the previously cached entry was
-                # stale, so replacing it avoids serving the old URL to the next
-                # non-bypass caller until its TTL expires.
-                self._file_info_cache_put(cache_key, parsed)
-                return parsed
-        except BadRequestError as err:
-            # 4xx is terminal for this URL/quality. Drop any cached entry so we
-            # don't replay a now-rejected response.
-            self._file_info_cache_invalidate(track_id)
-            LOGGER.debug(
-                "get-file-info for track %s: BadRequestError %s",
-                track_id,
-                getattr(err, "message", str(err)) or repr(err),
-            )
-        except (
-            NetworkError,
-            ProviderUnavailableError,
-            ResourceTemporarilyUnavailable,
-        ) as err:
-            LOGGER.debug(
-                "get-file-info for track %s: %s %s",
-                track_id,
-                type(err).__name__,
-                getattr(err, "message", str(err)) or repr(err),
-            )
-        except UnauthorizedError as err:
-            # Auth expired — invalidate any cached URL so the post-re-auth call
-            # doesn't replay a stale entry tied to the old session.
-            self._file_info_cache_invalidate(track_id)
-            LOGGER.debug(
-                "get-file-info for track %s: UnauthorizedError %s",
-                track_id,
-                getattr(err, "message", str(err)) or repr(err),
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception as err:
-            LOGGER.warning(
-                "get-file-info for track %s: Unexpected %s: %s",
-                track_id,
-                type(err).__name__,
-                err,
-            )
-
-        return None
+            async with lock:
+                return await self._get_track_file_info(track_id, quality, codecs, transport)
+        finally:
+            _, users = self._file_info_locks[cache_key]
+            if users == 1:
+                del self._file_info_locks[cache_key]
+            else:
+                self._file_info_locks[cache_key] = (lock, users - 1)
 
     # Discovery / recommendations
 
@@ -1367,8 +1286,7 @@ class YandexMusicClient:
         :return: True if successful.
         """
         try:
-            result = await self._call_with_retry(lambda c: c.users_likes_tracks_add(track_id))
-            return result is not None
+            return await self._call_with_retry(lambda c: c.users_likes_tracks_add(track_id))
         except (BadRequestError, NetworkError, ProviderUnavailableError) as err:
             LOGGER.error("Error liking track %s: %s", track_id, err)
             return False
@@ -1381,8 +1299,7 @@ class YandexMusicClient:
         :return: True if successful.
         """
         try:
-            result = await self._call_with_retry(lambda c: c.users_likes_tracks_remove(track_id))
-            return result is not None
+            return await self._call_with_retry(lambda c: c.users_likes_tracks_remove(track_id))
         except (BadRequestError, NetworkError, ProviderUnavailableError) as err:
             LOGGER.error("Error unliking track %s: %s", track_id, err)
             return False
@@ -1395,8 +1312,7 @@ class YandexMusicClient:
         :return: True if successful.
         """
         try:
-            result = await self._call_with_retry(lambda c: c.users_likes_albums_add(album_id))
-            return result is not None
+            return await self._call_with_retry(lambda c: c.users_likes_albums_add(album_id))
         except (BadRequestError, NetworkError, ProviderUnavailableError) as err:
             LOGGER.error("Error liking album %s: %s", album_id, err)
             return False
@@ -1409,8 +1325,7 @@ class YandexMusicClient:
         :return: True if successful.
         """
         try:
-            result = await self._call_with_retry(lambda c: c.users_likes_albums_remove(album_id))
-            return result is not None
+            return await self._call_with_retry(lambda c: c.users_likes_albums_remove(album_id))
         except (BadRequestError, NetworkError, ProviderUnavailableError) as err:
             LOGGER.error("Error unliking album %s: %s", album_id, err)
             return False
@@ -1423,8 +1338,7 @@ class YandexMusicClient:
         :return: True if successful.
         """
         try:
-            result = await self._call_with_retry(lambda c: c.users_likes_artists_add(artist_id))
-            return result is not None
+            return await self._call_with_retry(lambda c: c.users_likes_artists_add(artist_id))
         except (BadRequestError, NetworkError, ProviderUnavailableError) as err:
             LOGGER.error("Error liking artist %s: %s", artist_id, err)
             return False
@@ -1437,11 +1351,121 @@ class YandexMusicClient:
         :return: True if successful.
         """
         try:
-            result = await self._call_with_retry(lambda c: c.users_likes_artists_remove(artist_id))
-            return result is not None
+            return await self._call_with_retry(lambda c: c.users_likes_artists_remove(artist_id))
         except (BadRequestError, NetworkError, ProviderUnavailableError) as err:
             LOGGER.error("Error unliking artist %s: %s", artist_id, err)
             return False
+
+    async def _get_track_file_info(
+        self, track_id: str, quality: str, codecs: str, transport: str
+    ) -> dict[str, Any] | None:
+        """Resolve one stream variant after acquiring its shared request lock."""
+        # Short-TTL cache to absorb repeat calls from MA's streaming retry loop.
+        # Bypass when refresh is in progress (playback priority): a refresh fires
+        # specifically because the previous URL expired on the CDN side, so the
+        # cached entry is useless.
+        # Include `codecs` in the key: the server may pick a different codec
+        # (and URL) based on the codec preference order, so two calls with the
+        # same (track, quality, transport) but different codec lists must not
+        # share a cache slot.
+        cache_key = (track_id, quality, codecs, transport)
+        if current_priority() is not RequestPriority.HIGH:
+            # Check the file_info circuit-breaker BEFORE the cache lookup —
+            # otherwise a cooldown-period caller could be served a stale URL
+            # from before the block was engaged. Fail fast (return None) so
+            # MA's streaming layer treats the track as unavailable.
+            try:
+                self._check_block("file_info")
+            except ResourceTemporarilyUnavailable as err:
+                LOGGER.debug(
+                    "get-file-info for track %s: file_info cooldown active (%s)",
+                    track_id,
+                    err,
+                )
+                return None
+            cached = self._file_info_cache_get(cache_key)
+            if cached is not None:
+                LOGGER.debug(
+                    "get-file-info for track %s: cache hit (transport=%s)",
+                    track_id,
+                    transport,
+                )
+                return cached
+
+        async def _do_request(c: ClientAsync) -> dict[str, Any] | None:
+            file_info = await c.tracks_file_info(
+                track_id, quality=quality, codecs=codecs.split(","), transport=transport
+            )
+            if not file_info or not file_info.download_info or not file_info.download_info.url:
+                return None
+            info = file_info.download_info
+            result: dict[str, Any] = {
+                "url": info.url,
+                "codec": info.codec,
+                "bitrate": info.bitrate,
+                "quality": info.quality,
+                "transport": info.transport,
+                "needs_decryption": bool(info.key),
+            }
+            if info.key:
+                result["key"] = info.key
+            return result
+
+        try:
+            parsed = await self._call_with_retry(_do_request, kind="file_info")
+            if parsed:
+                LOGGER.debug(
+                    "get-file-info for track %s: Success, codec=%s, transport=%s",
+                    track_id,
+                    parsed.get("codec"),
+                    transport,
+                )
+                # Always store the freshest URL — including under playback priority.
+                # A successful refresh proves the previously cached entry was
+                # stale, so replacing it avoids serving the old URL to the next
+                # non-bypass caller until its TTL expires.
+                self._file_info_cache_put(cache_key, parsed)
+                return parsed
+        except BadRequestError as err:
+            # 4xx is terminal for this URL/quality. Drop any cached entry so we
+            # don't replay a now-rejected response.
+            self._file_info_cache_invalidate(track_id)
+            LOGGER.debug(
+                "get-file-info for track %s: BadRequestError %s",
+                track_id,
+                getattr(err, "message", str(err)) or repr(err),
+            )
+        except (
+            NetworkError,
+            ProviderUnavailableError,
+            ResourceTemporarilyUnavailable,
+        ) as err:
+            LOGGER.debug(
+                "get-file-info for track %s: %s %s",
+                track_id,
+                type(err).__name__,
+                getattr(err, "message", str(err)) or repr(err),
+            )
+        except UnauthorizedError as err:
+            # Auth expired — invalidate any cached URL so the post-re-auth call
+            # doesn't replay a stale entry tied to the old session.
+            self._file_info_cache_invalidate(track_id)
+            LOGGER.debug(
+                "get-file-info for track %s: UnauthorizedError %s",
+                track_id,
+                getattr(err, "message", str(err)) or repr(err),
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
+            LOGGER.warning(
+                "get-file-info for track %s: Unexpected %s: %s",
+                track_id,
+                type(err).__name__,
+                err,
+            )
+
+        return None
 
     def _get_throttler(self, kind: str) -> Throttler:
         return self._throttlers.get(kind, self._throttlers["default"])
@@ -1919,7 +1943,7 @@ class YandexMusicClient:
         async def _get(c: ClientAsync) -> dict[str, Any] | None:
             base = getattr(c, "base_url", "https://api.music.yandex.net")
             url = f"{base}/landing-blocks/{block}"
-            result = await c._request.get(url)
+            result = await c.request.get(url)
             return result if isinstance(result, dict) else None
 
         try:
