@@ -548,8 +548,6 @@ class YandexMusicClient:
             LOGGER.warning("Error fetching liked albums: %s", err)
             raise ResourceTemporarilyUnavailable("Failed to fetch liked albums") from err
 
-        if not result:
-            return []
         album_ids: list[str | int] = [
             str(like.album.id) for like in result if like.album is not None and like.album.id
         ]
@@ -587,8 +585,6 @@ class YandexMusicClient:
         """
         try:
             result = await self._call_with_retry(lambda c: c.users_likes_artists())
-            if not result:
-                return []
             return [like.artist for like in result if like.artist is not None]
         except BadRequestError as err:
             LOGGER.error("Error fetching liked artists: %s", err)
@@ -605,8 +601,6 @@ class YandexMusicClient:
         """
         try:
             result = await self._call_with_retry(lambda c: c.users_playlists_list())
-            if not result:
-                return []
             return list(result)
         except BadRequestError as err:
             LOGGER.error("Error fetching playlists: %s", err)
@@ -623,8 +617,6 @@ class YandexMusicClient:
         """
         try:
             result = await self._call_with_retry(lambda c: c.users_likes_playlists())
-            if not result:
-                return []
             playlists = []
             for like in result:
                 if like.playlist is not None:
@@ -1924,11 +1916,11 @@ class YandexMusicClient:
         :return: List of wave category dicts, or None on error.
         """
 
-        async def _get(c: ClientAsync) -> dict[str, Any]:
+        async def _get(c: ClientAsync) -> dict[str, Any] | None:
             base = getattr(c, "base_url", "https://api.music.yandex.net")
             url = f"{base}/landing-blocks/{block}"
             result = await c._request.get(url)
-            return result if isinstance(result, dict) else {}
+            return result if isinstance(result, dict) else None
 
         try:
             result = await self._call_with_retry(_get)
