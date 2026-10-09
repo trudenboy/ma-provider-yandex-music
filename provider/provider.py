@@ -2463,7 +2463,8 @@ class YandexMusicProvider(MusicProvider):
         :return: Tuple of (list of yandex tracks, batch_id or None).
         """
         if wave.ended:
-            return ([], None)
+            tracks, wave.prefetched = wave.prefetched, []
+            return (tracks, wave.batch_id if tracks else None)
         if wave.session_id is not None and wave.last_track_id:
             try:
                 tracks, batch_id, ended = await self.client.rotor_session_tracks(
