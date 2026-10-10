@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.8.22] - 2026-10-10
+
+### Fixed
+
+- My Wave recommendations restart a finished station while preserving an active playback session.
+- Radio dislike feedback includes the supplied playback time required by the Yandex session API.
+
 ## [3.8.21] - 2026-10-10
 
 ### Fixed
