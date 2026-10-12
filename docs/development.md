@@ -4,7 +4,7 @@
 
 ## Prerequisites
 
-- Python 3.12+
+- Python 3.14+
 - [uv](https://docs.astral.sh/uv/) — `curl -LsSf https://astral.sh/uv/install.sh | sh`
 - ffmpeg 6.1+ (for MA integration tests)
   - macOS: `brew install ffmpeg`
@@ -94,7 +94,7 @@ Runs: ruff (lint + format), mypy (type check), codespell.
 
 ## Conventional Commits
 
-Used for automatic CHANGELOG generation:
+Use Conventional Commits for PR titles and commit messages:
 ```
 feat: add My Wave radio support
 fix: fix FLAC seek at stream start
@@ -104,11 +104,13 @@ test: add streaming test for FLAC decrypt
 
 ## Release Process
 
-1. PR: `dev` → `main`
-2. Merge `main`
-3. Trigger Release workflow: Actions → Release → Run workflow → enter version (e.g. `2.1.0`)
-4. Workflow creates tag, GitHub Release (with auto-generated release notes)
-5. Sync PR auto-created in [trudenboy/ma-server](https://github.com/trudenboy/ma-server)
+1. Open a change PR against `dev`, run tests and pre-commit, and address review feedback.
+2. Add a Keep a Changelog entry for the next version in that PR. Do not change `VERSION` in a contributor PR; the maintainer owns it.
+3. Obtain maintainer approval to merge. The maintainer sets `VERSION` to match the changelog, typically in a separate release PR.
+4. When the new `VERSION` lands on `dev`, **Pipeline** runs its lint, typing and test gate, then creates the version tag and GitHub Release. Release notes come from `CHANGELOG.md`.
+5. The pipeline syncs beta releases to `integration/dev` in [trudenboy/ma-server](https://github.com/trudenboy/ma-server). Stable releases also sync to `upstream/yandex_music`. The upstream-ahead guard blocks unreviewed differences; investigate them before acknowledging an exception.
+
+The manual **Release** workflow is a fallback. Publishing a provider release or updating the fork does not merge the upstream PR or include the changes in a Music Assistant release; upstream review is a separate step.
 
 ## Working with Local MA Models
 

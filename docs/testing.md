@@ -6,33 +6,33 @@
 ## Быстрый старт
 
 ```bash
-uv run pytest provider/tests/ -v
+uv run pytest tests/ -v
 ```
 
 С отчётом о покрытии:
 
 ```bash
-uv run pytest provider/tests/ -v --cov=provider/ --cov-report=term-missing
+uv run pytest tests/ -v --cov=provider --cov-report=term-missing
 ```
 
 ## CI-пайплайн
 
-Каждый push и PR запускают два параллельных задания через `test.yml`:
+PR в `dev` или `main` запускает `test.yml`. Изменения кода, тестов, зависимостей или `VERSION` в `dev` запускают `pipeline.yml`; изменения в `main` запускают `test.yml`. Оба используют общий workflow тестирования с двумя параллельными заданиями:
 
 | Задание | Что делает |
 |---------|-----------|
-| `test-*` | Запускает pytest с проверкой покрытия, загружает отчёт в Codecov |
-| `lint-*` | Запускает ruff, mypy, codespell, pre-commit |
+| `test-music-provider` | Запускает pytest с проверкой покрытия, загружает отчёт в Codecov |
+| `Lint & Type Check` | Запускает pre-commit, Ruff, mypy и проверки upstream |
 
 
-Тесты запускаются на основе `music-assistant/server@dev` (без форка — лёгкий CI).
+В CI тесты запускаются на основе актуального `music-assistant/server@dev`, с зависимостями провайдера из `manifest.json`. Локальный `uv run` использует снимок MA из `uv.lock`, поэтому локальный результат и проверку совместимости с текущим upstream следует различать.
 
 ## Инструменты
 
 | Инструмент | Назначение |
 |-----------|-----------|
 | `uv` | Управление виртуальным окружением и зависимостями |
-| `Python 3.12` | Целевая версия языка |
+| `Python 3.14` | Целевая версия языка |
 | `pytest` | Фреймворк для тестов |
 | `pytest-cov` | Сбор данных о покрытии |
 | `Codecov` | Загрузка отчётов о покрытии (автоматически в CI) |
@@ -68,7 +68,7 @@ uv run ruff format --check provider/
 Локально просмотреть покрытие:
 
 ```bash
-uv run pytest provider/tests/ --cov=provider/ --cov-report=html
+uv run pytest tests/ --cov=provider --cov-report=html
 open htmlcov/index.html
 ```
 
