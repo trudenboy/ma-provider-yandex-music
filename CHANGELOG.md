@@ -793,4 +793,3 @@ No changes.
 - test: stabilize Yandex login timeout coverage
 - fix: retain library items that cannot be parsed by the provider
 - Reverse-synced upstream PR #6285 (WIP)
-- Reverse-synced upstream PR #6887 (WIP)
