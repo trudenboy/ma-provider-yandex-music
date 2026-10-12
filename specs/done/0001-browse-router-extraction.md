@@ -2,7 +2,7 @@
 id: "0001"
 title: "Extract browse routing from YandexMusicProvider into a BrowseRouter"
 size: L
-status: inprogress
+status: done
 priority: P2
 effort_minutes: 0
 feature_id:
@@ -20,9 +20,10 @@ from that dispatch chain.
 
 Move dispatch and URI handling into a private `_BrowseRouter` in a separate
 browse module. It owns an ordered registry of pure predicates and asynchronous
-handlers; the first match wins. The provider creates one router lazily on first
-browse and retains it for subsequent calls. Provider API retrieval methods remain
-bound to the provider. Root construction and wave/preset URI handling belong to
+handlers; the first match wins. The provider creates its router in
+`handle_async_init` with the rest of its state and retains it for subsequent
+calls; tests that build the provider without setup assign the router
+themselves. Provider API retrieval methods remain bound to the provider. Root construction and wave/preset URI handling belong to
 the router. Wave operations keep the per-station lock, including assignment of
 saved settings. MA's library fallback is retained for standard library folders
 and unknown non-root paths, including its existing `KeyError` behavior.
