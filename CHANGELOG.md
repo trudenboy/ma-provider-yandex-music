@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.8.24] - 2026-10-12
+
+### Fixed
+
+- A playback request that joins a stream URL refresh after the new URL is fetched reuses that URL instead of requesting another one.
+
 ## [3.8.23] - 2026-10-10
 
 ### Fixed
