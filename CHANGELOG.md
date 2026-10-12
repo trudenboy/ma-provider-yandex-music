@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.8.26] - 2026-10-12
+
+### Fixed
+
+- My Wave playback feedback keeps each track's original batch when later radio tracks are prefetched or queued.
+
 ## [3.8.25] - 2026-10-12
 
 ### Fixed
