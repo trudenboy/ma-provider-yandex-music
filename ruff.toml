@@ -89,5 +89,5 @@ mark-parentheses = false
 known-first-party = ["music_assistant"]
 
 [lint.per-file-ignores]
-tests/** = ["S104", "S105"]
-music_assistant/providers/_demo_*/** = ["ERA001"]
+"tests/**" = ["S104", "S105"]
+"music_assistant/providers/_demo_*/**" = ["ERA001"]
