@@ -52,19 +52,14 @@ ignore = [
   "PTH120",
   "PTH123",
   "G004",
-  "S104",
-  "S105",
   "S106",
   "SLF001",
   "SIM102",
   "PERF401",
   "ARG002",
   "TRY301",
-  "PLR0912",
   "B904",
   "S324",
-  "ERA001",
-  "C901",
   "S304",
   "TRY300",
   "S608",
@@ -92,3 +87,7 @@ mark-parentheses = false
 
 [lint.isort]
 known-first-party = ["music_assistant"]
+
+[lint.per-file-ignores]
+tests/** = ["S104", "S105"]
+music_assistant/providers/_demo_*/** = ["ERA001"]
