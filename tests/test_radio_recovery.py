@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from music_assistant_models.enums import ContentType, MediaType
+from music_assistant_models.errors import ResourceTemporarilyUnavailable
 from music_assistant_models.media_items import AudioFormat
 from music_assistant_models.streamdetails import StreamDetails
 from ya_passport_auth import SecretStr
@@ -120,6 +121,48 @@ def test_session_reset_discards_queued_feedback_contexts() -> None:
     wave.reset_session()
     assert not wave.track_feedback_contexts
     assert wave.settings == {"language": "russian"}
+
+
+@pytest.mark.parametrize(("initial", "prefetch"), [(True, False), (False, False), (False, True)])
+async def test_final_batch_hydration_failure_does_not_end_station(
+    initial: bool, prefetch: bool
+) -> None:
+    """A transient hydration failure leaves terminal tracks available for retry."""
+    provider, raw, wave = make_station_provider()
+    station = "user:onyourwave#discover"
+    if initial:
+        wave.reset_session()
+    response = {
+        "radioSessionId": "session",
+        "terminated": True,
+        "batchId": "final-batch",
+        "sequence": [{"type": "track", "track": {"id": 43}, "liked": False}],
+    }
+    post = AsyncMock(return_value=response)
+    hydrate = AsyncMock(
+        side_effect=[ResourceTemporarilyUnavailable("temporary failure"), [Track(id=43)]]
+    )
+
+    # Initial sessions are created through foreground pagination; prefetch
+    # only operates once a session and playback cursor exist.
+    async def fetch() -> list[Track]:
+        if prefetch:
+            await provider._prefetch_rotor_session(station)
+            return wave.prefetched
+        tracks, _ = await provider.get_rotor_station_tracks(station, queue="42")
+        return tracks
+
+    with (
+        patch.object(raw.request, "post", post),
+        patch.object(provider.client, "get_tracks", hydrate),
+    ):
+        with pytest.raises(ResourceTemporarilyUnavailable):
+            await fetch()
+        assert not wave.ended
+        assert wave.batch_id == (None if initial else "old-batch")
+        assert not wave.prefetched
+        assert [track.id for track in await fetch()] == [43]
+    assert wave.ended
 
 
 async def test_station_recovers_unknown_session_once_and_preserves_settings() -> None:
