@@ -1457,7 +1457,7 @@ class YandexMusicProvider(MusicProvider):
 
         Routes to ``_fetch_rotor_session_batch`` so the wave session state
         (`session_id`, seen tracks, prefetch) is shared with our own Browse /
-        on_played / on_streamed flows. ``queue`` is the most recently played
+        on_stream_started / on_streamed flows. ``queue`` is the most recently played
         track ID the external caller observed — we record it as the
         pagination cursor before calling through.
 
@@ -1961,7 +1961,7 @@ class YandexMusicProvider(MusicProvider):
         sets composite item_id (track_id@station_key) and updates
         provider_mappings. `station_key` is the key in `_wave_states` under
         which the matching session lives; for preset modes it carries a
-        `#preset` suffix so `on_played`/`on_streamed` find the right session.
+        `#preset` suffix so `on_stream_started`/`on_streamed` find the right session.
 
         Callers using shared state must hold the My Wave state lock.
 
@@ -3402,7 +3402,7 @@ class YandexMusicProvider(MusicProvider):
 
         Shares the same `_WaveState(ROTOR_STATION_MY_WAVE)` with browse and
         virtual-playlist flows, so session_id + batch_id established here
-        carry into `on_played`/`on_streamed` feedback even when the user
+        carry into `on_stream_started`/`on_streamed` feedback even when the user
         starts playback from this discovery card.
 
         :return: RecommendationFolder with My Wave tracks, or None if empty.
