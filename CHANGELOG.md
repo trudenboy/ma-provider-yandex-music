@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Radio sessions remain retryable when loading the final batch's track metadata fails temporarily.
+- Radio playback start feedback and background prefetch use the stream's original session and batch, preventing stale playback from affecting a replacement session.
 
 ## [3.8.27] - 2026-10-12
 

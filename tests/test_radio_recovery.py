@@ -242,6 +242,128 @@ async def test_expired_prefetch_does_not_report_old_track_to_replacement_session
 
 
 @pytest.mark.parametrize("replace_state", [False, True])
+async def test_stream_start_does_not_borrow_replacement_session(
+    replace_state: bool,
+) -> None:
+    """Periodic updates cannot report an old stream to a newer same-track session."""
+    provider, raw, wave = make_station_provider()
+    station = "user:onyourwave#discover"
+    provider.mass = Mock()
+    provider.mass.create_task.side_effect = lambda coro: coro.close()
+    wave.remember_track_batch([Track(id=42)], "old-batch")
+    attach_stream_resolver(provider, 0)
+    resolver = provider.streaming.get_stream_details
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def delayed(item_id: str) -> StreamDetails:
+        started.set()
+        await release.wait()
+        return await resolver(item_id)
+
+    with patch.object(provider.streaming, "get_stream_details", AsyncMock(side_effect=delayed)):
+        pending = asyncio.create_task(provider.get_stream_details(f"42@{station}"))
+        await started.wait()
+        if replace_state:
+            wave = _WaveState()
+            provider._wave_states[station] = wave
+        else:
+            wave.reset_session()
+        wave.session_id = "fresh"
+        wave.remember_track_batch([Track(id=42)], "fresh-batch")
+        release.set()
+        details = await pending
+    post = AsyncMock(return_value={"result": "ok"})
+    with patch.object(raw.request, "post", post):
+        await provider.on_played(MediaType.TRACK, details.item_id, False, 0, Mock(), True)
+        post.assert_not_awaited()
+        await provider.on_stream_started(details)
+    post.assert_not_awaited()
+    provider.mass.create_task.assert_not_called()
+
+
+async def test_stream_start_uses_captured_batch_and_prefetch_session() -> None:
+    """A newer batch cannot relabel a stream; a queued prefetch cannot cross sessions."""
+    provider, raw, wave = make_station_provider()
+    station = "user:onyourwave#discover"
+    provider.mass = Mock()
+    tasks: list[Any] = []
+    provider.mass.create_task.side_effect = tasks.append
+    wave.remember_track_batch([Track(id=42)], "old-batch")
+    attach_stream_resolver(provider, 0)
+    details = await provider.get_stream_details(f"42@{station}")
+    wave.batch_id = "later-batch"
+    wave.remember_track_batch([Track(id=42)], "later-batch")
+    post = AsyncMock(return_value={"result": "ok"})
+    with patch.object(raw.request, "post", post):
+        await provider.on_stream_started(details)
+        assert post.await_args is not None
+        assert post.await_args.kwargs["json"]["event"]["type"] == "trackStarted"
+        assert post.await_args.kwargs["json"]["batchId"] == "old-batch"
+        assert len(tasks) == 1
+        wave.session_id = "fresh"
+        await tasks.pop()
+    post.assert_awaited_once()
+
+
+@pytest.mark.parametrize("strip_data", [False, True])
+async def test_stream_start_skips_missing_feedback_ownership(strip_data: bool) -> None:
+    """Cached or stripped details cannot acquire ownership from a mutable station."""
+    provider, raw, wave = make_station_provider()
+    provider.mass = Mock()
+    attach_stream_resolver(provider, 0)
+    details = await provider.get_stream_details("42@user:onyourwave#discover")
+    wave.remember_track_batch([Track(id=42)], "old-batch")
+    if strip_data:
+        details.data = None
+    post = AsyncMock()
+    with patch.object(raw.request, "post", post):
+        await provider.on_stream_started(details)
+    post.assert_not_awaited()
+    provider.mass.create_task.assert_not_called()
+
+
+async def test_stream_start_does_not_prefetch_session_replaced_during_feedback() -> None:
+    """A replacement while awaiting trackStarted cannot schedule its successor's refill."""
+    provider, raw, wave = make_station_provider()
+    station = "user:onyourwave#discover"
+    provider.mass = Mock()
+    wave.remember_track_batch([Track(id=42)], "old-batch")
+    attach_stream_resolver(provider, 0)
+    details = await provider.get_stream_details(f"42@{station}")
+
+    async def replace(*_args: object, **_kwargs: object) -> object:
+        wave.reset_session()
+        wave.session_id = "fresh"
+        return {"result": "ok"}
+
+    post = AsyncMock(side_effect=replace)
+    with patch.object(raw.request, "post", post):
+        await provider.on_stream_started(details)
+    post.assert_awaited_once()
+    assert post.await_args is not None
+    assert "/session/expired/feedback" in post.await_args.args[0]
+    provider.mass.create_task.assert_not_called()
+
+
+@pytest.mark.parametrize("media_type", [MediaType.TRACK, MediaType.AUDIOBOOK])
+async def test_stream_start_ignores_nonradio_playback(media_type: MediaType) -> None:
+    """The new radio callback leaves ordinary tracks and audiobook progress alone."""
+    provider, raw, wave = make_station_provider()
+    provider.mass = Mock()
+    wave.remember_track_batch([Track(id=42)], "old-batch")
+    attach_stream_resolver(provider, 0)
+    details = await provider.get_stream_details("42@user:onyourwave#discover")
+    details.media_type = media_type
+    if media_type == MediaType.TRACK:
+        details.item_id = "42"
+    post = AsyncMock()
+    with patch.object(raw.request, "post", post):
+        await provider.on_stream_started(details)
+    post.assert_not_awaited()
+    provider.mass.create_task.assert_not_called()
+
+
+@pytest.mark.parametrize("replace_state", [False, True])
 async def test_feedback_ownership_is_captured_before_stream_resolution(
     replace_state: bool,
 ) -> None:
@@ -457,6 +579,7 @@ async def test_expired_prefetch_recovers_station_and_keeps_playback_feedback() -
     provider.manifest = Mock(domain="yandex_music")
     mass = Mock()
     provider.mass = mass
+    attach_stream_resolver(provider, 0)
     tasks: list[asyncio.Task[None]] = []
 
     def schedule(coro: Any) -> asyncio.Task[None]:
@@ -497,7 +620,8 @@ async def test_expired_prefetch_recovers_station_and_keeps_playback_feedback() -
         assert [track.item_id for track in tracks] == ["43@user:onyourwave#discover"]
         assert {pm.item_id for pm in tracks[0].provider_mappings} == {tracks[0].item_id}
         assert wave.last_track_id == "43"
-        await provider.on_played(MediaType.TRACK, tracks[0].item_id, False, 0, tracks[0], True)
+        details = await provider.get_stream_details(tracks[0].item_id)
+        await provider.on_stream_started(details)
         await asyncio.gather(*tasks)
         assert [track.id for track in wave.prefetched] == [44]
     creations = [c for c in post.await_args_list if "/rotor/session/new" in c.args[0]]
