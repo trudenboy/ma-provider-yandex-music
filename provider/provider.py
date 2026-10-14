@@ -1544,10 +1544,6 @@ class YandexMusicProvider(MusicProvider):
 
         - Audiobooks: persist chapter progress via play_audio so Yandex's
           own clients resume at the right point.
-        - Wave tracks: send rotor ``trackStarted`` while actively playing and
-          kick off a background prefetch so DSTM refill serves wave-curated
-          tracks with no extra round-trip. DSTM itself is the user's toggle —
-          the provider does not flip it.
 
         Generic track history reporting is not attempted here — the only
         known channel Yandex writes into ``/handlers/music-history`` is a
@@ -1557,15 +1553,31 @@ class YandexMusicProvider(MusicProvider):
         """
         if media_type == MediaType.AUDIOBOOK:
             await self._report_audiobook_progress(prov_item_id, position)
+
+    async def on_stream_started(self, streamdetails: StreamDetails) -> None:
+        """Report radio playback once using ownership captured before URL resolution."""
+        if streamdetails.media_type != MediaType.TRACK:
             return
-        if media_type != MediaType.TRACK:
+        track_id, station_id = _parse_radio_item_id(streamdetails.item_id)
+        data = streamdetails.data if isinstance(streamdetails.data, dict) else {}
+        session_id = data.get("radio_session_id")
+        if not station_id or not isinstance(session_id, str):
             return
-        _, station_id = _parse_radio_item_id(prov_item_id)
-        if station_id and is_playing:
-            track_id, _ = _parse_radio_item_id(prov_item_id)
-            wave = self._wave_states.get(station_id) or self._get_wave_state(station_id)
-            await self._send_wave_feedback(wave, station_id, "trackStarted", track_id=track_id)
-            self.mass.create_task(self._prefetch_rotor_session(station_id))
+        wave = self._wave_states.get(station_id)
+        if wave is None or wave.session_id != session_id:
+            return
+        batch_id = data.get("radio_batch_id")
+        await self._send_wave_feedback(
+            wave,
+            station_id,
+            "trackStarted",
+            track_id=track_id,
+            context=(session_id, batch_id if isinstance(batch_id, str) else None),
+        )
+        if self._wave_states.get(station_id) is wave and wave.session_id == session_id:
+            self.mass.create_task(
+                self._prefetch_rotor_session(station_id, expected_session_id=session_id)
+            )
 
     async def on_streamed(self, streamdetails: StreamDetails) -> None:
         """
@@ -2435,11 +2447,13 @@ class YandexMusicProvider(MusicProvider):
             batch_id=context[1] if track_id and context else wave.batch_id,
         )
 
-    async def _prefetch_rotor_session(self, station_key: str) -> None:
+    async def _prefetch_rotor_session(
+        self, station_key: str, *, expected_session_id: str | None = None
+    ) -> None:
         """
         Fire-and-forget: fetch the next batch for an active wave session.
 
-        Called from ``on_played`` while a wave track starts playing, so by the
+        Called from ``on_stream_started`` while a wave track starts playing, so by the
         time Music Assistant's DSTM asks for more via ``get_similar_tracks``,
         we already have Yandex-curated wave tracks sitting in
         ``wave.prefetched`` ready to serve (no extra round-trip).
@@ -2463,12 +2477,15 @@ class YandexMusicProvider(MusicProvider):
              skipped if another caller filled it; final batches are retained.
 
         :param station_key: Station key whose state to top up.
+        :param expected_session_id: Captured playback session; skip if it was replaced.
         """
         wave = self._wave_states.get(station_key)
         if wave is None:
             return
 
         async with wave.lock:
+            if expected_session_id is not None and wave.session_id != expected_session_id:
+                return
             if wave.session_id is None or wave.ended or wave.prefetched:
                 return
             session_id = wave.session_id
