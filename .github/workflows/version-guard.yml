@@ -16,4 +16,4 @@ jobs:
   version-guard:
     uses: trudenboy/ma-provider-tools/.github/workflows/reusable-version-guard.yml@main
     with:
-      version_path: provider/VERSION
+      version_path: VERSION

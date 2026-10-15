@@ -64,7 +64,7 @@ if [ -n "$WORKSPACE" ]; then
   echo "Provider yandex_music linked to workspace. Activate: source $WORKSPACE/.venv/bin/activate"
 else
   # ── Standalone mode (original behavior) ──
-  uv venv "$REPO_ROOT/$ENV_NAME"
+  uv venv "$REPO_ROOT/$ENV_NAME" --python "3.14"
   source "$REPO_ROOT/$ENV_NAME/bin/activate"
 
 
