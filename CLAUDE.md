@@ -188,16 +188,16 @@ skeleton, in this order:
 
 1. `# What does this implement/fix?` — narrative goes under this heading.
 2. `**Related issue (if applicable):**`.
-3. `## Types of changes` — tick ≥ 1 box; multi-tick is supported
-   (e.g. `bugfix` + `enhancement` + `dependencies` for cross-cutting
-   releases).
+3. `## Types of changes` — tick **exactly one** box. Upstream's
+   `PR Labels` check fails with "Tick exactly one" when several are
+   ticked. For a release that mixes types, pick the dominant one.
 4. `## Checklist`. The `I have read and complied with the project's
    AI Policy` checkbox is the human-attestation checkpoint; do not
    append a separate attestation block.
 
 Upstream's `pr-labels.yaml` reads the ticked `## Types of changes`
-checkboxes to apply labels; the release-notes generator slots by
-label. A body without these sections silently breaks both.
+checkbox to apply its single label; the release-notes generator slots
+by label. A body without these sections silently breaks both.
 
 Per *AI Policy Alignment* rule 2, do not edit the upstream PR
 directly — produce the corrected body and the human applies it
