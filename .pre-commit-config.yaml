@@ -7,7 +7,9 @@ repos:
         language: system
         types: [python]
         files: ^(provider/.*\.py|tests/.*\.py)$
-        entry: uv run --active --no-project --with 'ruff>=0.15,<0.16' ruff check --fix
+        # --ignore RUF100: keep reverse-synced noqa markers for rules this
+        # repo's ruff.toml has not enabled yet (see reusable-test.yml).
+        entry: uv run --active --no-project --with 'ruff>=0.15,<0.16' ruff check --fix --ignore RUF100
         require_serial: true
         stages: [pre-commit, pre-push, manual]
 
