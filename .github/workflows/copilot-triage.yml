@@ -9,6 +9,12 @@ on:
         required: true
         type: number
 
+# The reusable job assigns and comments on the issue. Provider repos default
+# the token to read-only, and a caller that grants less than the callee asks
+# for fails at startup on every labeled event.
+permissions:
+  issues: write
+
 jobs:
   triage-on-label:
 
