@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import suppress
 from datetime import datetime
 from typing import TYPE_CHECKING, Literal
+from urllib.parse import quote
 
 from music_assistant_models.enums import (
     AlbumType,
@@ -135,6 +136,32 @@ def detect_description_language(text: str | None) -> Literal["ru"] | None:
     if cyrillic >= 8 and cyrillic * 2 >= len(text):
         return "ru"
     return None
+
+
+UGC_ARTIST_PREFIX = "ugc_artist:"
+
+
+def parse_ugc_artist(provider: YandexMusicProvider, name: str) -> Artist:
+    """Create a stable virtual artist for a user-uploaded track."""
+    name = name.strip()
+    if not name:
+        raise InvalidDataError("UGC artist missing name")
+
+    artist_id = UGC_ARTIST_PREFIX + quote(name, safe="")
+
+    return Artist(
+        item_id=artist_id,
+        provider=provider.instance_id,
+        name=name,
+        provider_mappings={
+            ProviderMapping(
+                item_id=artist_id,
+                provider_domain=provider.domain,
+                provider_instance=provider.instance_id,
+                is_unique=True,
+            )
+        },
+    )
 
 
 def parse_artist(
@@ -363,7 +390,10 @@ def parse_track(
     if track_obj.artists:
         track.artists = UniqueList()
         for artist in track_obj.artists:
-            track.artists.append(parse_artist(provider, artist))
+            if artist.id is None:
+                track.artists.append(parse_ugc_artist(provider, artist.name or ""))
+            else:
+                track.artists.append(parse_artist(provider, artist))
 
     # Parse album (full data so album gets cover art in the library)
     if track_obj.albums and len(track_obj.albums) > 0:
