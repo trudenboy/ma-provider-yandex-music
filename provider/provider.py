@@ -11,6 +11,7 @@ import uuid
 from collections.abc import AsyncGenerator, Sequence
 from io import BytesIO
 from typing import TYPE_CHECKING, Any
+from urllib.parse import unquote
 
 from music_assistant_models.config_entries import ConfigEntry, ConfigValueOption
 from music_assistant_models.enums import (
@@ -118,9 +119,7 @@ from .constants import (
     WAVES_LANDING_FOLDER_ID,
 )
 from .parsers import (
-    _get_image_url as get_image_url,
-)
-from .parsers import (
+    UGC_ARTIST_PREFIX,
     classify_album,
     get_canonical_provider_name,
     parse_album,
@@ -130,6 +129,10 @@ from .parsers import (
     parse_podcast,
     parse_podcast_episode,
     parse_track,
+    parse_ugc_artist,
+)
+from .parsers import (
+    _get_image_url as get_image_url,
 )
 from .presets import parse_stored_presets
 from .streaming import YandexMusicStreamingManager
@@ -823,6 +826,10 @@ class YandexMusicProvider(MusicProvider):
         :return: Artist object.
         :raises MediaNotFoundError: If artist not found.
         """
+        if prov_artist_id.startswith(UGC_ARTIST_PREFIX):
+            name = unquote(prov_artist_id[len(UGC_ARTIST_PREFIX) :])
+            return parse_ugc_artist(self, name)
+
         artist, about = await asyncio.gather(
             self.client.get_artist(prov_artist_id),
             self.client.get_artist_about(prov_artist_id),
