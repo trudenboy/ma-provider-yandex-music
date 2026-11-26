@@ -384,6 +384,7 @@ class YandexMusicClient:
         :return: Tuple of (radio_session_id, list of tracks, batch_id, session ended).
             Returns (None, [], None, False) on failure.
         """
+<<<<<<< provider
         seeds: list[str] = [station_id]
         if settings:
             for key, seed_name in (
@@ -401,6 +402,33 @@ class YandexMusicClient:
                 include_tracks_in_response=True,
                 include_wave_model=True,
                 interactive=True,
+||||||| upstream-base
+        classified = self._classify_429(err)
+        if classified == "captcha":
+            backoff = self._trigger_captcha_block(kind)
+            return ResourceTemporarilyUnavailable(
+                f"Yandex Music captcha ({kind})",
+                backoff_time=backoff,
+            )
+        if classified == "rate_limit":
+            LOGGER.debug("Yandex Music plain 429 on kind=%s", kind)
+            return ResourceTemporarilyUnavailable(
+                "Yandex Music rate limit",
+                backoff_time=int(RATE_LIMIT_COOLDOWN_S),
+=======
+        classified = self._classify_429(err)
+        if classified == "captcha":
+            backoff = self._trigger_captcha_block(kind)
+            return ResourceTemporarilyUnavailable(
+                f"Yandex Music captcha ({kind})",
+                backoff_time=backoff,
+            )
+        if classified == "rate_limit":
+            LOGGER.debug("Yandex Music plain 429 on kind=%s", kind)
+            return RateLimited(
+                "Yandex Music rate limit",
+                backoff_time=int(RATE_LIMIT_COOLDOWN_S),
+>>>>>>> upstream-head
             )
         )
         if result is None:
