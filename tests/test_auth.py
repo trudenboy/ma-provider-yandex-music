@@ -16,6 +16,74 @@ from music_assistant.providers.yandex_music.auth import (
     validate_x_token,
 )
 
+<<<<<<< provider
+||||||| upstream-base
+if TYPE_CHECKING:
+    from aiohttp import web
+
+
+@pytest.fixture(autouse=True)
+def skip_grace_sleep() -> Generator[mock.AsyncMock, None, None]:
+    """Bypass the post-auth grace ``asyncio.sleep`` so tests run instantly."""
+    with mock.patch(
+        "provider.auth.asyncio.sleep",
+        new=mock.AsyncMock(),
+    ) as patched:
+        yield patched
+
+
+# -- helpers -------------------------------------------------------------------
+
+
+def _make_device_session(
+    user_code: str = "ABCD-1234",
+    verification_url: str = "https://oauth.yandex.ru/device",
+    interval: int = 1,
+    expires_in: int = 600,
+) -> DeviceCodeSession:
+    """Build a DeviceCodeSession for testing."""
+    return DeviceCodeSession(
+        device_code=SecretStr("dev-code-xyz"),
+        user_code=user_code,
+        verification_url=verification_url,
+        expires_in=expires_in,
+        interval=interval,
+    )
+
+=======
+if TYPE_CHECKING:
+    from aiohttp import web
+
+
+@pytest.fixture(autouse=True)
+def skip_grace_sleep() -> Generator[mock.AsyncMock]:
+    """Bypass the post-auth grace ``asyncio.sleep`` so tests run instantly."""
+    with mock.patch(
+        "provider.auth.asyncio.sleep",
+        new=mock.AsyncMock(),
+    ) as patched:
+        yield patched
+
+
+# -- helpers -------------------------------------------------------------------
+
+
+def _make_device_session(
+    user_code: str = "ABCD-1234",
+    verification_url: str = "https://oauth.yandex.ru/device",
+    interval: int = 1,
+    expires_in: int = 600,
+) -> DeviceCodeSession:
+    """Build a DeviceCodeSession for testing."""
+    return DeviceCodeSession(
+        device_code=SecretStr("dev-code-xyz"),
+        user_code=user_code,
+        verification_url=verification_url,
+        expires_in=expires_in,
+        interval=interval,
+    )
+
+>>>>>>> upstream-head
 
 def _make_credentials(
     x_token: str = "test_x_token",  # noqa: S107
